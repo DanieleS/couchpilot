@@ -1,5 +1,6 @@
 import { computed } from 'vue'
 import { send, useLive } from './live'
+import { useCouchPilot } from './store'
 import { Op, pair, withText } from './protocol'
 
 export type Mod = 'ctrl' | 'alt' | 'shift' | 'win'
@@ -9,7 +10,8 @@ export type LinkState = 'off' | 'connecting' | 'open'
 // The touchpad and keyboard ride the live socket, a few bytes per command (opcodes 0x01–0x0F in
 // docs/protocol.md). Usable while the socket is open and the PC allows it.
 export function useRemoteInput() {
-  const { link: live, status } = useLive()
+  const { link: live } = useLive()
+  const { status } = useCouchPilot()
   const link = computed<LinkState>(() => (status.value?.input === false ? 'off' : live.value === 'open' && status.value ? 'open' : 'connecting'))
 
   return {

@@ -63,6 +63,8 @@ namespace CouchPilot.Server
         // Something changed on the PC: phones hear about it now rather than on the next check.
         public void Nudge() => live.Nudge();
 
+        public void LibraryChanged() => live.LibraryChanged();
+
         public void Dispose()
         {
             cts.Cancel();

@@ -1,17 +1,20 @@
 # The live socket protocol
 
-The phone and the PC talk over one WebSocket. Up it go the touchpad, the keyboard and the mixer's commands; down it come the PC's state and the audio mixer, levels included, 25 times a second. Everything else (the game library, cover art, starting a game, display presets) stays plain HTTP under `/api`.
+The phone and the PC talk over one WebSocket. Up it go the touchpad, the keyboard and the mixer's commands; down it comes word of what changed on the PC, and the audio mixer, levels included, 25 times a second.
+
+The socket carries only small binary messages. Structured data stays JSON on plain HTTP under `/api`: the PC's status (`GET /api/status`), the game library (`GET /api/games`), cover art, and actions such as starting a game or applying a display preset. When the status or the library changes, the socket says so with a two-byte CHANGED and the phone fetches the JSON again. Nothing polls.
 
 This document is the specification. The implementations must follow it byte for byte:
 
 | Side | File | Covers |
 |---|---|---|
-| PC | `src/CouchPilot/Server/LiveSocket.cs` | connection, HELLO, STATUS, SUBSCRIBE, dispatch, timing |
+| PC | `src/CouchPilot/Server/LiveSocket.cs` | connection, HELLO, CHANGED, SUBSCRIBE, dispatch, timing |
+| PC | `src/CouchPilot/Server/StatusSource.cs` | what counts as a status change |
 | PC | `src/CouchPilot/Audio/AudioProtocol.cs` | audio messages, encoding |
 | PC | `src/CouchPilot/Audio/AudioService.cs` | audio commands, channels, generations |
 | PC | `src/CouchPilot/Input/RemoteInput.cs` | mouse and keyboard commands |
 | Phone | `web/src/protocol.ts` | every opcode, decoding and encoding |
-| Phone | `web/src/live.ts`, `audio.ts`, `input.ts` | connection, audio, input |
+| Phone | `web/src/live.ts`, `store.ts`, `audio.ts`, `input.ts` | connection, fetching on CHANGED, audio, input |
 | Phone | `web/src/mock.ts` | a pretend PC speaking the same bytes, for `pnpm dev:mock` |
 
 Change one, change this document and the others in the same commit.
@@ -22,7 +25,7 @@ Change one, change this document and the others in the same commit.
 2. [Encoding](#2-encoding)
 3. [Opcodes](#3-opcodes)
 4. [A session, start to finish](#4-a-session-start-to-finish)
-5. [PC → phone](#5-pc--phone): HELLO, STATUS, AUDIO STATE, AUDIO VOLUMES, AUDIO LEVELS
+5. [PC → phone](#5-pc--phone): HELLO, CHANGED, AUDIO STATE, AUDIO VOLUMES, AUDIO LEVELS
 6. [Phone → PC](#6-phone--pc): mouse and keyboard, audio commands, SUBSCRIBE
 7. [The audio model](#7-the-audio-model)
 8. [Timing](#8-timing)
@@ -34,7 +37,7 @@ Change one, change this document and the others in the same commit.
 - **URL:** `ws://<pc>:<port>/ws`, on the same port as the web app (8642 by default).
 - **Origin:** the PC accepts the connection only if the `Origin` header is missing or names the same host and port as the `Host` header. WebSockets skip the browser's same-origin rules; without this check any web page open on a device on the network could type on the PC.
 - **Frames:** binary only. Text frames are ignored.
-- **Size:** at most 16 KiB per message from the phone. Messages from the PC have no limit, but in practice the largest is a STATUS of a few kilobytes.
+- **Size:** at most 16 KiB per message from the phone. Messages from the PC have no limit, but in practice the largest is an AUDIO STATE of a few hundred bytes.
 - **Lifetime:** the phone opens the socket while the page is on screen and closes it when the page goes to the background (`visibilitychange`). After an unexpected close it reconnects after 0.4 s, 0.8 s, 1.6 s, 3.2 s, then every 5 s.
 - **Offline:** the phone shows the PC as offline only after 3 s without a connection, so a brief drop doesn't flash.
 - **Authentication:** none. The port must not be exposed beyond the local network (see the README).
@@ -82,7 +85,7 @@ The first byte tells the reader both the direction and the subsystem.
 | `0x12` | DEFAULT | phone → PC | 6.2 |
 | `0x20` | SUBSCRIBE | phone → PC | [6.3](#63-subscribe-0x20) |
 | `0x80` | HELLO | PC → phone | [5.1](#51-hello-0x80) |
-| `0x81` | STATUS | PC → phone | [5.2](#52-status-0x81) |
+| `0x81` | CHANGED | PC → phone | [5.2](#52-changed-0x81) |
 | `0x82` | AUDIO STATE | PC → phone | [5.3](#53-audio-state-0x82) |
 | `0x83` | AUDIO VOLUMES | PC → phone | [5.4](#54-audio-volumes-0x83) |
 | `0x84` | AUDIO LEVELS | PC → phone | [5.5](#55-audio-levels-0x84) |
@@ -97,8 +100,11 @@ sequenceDiagram
     participant C as PC
     P->>C: WebSocket upgrade to /ws
     C-->>P: HELLO (version 1)
-    C-->>P: STATUS (JSON)
-    Note over P,C: Games, Schermi, Controllo tabs: STATUS whenever the PC's state changes
+    C-->>P: CHANGED (status, library)
+    P->>C: GET /api/status, GET /api/games (HTTP)
+    Note over C: A game starts
+    C-->>P: CHANGED (status)
+    P->>C: GET /api/status (HTTP)
     P->>C: MOVE, CLICK, KEY… (if the PC allows input)
     Note over P: The Audio tab opens
     P->>C: SUBSCRIBE audio
@@ -132,16 +138,36 @@ The first message on every connection.
 
 If the version isn't the one the page was built for, the page is a stale copy of the app (the PC was updated, the phone kept the old one cached). The phone reloads itself to get the app the PC serves now, at most once a minute so that a mismatch reloading can't fix doesn't loop.
 
-### 5.2 STATUS `0x81`
+### 5.2 CHANGED `0x81`
 
-The PC's state at a glance, as JSON. Sent right after HELLO, then whenever it changes.
+Some structured data on the PC changed: the phone should fetch it again over HTTP.
 
-| Offset | Field | Type |
+| Offset | Field | Type | |
+|---|---|---|---|
+| 0 | op | `u8` | `0x81` |
+| 1 | topics | `u8` | flags, below |
+
+| Bit | Topic | Fetch again |
 |---|---|---|
-| 0 | op | `u8` `0x81` |
-| 1 | status | `json…` |
+| 1 | status | `GET /api/status` |
+| 2 | library | `GET /api/games` |
 
-The JSON is the same object `GET /api/status` returns (property names camelCase):
+```
+81 01      the status changed
+81 03      the status and the library changed
+```
+
+Right after HELLO the PC sends CHANGED with every topic set (`81 03`), so a phone that just connected, or reconnected after missing changes, refreshes everything.
+
+**Why not send the data itself.** Status and library are nested, vary in shape and change a few times a minute at most. As JSON on HTTP they keep one schema, readable with a browser or `curl`, and need no binary layout to keep in step with it. The socket only carries what has to be immediate or compact. One round trip after a CHANGED costs a few milliseconds on a home network.
+
+**Status.** The PC compares the status about twice a second, and on the next tick after anything it knows changes it: a game starting or stopping, a preset applied, kept, reverted, saved, renamed or deleted, the input setting toggled. CHANGED goes out only if the status differs from the last one announced, **ignoring `displays.pending.secondsLeft`**: the countdown alone isn't news, and the phone counts down by itself from the value it fetched.
+
+**Library.** Sent when Playnite adds, removes or updates a game: an import, an install, the playtime after a session, a cover downloaded. An import can update hundreds of games in a row, so the PC announces the library at most twice a second.
+
+**The phone** keeps at most one fetch per topic in flight. A CHANGED arriving during a fetch queues exactly one more, so a burst of changes costs two requests at most.
+
+`GET /api/status` returns (property names camelCase):
 
 ```jsonc
 {
@@ -174,9 +200,7 @@ The JSON is the same object `GET /api/status` returns (property names camelCase)
 }
 ```
 
-JSON, not a binary layout, because STATUS is nested, varies in shape and changes a few times a minute at most: a binary layout would save nothing that matters and cost a second schema to keep in step with `/api/status`.
-
-**When it's sent.** The PC builds STATUS about twice a second and right after anything that changes it: a game starting or stopping, a preset applied, kept, reverted, saved, renamed or deleted, the input setting toggled. It sends it only if something differs from the last one sent, **ignoring `pending.secondsLeft`**: the countdown alone isn't news. The phone counts down by itself from the last value it got.
+`GET /api/games` returns the library: every game Playnite doesn't hide, with name, source, install state, playtime, genres, release year and whether it has cover and background art. The types are in `web/src/types.ts` (`Game`).
 
 ### 5.3 AUDIO STATE `0x82`
 
@@ -289,7 +313,7 @@ LEVELS are **lossy by design**: the PC sends one only when some level changed (s
 
 ### 6.1 Mouse and keyboard `0x01`–`0x0F`
 
-Acted on only while **Permetti al telefono di usare mouse e tastiera del PC** is on in the extension settings (`input` in STATUS). Otherwise the PC drops them silently: the socket stays up for audio and state.
+Acted on only while **Permetti al telefono di usare mouse e tastiera del PC** is on in the extension settings (`input` in `/api/status`). Otherwise the PC drops them silently: the socket stays up for audio and state.
 
 | Op | Name | Fields | |
 |---|---|---|---|
@@ -407,7 +431,8 @@ The PC serves every phone from one loop, which runs every **40 ms** while at lea
 
 | What | When |
 |---|---|
-| STATUS | checked every ~0.5 s (12 ticks), and on the next tick after a change the PC knows about; sent only if it differs |
+| CHANGED status | checked every ~0.5 s (12 ticks), and on the next tick after a change the PC knows about; sent only if the status differs |
+| CHANGED library | at most every ~0.5 s, if Playnite changed a game since the last one |
 | AUDIO STATE | to a phone that just subscribed; to every subscribed phone when the generation changes |
 | Device and session scan | every 1 s (25 ticks), on the next tick after a DEFAULT, after a subscription, after a failed read |
 | AUDIO VOLUMES | checked every tick; sent if any volume or mute differs from the last sent |
@@ -428,7 +453,7 @@ Messages to one phone leave in the order they were queued, one at a time. A slow
 - **Windows refuses a change** (device unplugged in the meantime): nothing is sent back. The next scan brings a STATE that reflects reality.
 - **No default output:** STATE has no output channel and no app channels; the input may still be there.
 - **More than 255 devices or channels:** the lists are cut at 255.
-- **Input turned off while a phone is connected:** held buttons are released, STATUS goes out with `"input": false`, and input commands are dropped from then on.
+- **Input turned off while a phone is connected:** held buttons are released, CHANGED status goes out (`/api/status` now has `"input": false`), and input commands are dropped from then on.
 - **Socket closes:** the PC releases held mouse buttons and forgets the phone's subscription.
 
 ## 10. Versioning
@@ -440,7 +465,8 @@ These changes are **compatible** and don't change the version, because receivers
 - a new opcode in a free slot of the right range;
 - a new flag bit;
 - a new SUBSCRIBE stream;
-- a new property in the STATUS JSON;
+- a new CHANGED topic;
+- a new property in the `/api/status` or `/api/games` JSON;
 - a new field at the end of HELLO, AUDIO STATE or a fixed-size command (MOVE, WHEEL, DOWN, UP, CLICK, KEY, VOLUME, MUTE, DEFAULT, SUBSCRIBE). Receivers check only that a message is long enough, never that it isn't longer.
 
 Anything else changes the version:

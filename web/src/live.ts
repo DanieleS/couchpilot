@@ -1,15 +1,15 @@
-import { ref, shallowRef } from 'vue'
+import { ref } from 'vue'
 import { createMockLink } from './mock'
 import { decode, encodeSubscribe, PROTOCOL_VERSION, Subscribe, type ServerMessage } from './protocol'
-import type { Status } from './types'
 
 const useMock = import.meta.env.VITE_MOCK === '1'
 
 export type LinkState = 'connecting' | 'open' | 'off'
 
-// The phone's one connection to the PC (/ws, specified in docs/protocol.md): the PC pushes its
-// state down it, the touchpad and the mixer send their commands up it. Open while the page is
-// on screen, closed in the background, and it reconnects by itself.
+// The phone's one connection to the PC (/ws, specified in docs/protocol.md): the PC says down it
+// when its status or library changed (the data itself stays JSON on HTTP), the touchpad and the
+// mixer send their commands up it. Open while the page is on screen, closed in the background,
+// and it reconnects by itself.
 
 // What a socket needs to be: a real WebSocket, or the mock's stand-in.
 export type Link = {
@@ -18,7 +18,9 @@ export type Link = {
 }
 
 const link = ref<LinkState>('off')
-const status = shallowRef<Status | null>(null)
+// Whether the PC is reachable, for showing it: false only after a few seconds without a link.
+const online = ref(false)
+const changeListeners = new Set<(topics: number) => void>()
 const audioListeners = new Set<(m: ServerMessage) => void>()
 let socket: Link | null = null
 let open = false
@@ -35,8 +37,8 @@ function receive(m: ServerMessage) {
     case 'hello':
       if (m.version !== PROTOCOL_VERSION) reloadForNewVersion()
       break
-    case 'status':
-      status.value = m.status
+    case 'changed':
+      for (const listener of changeListeners) listener(m.topics)
       break
     case 'audioState':
     case 'audioVolumes':
@@ -61,6 +63,7 @@ function opened() {
   open = true
   retries = 0
   link.value = 'open'
+  online.value = true
   clearTimeout(offlineTimer)
   // A fresh connection knows nothing about what this page wants.
   if (audioListeners.size > 0) socket?.send(encodeSubscribe(Subscribe.audio))
@@ -72,7 +75,7 @@ function closed(which: Link) {
   open = false
   link.value = wanted() ? 'connecting' : 'off'
   clearTimeout(offlineTimer)
-  offlineTimer = window.setTimeout(() => (status.value = null), OFFLINE_AFTER_MS)
+  offlineTimer = window.setTimeout(() => (online.value = false), OFFLINE_AFTER_MS)
   clearTimeout(retryTimer)
   if (wanted()) retryTimer = window.setTimeout(connect, Math.min(5000, 400 * 2 ** retries++))
 }
@@ -120,7 +123,13 @@ export function useLive() {
     document.addEventListener('visibilitychange', sync)
     connect()
   }
-  return { link, status }
+  return { link, online }
+}
+
+// Called with CHANGED's topics (see `Topic`), and with all of them on every (re)connect.
+export function onChanged(listener: (topics: number) => void) {
+  changeListeners.add(listener)
+  return () => changeListeners.delete(listener)
 }
 
 // Nothing is queued while the link is down: a burst of stale pointer moves or volume changes

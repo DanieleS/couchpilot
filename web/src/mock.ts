@@ -146,7 +146,6 @@ const encodeVolumes = (gen: number, channels: MockChannel[]) =>
   Uint8Array.from([0x83, gen, ...channels.flatMap((c) => [c.volume, c.muted ? 1 : 0])])
 const encodeLevels = (gen: number, channels: MockChannel[]) =>
   Uint8Array.from([0x84, gen, ...channels.map((c) => (c.muted || !c.loudness ? 0 : Math.round(Math.sqrt(Math.max(0, Math.min(1, c.loudness + (Math.random() - 0.5) * 0.35))) * 255)))])
-const encodeStatus = (json: string) => Uint8Array.from([0x81, ...utf8.encode(json)])
 
 export function createMockLink(receive: (m: ServerMessage) => void, onClose: () => void) {
   let closed = false
@@ -159,13 +158,17 @@ export function createMockLink(receive: (m: ServerMessage) => void, onClose: () 
   const shapeOf = (channels: MockChannel[]) =>
     JSON.stringify([defaultOutput, defaultInput, channels.map((c) => [c.role, c.key, c.name])])
 
-  function pushStatus(force = false) {
+  // CHANGED status when the status differs, countdown aside, like LiveSocket.cs; the phone then
+  // fetches it from mockRequest as it would from /api/status.
+  const statusKey = () => {
     const s = status()
-    const json = JSON.stringify(s)
-    const key = JSON.stringify({ ...s, displays: { ...s.displays, pending: s.displays.pending && { ...s.displays.pending, secondsLeft: 0 } } })
-    if (!force && key === lastStatus) return
+    return JSON.stringify({ ...s, displays: { ...s.displays, pending: s.displays.pending && { ...s.displays.pending, secondsLeft: 0 } } })
+  }
+  function pushStatus() {
+    const key = statusKey()
+    if (key === lastStatus) return
     lastStatus = key
-    deliver(encodeStatus(json))
+    deliver(Uint8Array.of(0x81, 1))
   }
 
   function pushAudio(force = false) {
@@ -187,7 +190,9 @@ export function createMockLink(receive: (m: ServerMessage) => void, onClose: () 
   }
 
   deliver(Uint8Array.of(0x80, 1))
-  pushStatus(true)
+  // Everything counts as changed on a new connection.
+  lastStatus = statusKey()
+  deliver(Uint8Array.of(0x81, 1 | 2))
   let tick = 0
   const timer = setInterval(() => {
     if (tick++ % 12 === 0) pushStatus()
@@ -234,6 +239,7 @@ export async function mockRequest(method: string, path: string, body?: any): Pro
 
 async function handle(method: string, path: string, body?: any): Promise<unknown> {
   const [, a, b, c] = path.split('/')
+  if (method === 'GET' && a === 'status') return status()
   if (method === 'GET' && a === 'games' && !b) return games.map((g) => ({ ...g, running: running.some((r) => r.id === g.id) }))
   const game = games.find((g) => g.id === b)
   if (method === 'GET' && a === 'games' && game) return { ...game, description: 'Descrizione finta del gioco, quella vera arriva da Playnite.', developers: ['Studio'] }

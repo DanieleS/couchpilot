@@ -2,7 +2,6 @@ using System;
 using System.Collections.Concurrent;
 using System.Linq;
 using System.Net.WebSockets;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using CouchPilot.Audio;
@@ -12,11 +11,14 @@ using Playnite.SDK;
 
 namespace CouchPilot.Server
 {
-    // The phone's one WebSocket (/ws): mouse and keyboard up, the PC's state down, audio both ways.
-    // The wire format is specified in docs/protocol.md.
+    // The phone's one WebSocket (/ws): mouse and keyboard up, word of what changed on the PC down,
+    // audio both ways. The wire format is specified in docs/protocol.md.
     //
-    // One loop serves every phone, ticking 25 times a second while any is connected: it pushes
-    // STATUS when the PC's state changes, and to phones subscribed to audio the mixer's STATE,
+    // The socket stays binary and small. Structured data (the PC's status, the game library) stays
+    // JSON on HTTP: CHANGED only tells the phone which of it to fetch again.
+    //
+    // One loop serves every phone, ticking 25 times a second while any is connected: it sends
+    // CHANGED when the status or the library changed, and to phones subscribed to audio the mixer's STATE,
     // VOLUMES and LEVELS. Each phone has its own send queue, so a slow one never holds up the
     // others; levels are skipped for a phone still busy with the previous ones, since a late
     // level is worth nothing.
@@ -33,11 +35,13 @@ namespace CouchPilot.Server
         private const byte SubscribeAudio = 1;
         // PC → phone
         private const byte OpHello = 0x80;
-        private const byte OpStatus = 0x81;
+        private const byte OpChanged = 0x81;
+        private const byte TopicStatus = 1;
+        private const byte TopicLibrary = 2;
 
         private static readonly ILogger logger = LogManager.GetLogger();
         private static readonly TimeSpan Tick = TimeSpan.FromMilliseconds(40);
-        private const int StatusEveryTicks = 12;  // ~0.5 s
+        private const int StatusEveryTicks = 12;  // ~0.5 s, also the most the library is announced
         private const int RescanEveryTicks = 25;  // 1 s
 
         private readonly RemoteInput input;
@@ -47,6 +51,7 @@ namespace CouchPilot.Server
         private readonly CancellationTokenSource stop = new CancellationTokenSource();
         private int looping;
         private volatile bool statusWanted;
+        private volatile bool libraryChanged;
         private volatile bool rescanWanted;
         private string lastStatusShape;
         private byte[] lastVolumes;
@@ -67,8 +72,12 @@ namespace CouchPilot.Server
             MaxMessageSize = 16 * 1024;
         }
 
-        // Something changed on the PC (a game started, a preset applied): push STATUS on the next tick.
+        // Something changed on the PC (a game started, a preset applied): check the status on the next tick.
         public void Nudge() => statusWanted = true;
+
+        // Playnite changed a game. Imports change hundreds at once: phones hear about it at most
+        // twice a second.
+        public void LibraryChanged() => libraryChanged = true;
 
         protected override Task OnClientConnectedAsync(IWebSocketContext context)
         {
@@ -79,7 +88,8 @@ namespace CouchPilot.Server
             var client = new Client();
             clients[context] = client;
             Enqueue(context, client, new[] { OpHello, ProtocolVersion });
-            Enqueue(context, client, StatusMessage(status.Encode().json));
+            // Whatever the phone had may be stale after a disconnect: everything counts as changed.
+            Enqueue(context, client, new[] { OpChanged, (byte)(TopicStatus | TopicLibrary) });
             if (Interlocked.Exchange(ref looping, 1) == 0) Task.Run(LoopAsync);
             return Task.CompletedTask;
         }
@@ -143,7 +153,7 @@ namespace CouchPilot.Server
                 }
                 try
                 {
-                    if (statusWanted || tick % StatusEveryTicks == 0) PushStatus();
+                    PushChanged(statusWanted || tick % StatusEveryTicks == 0, tick % StatusEveryTicks == 0);
                     PushAudio(tick);
                 }
                 catch (Exception e)
@@ -154,13 +164,26 @@ namespace CouchPilot.Server
             }
         }
 
-        private void PushStatus()
+        private void PushChanged(bool checkStatus, bool checkLibrary)
         {
-            statusWanted = false;
-            var (json, shape) = status.Encode();
-            if (shape == lastStatusShape) return;
-            lastStatusShape = shape;
-            var message = StatusMessage(json);
+            byte topics = 0;
+            if (checkStatus)
+            {
+                statusWanted = false;
+                var shape = status.Shape();
+                if (shape != lastStatusShape)
+                {
+                    lastStatusShape = shape;
+                    topics |= TopicStatus;
+                }
+            }
+            if (checkLibrary && libraryChanged)
+            {
+                libraryChanged = false;
+                topics |= TopicLibrary;
+            }
+            if (topics == 0) return;
+            var message = new[] { OpChanged, topics };
             foreach (var pair in clients) Enqueue(pair.Key, pair.Value, message);
         }
 
@@ -223,15 +246,6 @@ namespace CouchPilot.Server
             {
                 client.Queue = client.Queue.ContinueWith(_ => SendAsync(context, message), TaskScheduler.Default).Unwrap();
             }
-        }
-
-        private static byte[] StatusMessage(string json)
-        {
-            var body = Encoding.UTF8.GetBytes(json);
-            var message = new byte[body.Length + 1];
-            message[0] = OpStatus;
-            Buffer.BlockCopy(body, 0, message, 1, body.Length);
-            return message;
         }
 
         private static bool SameOrigin(IWebSocketContext context)

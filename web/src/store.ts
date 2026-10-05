@@ -1,10 +1,10 @@
 import { computed, onScopeDispose, ref, watch } from 'vue'
 import { api } from './api'
-import { useLive } from './live'
-import type { Game } from './types'
+import { onChanged, useLive } from './live'
+import { Topic } from './protocol'
+import type { Game, Status } from './types'
 
-const GAMES_POLL_MS = 60000
-
+const status = ref<Status | null>(null)
 const games = ref<Game[] | null>(null)
 const error = ref<string | null>(null)
 // When the pending display change expires, in phone time. The PC only reports whole seconds,
@@ -12,21 +12,43 @@ const error = ref<string | null>(null)
 const pendingDeadline = ref<number | null>(null)
 let started = false
 
-const refreshGames = () =>
-  api.games().then((g) => (games.value = g)).catch(() => {})
+// One fetch at a time: a CHANGED arriving mid-fetch queues exactly one more.
+function serialized(fetch: () => Promise<unknown>) {
+  let running: Promise<unknown> | null = null
+  let again = false
+  const run = (): void => {
+    if (running) return void (again = true)
+    running = fetch().finally(() => {
+      running = null
+      if (again) {
+        again = false
+        run()
+      }
+    })
+  }
+  return run
+}
 
-// The PC pushes its state over the live socket whenever it changes; the library is fetched
-// now and then, since it only changes when Playnite imports something.
+const refreshStatus = serialized(() =>
+  api.status().then((s) => {
+    status.value = s
+    const left = s.displays.pending?.secondsLeft
+    pendingDeadline.value = left === undefined ? null : Date.now() + left * 1000
+  }).catch(() => {}),
+)
+const refreshGames = serialized(() => api.games().then((g) => (games.value = g)).catch(() => {}))
+
+// Status and library are JSON over HTTP, fetched again whenever the live socket says they
+// changed (and on every reconnect). Nothing polls.
 export function useCouchPilot() {
-  const { status } = useLive()
+  const { online } = useLive()
   if (!started) {
     started = true
-    watch(status, (s) => {
-      const left = s?.displays.pending?.secondsLeft
-      pendingDeadline.value = left === undefined ? null : Date.now() + left * 1000
+    onChanged((topics) => {
+      if (topics & Topic.status) refreshStatus()
+      if (topics & Topic.library) refreshGames()
     })
-    refreshGames()
-    setInterval(refreshGames, GAMES_POLL_MS)
+    watch(online, (on) => !on && (status.value = null))
   }
 
   const running = computed(() => status.value?.running ?? [])

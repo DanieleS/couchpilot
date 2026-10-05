@@ -33,7 +33,7 @@ The **Audio** tab shows the default output (tap **Cambia** to switch: speakers, 
 
 ## How the phone talks to the PC
 
-One WebSocket, `/ws`, open while the app is on screen. The PC pushes its state down it as soon as something changes (a game starts, a preset is applied, a volume moves), the touchpad and the mixer send their commands up it, and while the Audio tab is open the level meters arrive 25 times a second. The format is a compact binary protocol, specified byte by byte in [docs/protocol.md](docs/protocol.md). The library, cover art and actions such as starting a game stay plain HTTP under `/api`.
+One WebSocket, `/ws`, open while the app is on screen, carrying small binary messages specified byte by byte in [docs/protocol.md](docs/protocol.md). The touchpad and the mixer send their commands up it; down it come the mixer's volumes and level meters (25 times a second while the Audio tab is open) and a two-byte notice whenever the PC's status or the game library changes. The phone then fetches that data again as JSON from `/api`, where it lives along with cover art and actions such as starting a game. Nothing polls.
 
 ## Touchpad and keyboard
 

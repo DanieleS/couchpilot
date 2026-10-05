@@ -8,7 +8,7 @@ using Swan.Formatters;
 namespace CouchPilot.Server
 {
     // The PC's state at a glance: what's running, what the screens look like, whether the phone
-    // may use mouse and keyboard. Served on GET /api/status and pushed as STATUS on the live socket.
+    // may use mouse and keyboard. Served on GET /api/status; the live socket says when it changed.
     public class StatusSource
     {
         private readonly LibraryService library;
@@ -30,20 +30,14 @@ namespace CouchPilot.Server
             Input = input.Enabled,
         };
 
-        // The JSON body of STATUS, and the same JSON with the pending display change's countdown
-        // left out: what decides whether anything changed. The countdown alone isn't news, the
-        // phone counts down by itself.
-        public (string json, string shape) Encode()
+        // What decides whether phones are told the status changed: the status as JSON, with the
+        // pending display change's countdown left out. The countdown alone isn't news, the phone
+        // counts down by itself.
+        public string Shape()
         {
             var status = Snapshot();
-            var json = Serialize(status);
-            var pending = status.Displays.Pending;
-            if (pending == null) return (json, json);
-            var secondsLeft = pending.SecondsLeft;
-            pending.SecondsLeft = 0;
-            var shape = Serialize(status);
-            pending.SecondsLeft = secondsLeft;
-            return (json, shape);
+            if (status.Displays.Pending != null) status.Displays.Pending.SecondsLeft = 0;
+            return Serialize(status);
         }
 
         private static string Serialize(StatusDto status) => Json.Serialize(status, JsonSerializerCase.CamelCase);

@@ -1,7 +1,5 @@
 // The live WebSocket's wire format, phone side. docs/protocol.md is the specification, byte by
 // byte; LiveSocket.cs, AudioProtocol.cs and RemoteInput.cs are the PC side. Keep all of them in step.
-import type { Status } from './types'
-
 export const PROTOCOL_VERSION = 1
 
 export const Op = {
@@ -12,10 +10,13 @@ export const Op = {
   // Phone → PC: the connection (0x20–0x2F)
   subscribe: 0x20,
   // PC → phone (0x80–0x8F)
-  hello: 0x80, status: 0x81, audioState: 0x82, audioVolumes: 0x83, audioLevels: 0x84,
+  hello: 0x80, changed: 0x81, audioState: 0x82, audioVolumes: 0x83, audioLevels: 0x84,
 } as const
 
 export const Subscribe = { audio: 1 } as const
+
+// What CHANGED says to fetch again over HTTP.
+export const Topic = { status: 1, library: 2 } as const
 
 export type AudioRole = 'output' | 'input' | 'app' | 'system' | 'game'
 export type AudioDeviceKind = 'speakers' | 'headphones' | 'display' | 'mic'
@@ -56,7 +57,8 @@ export type AudioState = {
 
 export type ServerMessage =
   | { op: 'hello'; version: number }
-  | { op: 'status'; status: Status }
+  // Bits of `Topic`.
+  | { op: 'changed'; topics: number }
   | { op: 'audioState'; state: AudioState }
   | { op: 'audioVolumes'; gen: number; volumes: { volume: number; muted: boolean }[] }
   // One byte a channel: the peak's square root × 255.
@@ -116,8 +118,8 @@ export function decode(data: ArrayBuffer | Uint8Array): ServerMessage {
   switch (op) {
     case Op.hello:
       return { op: 'hello', version: r.u8() }
-    case Op.status:
-      return { op: 'status', status: JSON.parse(decoder.decode(r.rest())) }
+    case Op.changed:
+      return { op: 'changed', topics: r.u8() }
     case Op.audioState: {
       const gen = r.u8()
       const outputs = devices(r)

@@ -32,7 +32,7 @@ namespace CouchPilot.Server
             this.live = live;
         }
 
-        // The phone gets this pushed over the live socket; here for anything else that wants a look.
+        // The phone fetches it again whenever the live socket says it changed.
         [Route(HttpVerbs.Get, "/status")]
         public object Status() => status.Snapshot();
 

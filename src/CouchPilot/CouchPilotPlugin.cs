@@ -46,6 +46,9 @@ namespace CouchPilot
         public override void OnApplicationStarted(OnApplicationStartedEventArgs args)
         {
             sessions.SeedFromDatabase(PlayniteApi.Database.Games);
+            // Installs, imports, playtime after a session: the phone refreshes its library.
+            PlayniteApi.Database.Games.ItemUpdated += (_, __) => server?.LibraryChanged();
+            PlayniteApi.Database.Games.ItemCollectionChanged += (_, __) => server?.LibraryChanged();
             StartServer();
             StartHomeAssistant();
         }
