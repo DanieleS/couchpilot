@@ -8,6 +8,7 @@ import AudioAppRow from './AudioAppRow.vue'
 import AudioDeviceSheet from './AudioDeviceSheet.vue'
 import AudioGameCard from './AudioGameCard.vue'
 import LevelMeter from './LevelMeter.vue'
+import NowPlayingMedia from './NowPlayingMedia.vue'
 import PcChip from './PcChip.vue'
 import VolumeSlider from './VolumeSlider.vue'
 import { deviceIcon } from './deviceIcon'
@@ -87,6 +88,8 @@ const inputVolume = endpointVolume(() => input.value)
         </div>
       </section>
 
+      <NowPlayingMedia class="now-playing" />
+
       <template v-if="output">
         <p class="eyebrow">Mixer</p>
         <AudioGameCard v-for="g in games" :key="g.stableKey" class="game" :channel="g" :level="levelOf(g)" @change="set(g, $event)" />
@@ -150,6 +153,7 @@ const inputVolume = endpointVolume(() => input.value)
 .mute.on { background: var(--danger); color: #fff; }
 .pct { inline-size: 1.75rem; text-align: right; font-size: 0.75rem; font-weight: 750; }
 
+.now-playing { margin-top: 6px; }
 .game { margin-bottom: 6px; }
 .apps { display: grid; gap: 6px; }
 .list-move, .list-enter-active, .list-leave-active { transition: transform 200ms var(--ease-out-3), opacity 200ms; }

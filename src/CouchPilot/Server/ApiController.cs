@@ -6,6 +6,7 @@ using CouchPilot.Audio;
 using CouchPilot.Displays;
 using CouchPilot.Games;
 using CouchPilot.Library;
+using CouchPilot.Media;
 using EmbedIO;
 using EmbedIO.Routing;
 using EmbedIO.WebApi;
@@ -19,15 +20,17 @@ namespace CouchPilot.Server
         private readonly GameControl games;
         private readonly DisplayService displays;
         private readonly AudioService audio;
+        private readonly MediaService media;
         private readonly StatusSource status;
         private readonly LiveSocket live;
 
-        public ApiController(LibraryService library, GameControl games, DisplayService displays, AudioService audio, StatusSource status, LiveSocket live)
+        public ApiController(LibraryService library, GameControl games, DisplayService displays, AudioService audio, MediaService media, StatusSource status, LiveSocket live)
         {
             this.library = library;
             this.games = games;
             this.displays = displays;
             this.audio = audio;
+            this.media = media;
             this.status = status;
             this.live = live;
         }
@@ -146,6 +149,40 @@ namespace CouchPilot.Server
         {
             displays.Revert();
             live.Nudge();
+        }
+
+        // What's playing, or null. The live socket says when it changed.
+        [Route(HttpVerbs.Get, "/media")]
+        public object Media() => media.Snapshot();
+
+        // The artwork of what's playing. The phone asks for it with ?v=<artVersion>, so the
+        // URL changes with the art and the browser may keep it for good.
+        [Route(HttpVerbs.Get, "/media/art")]
+        public async Task MediaArt()
+        {
+            var (bytes, type) = media.Art();
+            if (bytes == null) throw HttpException.NotFound();
+            Response.ContentType = type;
+            Response.Headers.Set("Cache-Control", "public, max-age=31536000, immutable");
+            await Response.OutputStream.WriteAsync(bytes, 0, bytes.Length);
+        }
+
+        [Route(HttpVerbs.Post, "/media/play-pause")]
+        public void MediaPlayPause()
+        {
+            if (!media.PlayPause()) throw new HttpException(HttpStatusCode.Conflict, "L'app non accetta il comando.");
+        }
+
+        [Route(HttpVerbs.Post, "/media/next")]
+        public void MediaNext()
+        {
+            if (!media.Next()) throw new HttpException(HttpStatusCode.Conflict, "L'app non accetta il comando.");
+        }
+
+        [Route(HttpVerbs.Post, "/media/previous")]
+        public void MediaPrevious()
+        {
+            if (!media.Previous()) throw new HttpException(HttpStatusCode.Conflict, "L'app non accetta il comando.");
         }
 
         // For picking a display preset's audio output; the live mixer has its own list.

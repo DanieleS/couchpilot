@@ -75,6 +75,25 @@ function status(): Status {
   }
 }
 
+// A track playing in Spotify, three songs to skip through. Bumped revision → CHANGED media.
+const tracks = [
+  { title: 'Lumière', artist: 'Lorien Testard', album: 'Clair Obscur: Expedition 33', duration: 264 },
+  { title: 'Gustave', artist: 'Lorien Testard', album: 'Clair Obscur: Expedition 33', duration: 198 },
+  { title: 'Nothing Is Lost', artist: 'Darren Korb', album: 'Hades II', duration: 231 },
+]
+const player = { track: 0, playing: true, position: 42, since: Date.now() }
+let mediaRevision = 0
+const playerPosition = () => Math.min(tracks[player.track].duration, player.position + (player.playing ? (Date.now() - player.since) / 1000 : 0))
+function mediaCommand(command: string) {
+  player.position = playerPosition()
+  player.since = Date.now()
+  if (command === 'play-pause') player.playing = !player.playing
+  if (command === 'next') player.track = (player.track + 1) % tracks.length
+  if (command === 'previous') player.track = (player.track + tracks.length - 1) % tracks.length
+  if (command !== 'play-pause') player.position = 0
+  mediaRevision++
+}
+
 // Bumped whenever a game changes, like Playnite's ItemUpdated: the link then sends CHANGED library.
 let libraryRevision = 0
 // Installing or uninstalling takes a few seconds, like a small game from a fast CDN.
@@ -175,6 +194,7 @@ export function createMockLink(receive: (m: ServerMessage) => void, onClose: () 
   let lastVolumes = ''
   let lastStatus = ''
   let lastLibrary = libraryRevision
+  let lastMedia = mediaRevision
   const deliver = (bytes: Uint8Array) => setTimeout(() => !closed && receive(decode(bytes)))
   const shapeOf = (channels: MockChannel[]) =>
     JSON.stringify([defaultOutput, defaultInput, channels.map((c) => [c.role, c.key, c.name])])
@@ -213,12 +233,16 @@ export function createMockLink(receive: (m: ServerMessage) => void, onClose: () 
   deliver(Uint8Array.of(0x80, 1))
   // Everything counts as changed on a new connection.
   lastStatus = statusKey()
-  deliver(Uint8Array.of(0x81, 1 | 2))
+  deliver(Uint8Array.of(0x81, 1 | 2 | 4))
   let tick = 0
   const timer = setInterval(() => {
     if (tick % 12 === 0 && libraryRevision !== lastLibrary) {
       lastLibrary = libraryRevision
       deliver(Uint8Array.of(0x81, 2))
+    }
+    if (mediaRevision !== lastMedia) {
+      lastMedia = mediaRevision
+      deliver(Uint8Array.of(0x81, 4))
     }
     if (tick++ % 12 === 0) pushStatus()
     if (audio) pushAudio()
@@ -265,6 +289,15 @@ export async function mockRequest(method: string, path: string, body?: any): Pro
 async function handle(method: string, path: string, body?: any): Promise<unknown> {
   const [, a, b, c] = path.split('/')
   if (method === 'GET' && a === 'status') return status()
+  if (method === 'GET' && a === 'media' && !b) {
+    const t = tracks[player.track]
+    return {
+      title: t.title, artist: t.artist, album: t.album, app: 'Spotify.exe', playing: player.playing,
+      canPlayPause: true, canNext: true, canPrevious: true,
+      positionSeconds: playerPosition(), durationSeconds: t.duration, readAt: new Date().toISOString(), artVersion: null,
+    }
+  }
+  if (method === 'POST' && a === 'media') return mediaCommand(b)
   if (method === 'GET' && a === 'audio' && b === 'outputs') {
     const kinds = ['speakers', 'headphones', 'display'] as const
     return outputs.map((d, i) => ({ id: d.id, name: d.name, detail: d.detail, kind: kinds[d.kind] ?? 'speakers', default: i === defaultOutput }))

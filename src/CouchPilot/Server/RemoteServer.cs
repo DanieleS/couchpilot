@@ -8,6 +8,7 @@ using CouchPilot.Displays;
 using CouchPilot.Games;
 using CouchPilot.Input;
 using CouchPilot.Library;
+using CouchPilot.Media;
 using EmbedIO;
 using EmbedIO.WebApi;
 using Swan.Formatters;
@@ -20,7 +21,7 @@ namespace CouchPilot.Server
         private readonly CancellationTokenSource cts = new CancellationTokenSource();
         private readonly LiveSocket live;
 
-        public RemoteServer(int port, string webRoot, LibraryService library, GameControl games, DisplayService displays, RemoteInput input, AudioService audio)
+        public RemoteServer(int port, string webRoot, LibraryService library, GameControl games, DisplayService displays, RemoteInput input, AudioService audio, MediaService media)
         {
             Swan.Logging.Logger.NoLogging();
             var status = new StatusSource(library, displays, input);
@@ -32,7 +33,7 @@ namespace CouchPilot.Server
                     .WithUrlPrefix($"http://*:{port}/")
                     .WithMode(HttpListenerMode.EmbedIO))
                 .WithCors()
-                .WithWebApi("/api", SerializeJson, m => m.WithController(() => new ApiController(library, games, displays, audio, status, live)))
+                .WithWebApi("/api", SerializeJson, m => m.WithController(() => new ApiController(library, games, displays, audio, media, status, live)))
                 .WithModule(live);
 
             if (Directory.Exists(webRoot))
@@ -64,6 +65,8 @@ namespace CouchPilot.Server
         public void Nudge() => live.Nudge();
 
         public void LibraryChanged() => live.LibraryChanged();
+
+        public void MediaChanged() => live.MediaChanged();
 
         public void Dispose()
         {

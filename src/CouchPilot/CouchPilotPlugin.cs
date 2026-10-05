@@ -7,6 +7,7 @@ using CouchPilot.Games;
 using CouchPilot.HomeAssistant;
 using CouchPilot.Input;
 using CouchPilot.Library;
+using CouchPilot.Media;
 using CouchPilot.Server;
 using Playnite.SDK;
 using Playnite.SDK.Events;
@@ -23,6 +24,7 @@ namespace CouchPilot
         private readonly GameControl gameControl;
         private readonly DisplayService displays;
         private readonly AudioService audio;
+        private readonly MediaService media = new MediaService();
         private readonly RemoteInput input = new RemoteInput();
         private RemoteServer server;
         private HomeAssistantBridge homeAssistant;
@@ -50,6 +52,8 @@ namespace CouchPilot
             // Installs, imports, playtime after a session: the phone refreshes its library.
             PlayniteApi.Database.Games.ItemUpdated += (_, __) => server?.LibraryChanged();
             PlayniteApi.Database.Games.ItemCollectionChanged += (_, __) => server?.LibraryChanged();
+            media.Changed += () => server?.MediaChanged();
+            media.Start();
             StartServer();
             StartHomeAssistant();
         }
@@ -61,6 +65,7 @@ namespace CouchPilot
             homeAssistant?.Dispose();
             homeAssistant = null;
             displays.Dispose();
+            media.Dispose();
         }
 
         public override void OnGameStarted(OnGameStartedEventArgs args)
@@ -115,7 +120,7 @@ namespace CouchPilot
             var webRoot = Path.Combine(Path.GetDirectoryName(typeof(CouchPilotPlugin).Assembly.Location), "wwwroot");
             try
             {
-                server = new RemoteServer(Settings.Port, webRoot, library, gameControl, displays, input, audio);
+                server = new RemoteServer(Settings.Port, webRoot, library, gameControl, displays, input, audio, media);
                 server.Start();
                 logger.Info($"CouchPilot listening on port {Settings.Port}");
             }

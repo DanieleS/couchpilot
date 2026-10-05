@@ -88,4 +88,22 @@ export type Controller = {
   battery: 'empty' | 'low' | 'medium' | 'full' | null
 }
 
+// What Windows' media controls show: the track some app is playing.
+export type NowPlaying = {
+  title: string
+  artist: string | null
+  album: string | null
+  // How Windows names the app: "Spotify.exe", "MSEdge", "Microsoft.ZuneMusic_8wekyb3d8bbwe!Microsoft.ZuneMusic"…
+  app: string | null
+  playing: boolean
+  canPlayPause: boolean
+  canNext: boolean
+  canPrevious: boolean
+  // As of readAt; null when the app doesn't say.
+  positionSeconds: number | null
+  durationSeconds: number | null
+  readAt: string
+  artVersion: string | null
+}
+
 export type VolumeChange = { volume?: number; muted?: boolean }
