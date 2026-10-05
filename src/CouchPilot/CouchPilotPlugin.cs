@@ -4,6 +4,7 @@ using System.Windows.Controls;
 using CouchPilot.Displays;
 using CouchPilot.Games;
 using CouchPilot.HomeAssistant;
+using CouchPilot.Input;
 using CouchPilot.Library;
 using CouchPilot.Server;
 using Playnite.SDK;
@@ -20,6 +21,7 @@ namespace CouchPilot
         private readonly LibraryService library;
         private readonly GameControl gameControl;
         private readonly DisplayService displays;
+        private readonly RemoteInput input = new RemoteInput();
         private RemoteServer server;
         private HomeAssistantBridge homeAssistant;
 
@@ -35,6 +37,7 @@ namespace CouchPilot
             library = new LibraryService(api, sessions);
             gameControl = new GameControl(api, sessions);
             displays = new DisplayService(Path.Combine(GetPluginUserDataPath(), "display-presets.json"));
+            ApplyInputSetting();
         }
 
         public override void OnApplicationStarted(OnApplicationStartedEventArgs args)
@@ -76,6 +79,9 @@ namespace CouchPilot
             StartServer();
         }
 
+        // Takes effect at once: turning it off also drops any phone that's connected.
+        internal void ApplyInputSetting() => input.Enabled = Settings.RemoteInput;
+
         internal void RestartHomeAssistant()
         {
             homeAssistant?.Dispose();
@@ -96,7 +102,7 @@ namespace CouchPilot
             var webRoot = Path.Combine(Path.GetDirectoryName(typeof(CouchPilotPlugin).Assembly.Location), "wwwroot");
             try
             {
-                server = new RemoteServer(Settings.Port, webRoot, library, gameControl, displays);
+                server = new RemoteServer(Settings.Port, webRoot, library, gameControl, displays, input);
                 server.Start();
                 logger.Info($"CouchPilot listening on port {Settings.Port}");
             }

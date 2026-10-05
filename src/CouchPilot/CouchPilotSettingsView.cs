@@ -23,6 +23,18 @@ namespace CouchPilot
                 panel.Children.Add(new TextBox { Text = url, IsReadOnly = true, BorderThickness = new Thickness(0), Background = null });
             }
 
+            Heading("Touchpad e tastiera");
+            var input = new CheckBox { Content = "Permetti al telefono di usare mouse e tastiera del PC" };
+            input.SetBinding(ToggleButton.IsCheckedProperty, Bind(nameof(CouchPilotSettings.RemoteInput)));
+            panel.Children.Add(input);
+            panel.Children.Add(new TextBlock
+            {
+                Text = "Chiunque raggiunga la porta del server può muovere il mouse e scrivere sul PC: attivalo solo su una rete di cui ti fidi.",
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 6, 0, 0),
+                Opacity = 0.7,
+            });
+
             Heading("Home Assistant (MQTT)");
             var enabled = new CheckBox { Content = "Pubblica lo stato del PC su Home Assistant", Margin = new Thickness(0, 0, 0, 10) };
             enabled.SetBinding(ToggleButton.IsCheckedProperty, Bind(nameof(CouchPilotSettings.MqttEnabled)));

@@ -38,6 +38,8 @@ const presets: Preset[] = [
 
 // `?stream=1` pretends a Vibepollo stream is running: its virtual display is the primary.
 const streaming = new URLSearchParams(location.search).has('stream')
+// `?noinput=1` pretends touchpad and keyboard are turned off in the extension settings.
+const inputEnabled = !new URLSearchParams(location.search).has('noinput')
 let current = streaming
   ? [m('Sunshine Virtual Display', 0, 0, 2532, 1170, 120, true), m('ASUS PG27AQN', 2532, 0, 2560, 1440, 240)]
   : presets[0].monitors
@@ -53,6 +55,7 @@ function status(): Status {
   return {
     pc: 'PC-GAMING',
     running,
+    input: inputEnabled,
     displays: {
       monitors: current,
       presets,
