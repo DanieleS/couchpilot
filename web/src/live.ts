@@ -20,6 +20,9 @@ export type Link = {
 const link = ref<LinkState>('off')
 // Whether the PC is reachable, for showing it: false only after a few seconds without a link.
 const online = ref(false)
+// Whether the PC has been out of reach for a few seconds, counting from when the page opened too:
+// what the service worker lets the app show when the PC is off.
+const unreachable = ref(false)
 const changeListeners = new Set<(topics: number) => void>()
 const audioListeners = new Set<(m: ServerMessage) => void>()
 let socket: Link | null = null
@@ -64,6 +67,7 @@ function opened() {
   retries = 0
   link.value = 'open'
   online.value = true
+  unreachable.value = false
   clearTimeout(offlineTimer)
   // A fresh connection knows nothing about what this page wants.
   if (audioListeners.size > 0) socket?.send(encodeSubscribe(Subscribe.audio))
@@ -75,9 +79,14 @@ function closed(which: Link) {
   open = false
   link.value = wanted() ? 'connecting' : 'off'
   clearTimeout(offlineTimer)
-  offlineTimer = window.setTimeout(() => (online.value = false), OFFLINE_AFTER_MS)
+  offlineTimer = window.setTimeout(giveUp, OFFLINE_AFTER_MS)
   clearTimeout(retryTimer)
   if (wanted()) retryTimer = window.setTimeout(connect, Math.min(5000, 400 * 2 ** retries++))
+}
+
+function giveUp() {
+  online.value = false
+  unreachable.value = true
 }
 
 const wanted = () => document.visibilityState === 'visible'
@@ -121,9 +130,10 @@ export function useLive() {
   if (!started) {
     started = true
     document.addEventListener('visibilitychange', sync)
+    offlineTimer = window.setTimeout(giveUp, OFFLINE_AFTER_MS)
     connect()
   }
-  return { link, online }
+  return { link, online, unreachable }
 }
 
 // Called with CHANGED's topics (see `Topic`), and with all of them on every (re)connect.

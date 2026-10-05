@@ -2,6 +2,7 @@
 import { ToggleGroupItem, ToggleGroupRoot } from 'reka-ui'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import type { Game, RunningGame } from '../types'
+import { useLive } from '../live'
 import { useCouchPilot } from '../store'
 import AppIcon from './AppIcon.vue'
 import DisplayConfirm from './DisplayConfirm.vue'
@@ -26,6 +27,7 @@ const emit = defineEmits<{
 }>()
 
 const { status, games, running, runningIds, displays } = useCouchPilot()
+const { unreachable } = useLive()
 
 const query = ref('')
 const filter = ref<Filter>('installed')
@@ -119,7 +121,11 @@ const setFilter = (v: unknown) => v && (filter.value = v as Filter)
       <ToggleGroupItem value="all" class="filter">Tutti<span class="n tabular">{{ counts.all }}</span></ToggleGroupItem>
     </ToggleGroupRoot>
 
-    <div v-if="games === null" class="grid">
+    <div v-if="games === null && unreachable" class="empty">
+      <p class="empty-title">Il PC non risponde</p>
+      <p class="muted">Accendilo e apri Playnite: mi ricollego da solo.</p>
+    </div>
+    <div v-else-if="games === null" class="grid">
       <div v-for="i in 9" :key="i" class="skeleton" />
     </div>
     <div v-else-if="visible.length === 0" class="empty">
