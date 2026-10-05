@@ -165,7 +165,9 @@ namespace CouchPilot.Displays
             }
         }
 
-        public bool Apply(string id)
+        // keep: apply for good, without the 15 s rollback. For callers with nobody in front of
+        // the screen to confirm, like a Home Assistant automation.
+        public bool Apply(string id, bool keep = false)
         {
             lock (sync)
             {
@@ -179,6 +181,13 @@ namespace CouchPilot.Displays
                 var paths = FromBytes<DISPLAYCONFIG_PATH_INFO>(Convert.FromBase64String(preset.Paths));
                 var modes = FromBytes<DISPLAYCONFIG_MODE_INFO>(Convert.FromBase64String(preset.Modes));
                 RemapAdapters(preset, paths, modes);
+
+                if (keep)
+                {
+                    ClearPending();
+                    Ccd.Apply(paths, modes);
+                    return true;
+                }
 
                 // Only the first apply in a row keeps a rollback point: chaining presets
                 // without confirming still rolls back to what worked before.
@@ -196,6 +205,14 @@ namespace CouchPilot.Displays
                 rollbackTimer?.Dispose();
                 rollbackTimer = new Timer(_ => RevertUnlessStreaming(), null, ConfirmWindow, Timeout.InfiniteTimeSpan);
                 return true;
+            }
+        }
+
+        public string FindPresetId(string name)
+        {
+            lock (sync)
+            {
+                return presets.FirstOrDefault(p => string.Equals(p.Name, name?.Trim(), StringComparison.CurrentCultureIgnoreCase))?.Id;
             }
         }
 

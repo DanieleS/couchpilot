@@ -93,6 +93,16 @@ namespace CouchPilot.Library
             return result;
         }
 
+        // A game by its Playnite id, or by its exact name (case-insensitive).
+        public Guid? Resolve(string idOrName)
+        {
+            if (string.IsNullOrWhiteSpace(idOrName)) return null;
+            if (Guid.TryParse(idOrName.Trim(), out var id) && api.Database.Games.Get(id) != null) return id;
+            var match = api.Database.Games.FirstOrDefault(g =>
+                string.Equals(g.Name, idOrName.Trim(), StringComparison.CurrentCultureIgnoreCase));
+            return match?.Id;
+        }
+
         // A local file path, or an http(s) URL when Playnite hasn't downloaded the image.
         public string ImageLocation(Guid id, ImageKind kind)
         {

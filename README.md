@@ -10,7 +10,7 @@ CouchPilot is a Playnite extension that serves a small web app on your local net
 - **Launch and close**: start a game; close it gracefully (every window is asked to close first, forced only after 10 s); bring it back to the foreground.
 - **Display presets**: save the current monitor layout under a name, apply any saved layout with one tap. If you don't confirm within 15 s the previous layout comes back by itself, so a preset that leaves you with a black screen can't strand you.
 - **Vibepollo-aware**: while Vibepollo streams, its virtual display owns the screens, so presets are locked and the automatic rollback stands down.
-- **Home Assistant (optional)**: publishes the running game, the active display preset and whether a Vibepollo stream is on to an MQTT broker, with discovery, so the PC shows up as a device.
+- **Home Assistant (optional)**: publishes the running game, the active display preset and whether a Vibepollo stream is on to an MQTT broker, with discovery, so the PC shows up as a device; optionally also takes commands (switch preset, close, focus or start a game).
 - **Coming next**: touchpad and keyboard.
 
 ## Install
@@ -32,6 +32,29 @@ Off by default. In the extension settings tick **Pubblica lo stato del PC su Hom
 | In gioco | binary sensor | on while a game runs |
 | Preset schermo | sensor | active display preset, or `Personalizzato` |
 | Stream Vibepollo | binary sensor | on while Vibepollo streams |
+
+### Commands
+
+A second, separate opt-in: **Permetti a Home Assistant di comandare il PC**. It adds:
+
+| Entity | Type | Does |
+|---|---|---|
+| Cambia schermo | select | applies a display preset |
+| Chiudi gioco | button | closes the running game (gracefully, then forced after 10 s) |
+| Primo piano | button | brings the running game to the foreground |
+
+Presets applied from Home Assistant are kept straight away: there is nobody in front of the screen to confirm, so there is no 15 s rollback. While Vibepollo streams they are refused, as from the phone.
+
+To start a game, publish its Playnite id or exact name to `couchpilot/<pc>/command/start_game`:
+
+```yaml
+action: mqtt.publish
+data:
+  topic: couchpilot/pc-gaming/command/start_game
+  payload: Elden Ring
+```
+
+The other commands live on the same prefix (`display_preset` with the preset name, `close_game`, `focus_game`), if you'd rather call them directly. Anyone who can publish to your broker can use them, which is why they are off unless you turn them on.
 
 Everything is published as one retained JSON document on `couchpilot/<pc>/state`; `couchpilot/<pc>/availability` turns `offline` when Playnite closes or the PC drops off. The password is stored in plain text with the other extension settings.
 

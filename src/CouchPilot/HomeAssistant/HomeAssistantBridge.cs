@@ -5,6 +5,7 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using CouchPilot.Displays;
+using CouchPilot.Games;
 using CouchPilot.Library;
 using MQTTnet;
 using MQTTnet.Client;
@@ -21,10 +22,12 @@ namespace CouchPilot.HomeAssistant
         public string Password { get; set; }
         public string BaseTopic { get; set; }
         public string DiscoveryPrefix { get; set; }
+        // Let Home Assistant drive the PC (presets, closing and starting games), not just watch it.
+        public bool AcceptCommands { get; set; }
     }
 
     // Publishes what the PC is doing to an MQTT broker, with Home Assistant discovery so the PC
-    // shows up as a device on its own. Read-only for now: Home Assistant watches, it doesn't drive.
+    // shows up as a device on its own; optionally takes commands back on <base>/<pc>/command/*.
     public class HomeAssistantBridge : IDisposable
     {
         private static readonly ILogger logger = LogManager.GetLogger();
@@ -34,27 +37,33 @@ namespace CouchPilot.HomeAssistant
         private readonly MqttConfig config;
         private readonly LibraryService library;
         private readonly DisplayService displays;
+        private readonly GameControl games;
         private readonly string version;
         private readonly string node;
         private readonly string stateTopic;
         private readonly string availabilityTopic;
+        private readonly string commandTopic;
         private readonly IMqttClient client;
         private readonly CancellationTokenSource cts = new CancellationTokenSource();
         private readonly SemaphoreSlim publishLock = new SemaphoreSlim(1, 1);
         private Timer poll;
         private string lastState;
+        private string lastPresetNames;
 
-        public HomeAssistantBridge(MqttConfig config, LibraryService library, DisplayService displays, string version)
+        public HomeAssistantBridge(MqttConfig config, LibraryService library, DisplayService displays, GameControl games, string version)
         {
             this.config = config;
             this.library = library;
             this.displays = displays;
+            this.games = games;
             this.version = version;
             node = Regex.Replace(Environment.MachineName.ToLowerInvariant(), "[^a-z0-9_]+", "_");
             var baseTopic = string.IsNullOrWhiteSpace(config.BaseTopic) ? "couchpilot" : config.BaseTopic.Trim('/');
             stateTopic = $"{baseTopic}/{node}/state";
             availabilityTopic = $"{baseTopic}/{node}/availability";
+            commandTopic = $"{baseTopic}/{node}/command";
             client = new MqttFactory().CreateMqttClient();
+            client.ApplicationMessageReceivedAsync += OnCommand;
         }
 
         public void Start()
@@ -125,6 +134,14 @@ namespace CouchPilot.HomeAssistant
             {
                 await client.ConnectAsync(builder.Build(), cts.Token);
                 logger.Info($"MQTT: connected to {config.Host}:{config.Port}");
+                if (config.AcceptCommands)
+                {
+                    var subscribe = new MqttClientSubscribeOptionsBuilder()
+                        .WithTopicFilter(f => f.WithTopic($"{commandTopic}/#"))
+                        .Build();
+                    await client.SubscribeAsync(subscribe, cts.Token);
+                }
+                lastPresetNames = null;
                 await PublishDiscovery();
                 await Publish(availabilityTopic, "online", true);
                 lastState = null;
@@ -149,14 +166,21 @@ namespace CouchPilot.HomeAssistant
                 logger.Warn(e, "MQTT: could not read the current state");
                 return;
             }
-            if (json == lastState) return;
+            var presetNames = PresetNames();
+            if (json == lastState && presetNames == lastPresetNames) return;
 
             await publishLock.WaitAsync();
             try
             {
-                if (json == lastState) return;
-                await Publish(stateTopic, json, true);
-                lastState = json;
+                if (presetNames != lastPresetNames)
+                {
+                    await PublishDiscovery();
+                }
+                if (json != lastState)
+                {
+                    await Publish(stateTopic, json, true);
+                    lastState = json;
+                }
             }
             catch (Exception e)
             {
@@ -166,6 +190,51 @@ namespace CouchPilot.HomeAssistant
             {
                 publishLock.Release();
             }
+        }
+
+        private string PresetNames() => string.Join("\n", displays.Snapshot().Presets.Select(p => p.Name));
+
+        private async Task OnCommand(MqttApplicationMessageReceivedEventArgs args)
+        {
+            var topic = args.ApplicationMessage.Topic;
+            if (!config.AcceptCommands || !topic.StartsWith(commandTopic + "/")) return;
+            var command = topic.Substring(commandTopic.Length + 1);
+            var payload = (args.ApplicationMessage.ConvertPayloadToString() ?? "").Trim();
+            logger.Info($"MQTT: command {command} '{payload}'");
+
+            try
+            {
+                var running = library.Running().FirstOrDefault();
+                switch (command)
+                {
+                    case "display_preset":
+                        var presetId = displays.FindPresetId(payload);
+                        if (presetId == null) logger.Warn($"MQTT: no display preset named '{payload}'");
+                        else displays.Apply(presetId, keep: true);
+                        break;
+                    case "close_game":
+                        if (running != null) games.Stop(Guid.Parse(running.Id));
+                        break;
+                    case "focus_game":
+                        if (running != null) games.Focus(Guid.Parse(running.Id));
+                        break;
+                    case "start_game":
+                        var gameId = library.Resolve(payload);
+                        if (gameId == null) logger.Warn($"MQTT: no game matches '{payload}'");
+                        else if (running == null) games.Start(gameId.Value);
+                        break;
+                    default:
+                        logger.Warn($"MQTT: unknown command '{command}'");
+                        break;
+                }
+            }
+            catch (Exception e)
+            {
+                // A Vibepollo stream refusing a preset lands here too: log it and carry on.
+                logger.Warn($"MQTT: command {command} failed: {e.Message}");
+            }
+
+            await PublishStateAsync();
         }
 
         private Dictionary<string, object> BuildState()
@@ -228,6 +297,42 @@ namespace CouchPilot.HomeAssistant
             var streaming = Entity("streaming", "Stream Vibepollo", "mdi:cast", "{{ 'ON' if value_json.get('streaming') else 'OFF' }}");
 
             var prefix = string.IsNullOrWhiteSpace(config.DiscoveryPrefix) ? "homeassistant" : config.DiscoveryPrefix.Trim('/');
+
+            // Commands: a select for the display preset, buttons for the running game.
+            // When commands are off, empty retained configs remove these entities from HA.
+            var selectTopic = $"{prefix}/select/couchpilot_{node}/display_preset_select/config";
+            var closeTopic = $"{prefix}/button/couchpilot_{node}/close_game/config";
+            var focusTopic = $"{prefix}/button/couchpilot_{node}/focus_game/config";
+            if (config.AcceptCommands)
+            {
+                var names = displays.Snapshot().Presets.Select(p => p.Name).ToList();
+                var select = Entity("display_preset_select", "Cambia schermo", "mdi:monitor-multiple",
+                    "{{ value_json.get('preset') or 'Personalizzato' }}");
+                select["command_topic"] = $"{commandTopic}/display_preset";
+                select["options"] = names.Concat(new[] { "Personalizzato" }).Distinct().ToList();
+
+                var close = Entity("close_game", "Chiudi gioco", "mdi:close-box", null);
+                close.Remove("state_topic");
+                close.Remove("value_template");
+                close["command_topic"] = $"{commandTopic}/close_game";
+
+                var focus = Entity("focus_game", "Primo piano", "mdi:open-in-app", null);
+                focus.Remove("state_topic");
+                focus.Remove("value_template");
+                focus["command_topic"] = $"{commandTopic}/focus_game";
+
+                await Publish(selectTopic, Json.Serialize(select), true);
+                await Publish(closeTopic, Json.Serialize(close), true);
+                await Publish(focusTopic, Json.Serialize(focus), true);
+                lastPresetNames = string.Join("\n", names);
+            }
+            else
+            {
+                await Publish(selectTopic, "", true);
+                await Publish(closeTopic, "", true);
+                await Publish(focusTopic, "", true);
+                lastPresetNames = PresetNames();
+            }
             await Publish($"{prefix}/sensor/couchpilot_{node}/game/config", Json.Serialize(game), true);
             await Publish($"{prefix}/binary_sensor/couchpilot_{node}/playing/config", Json.Serialize(playing), true);
             await Publish($"{prefix}/sensor/couchpilot_{node}/display_preset/config", Json.Serialize(preset), true);

@@ -40,6 +40,14 @@ namespace CouchPilot
             password.PasswordChanged += (s, e) => settings.MqttPassword = password.Password;
             mqtt.Children.Add(password);
 
+            var commands = new CheckBox
+            {
+                Content = "Permetti a Home Assistant di comandare il PC (preset schermo, chiudere e avviare giochi)",
+                Margin = new Thickness(0, 14, 0, 0),
+            };
+            commands.SetBinding(ToggleButton.IsCheckedProperty, Bind(nameof(CouchPilotSettings.MqttCommands)));
+            mqtt.Children.Add(commands);
+
             Field("Topic di base", nameof(CouchPilotSettings.MqttBaseTopic), 260, mqtt);
             Field("Prefisso discovery", nameof(CouchPilotSettings.MqttDiscoveryPrefix), 260, mqtt);
             mqtt.Children.Add(new TextBlock

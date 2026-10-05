@@ -30,6 +30,9 @@ namespace CouchPilot
         private string mqttPassword = "";
         public string MqttPassword { get => mqttPassword; set => SetValue(ref mqttPassword, value); }
 
+        private bool mqttCommands;
+        public bool MqttCommands { get => mqttCommands; set => SetValue(ref mqttCommands, value); }
+
         private string mqttBaseTopic = "couchpilot";
         public string MqttBaseTopic { get => mqttBaseTopic; set => SetValue(ref mqttBaseTopic, value); }
 
@@ -48,6 +51,7 @@ namespace CouchPilot
             Password = MqttPassword,
             BaseTopic = MqttBaseTopic,
             DiscoveryPrefix = MqttDiscoveryPrefix,
+            AcceptCommands = MqttCommands,
         };
 
         // Used by the serializer.
@@ -107,7 +111,7 @@ namespace CouchPilot
 
         private bool MqttChanged(CouchPilotSettings before) =>
             MqttEnabled != before.MqttEnabled || MqttHost != before.MqttHost || MqttPort != before.MqttPort
-            || MqttUsername != before.MqttUsername || MqttPassword != before.MqttPassword
+            || MqttCommands != before.MqttCommands || MqttUsername != before.MqttUsername || MqttPassword != before.MqttPassword
             || MqttBaseTopic != before.MqttBaseTopic || MqttDiscoveryPrefix != before.MqttDiscoveryPrefix;
 
         private void CopyFrom(CouchPilotSettings other)
@@ -118,6 +122,7 @@ namespace CouchPilot
             MqttPort = other.MqttPort;
             MqttUsername = other.MqttUsername;
             MqttPassword = other.MqttPassword;
+            MqttCommands = other.MqttCommands;
             MqttBaseTopic = other.MqttBaseTopic;
             MqttDiscoveryPrefix = other.MqttDiscoveryPrefix;
         }

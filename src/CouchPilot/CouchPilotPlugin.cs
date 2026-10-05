@@ -87,7 +87,7 @@ namespace CouchPilot
         {
             if (!Settings.MqttEnabled || string.IsNullOrWhiteSpace(Settings.MqttHost)) return;
             var version = typeof(CouchPilotPlugin).Assembly.GetName().Version.ToString(3);
-            homeAssistant = new HomeAssistantBridge(Settings.Mqtt, library, displays, version);
+            homeAssistant = new HomeAssistantBridge(Settings.Mqtt, library, displays, gameControl, version);
             homeAssistant.Start();
         }
 
