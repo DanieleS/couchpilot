@@ -66,6 +66,8 @@ RSA rather than an elliptic curve key on purpose: .NET Framework, which Playnite
 
 Keep `ca.key` somewhere safe and off the PC (a password manager will do): it's only needed again to sign a new certificate, in five years or if the PC's address changes. `couch.key`, `couch.csr` and `couch.ext` can go once the `.pfx` exists.
 
+Once installed the app lives on the phone: it opens at once even with the PC off (and says so), covers come up from the phone while the library refreshes, and a long press on its icon goes straight to Schermi, Audio or Controllo. After an update of the extension the phone switches to the new version by itself the first time it reaches the PC.
+
 With a certificate set, plain `http://` on that port stops answering, and the installed app lives at the `https://` address. If the certificate can't be loaded (moved, wrong password) the server doesn't start at all and Playnite shows why, rather than quietly going back to HTTP.
 
 ## Audio
