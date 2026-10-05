@@ -15,6 +15,7 @@
     <!-- Playnite ships its own Playnite.SDK.dll: compile against it, never copy it. -->
     <PackageReference Include="PlayniteSDK" Version="6.18.0" ExcludeAssets="runtime" />
     <PackageReference Include="EmbedIO" Version="3.5.2" />
+    <PackageReference Include="MQTTnet" Version="4.3.7.1207" />
     <!-- Lets the project build on machines without the .NET Framework targeting pack. -->
     <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
   </ItemGroup>

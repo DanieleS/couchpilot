@@ -9,6 +9,8 @@ CouchPilot is a Playnite extension that serves a small web app on your local net
 - **Library**: your Playnite games with covers, search, and filters (installed, recent, favourites).
 - **Launch and close**: start a game; close it gracefully (every window is asked to close first, forced only after 10 s); bring it back to the foreground.
 - **Display presets**: save the current monitor layout under a name, apply any saved layout with one tap. If you don't confirm within 15 s the previous layout comes back by itself, so a preset that leaves you with a black screen can't strand you.
+- **Vibepollo-aware**: while Vibepollo streams, its virtual display owns the screens, so presets are locked and the automatic rollback stands down.
+- **Home Assistant (optional)**: publishes the running game, the active display preset and whether a Vibepollo stream is on to an MQTT broker, with discovery, so the PC shows up as a device.
 - **Coming next**: touchpad and keyboard.
 
 ## Install
@@ -19,6 +21,19 @@ CouchPilot is a Playnite extension that serves a small web app on your local net
 4. The first time, Windows Firewall asks whether Playnite may accept connections: allow it on private networks.
 
 The PC and the phone must be on the same network. There is no authentication: don't expose the port to the internet (use a VPN to reach it from outside).
+
+## Home Assistant
+
+Off by default. In the extension settings tick **Pubblica lo stato del PC su Home Assistant** and fill in the MQTT broker (address, port, user, password). With discovery on (the default `homeassistant` prefix) Home Assistant creates a *CouchPilot &lt;PC name&gt;* device with:
+
+| Entity | Type | Value |
+|---|---|---|
+| Gioco | sensor | running game, or `Nessuno`; attributes `game_id`, `source`, `started_at` |
+| In gioco | binary sensor | on while a game runs |
+| Preset schermo | sensor | active display preset, or `Personalizzato` |
+| Stream Vibepollo | binary sensor | on while Vibepollo streams |
+
+Everything is published as one retained JSON document on `couchpilot/<pc>/state`; `couchpilot/<pc>/availability` turns `offline` when Playnite closes or the PC drops off. The password is stored in plain text with the other extension settings.
 
 ## Development
 

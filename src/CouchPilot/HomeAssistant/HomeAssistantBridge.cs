@@ -1,0 +1,247 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text.RegularExpressions;
+using System.Threading;
+using System.Threading.Tasks;
+using CouchPilot.Displays;
+using CouchPilot.Library;
+using MQTTnet;
+using MQTTnet.Client;
+using Playnite.SDK;
+using Swan.Formatters;
+
+namespace CouchPilot.HomeAssistant
+{
+    public class MqttConfig
+    {
+        public string Host { get; set; }
+        public int Port { get; set; }
+        public string Username { get; set; }
+        public string Password { get; set; }
+        public string BaseTopic { get; set; }
+        public string DiscoveryPrefix { get; set; }
+    }
+
+    // Publishes what the PC is doing to an MQTT broker, with Home Assistant discovery so the PC
+    // shows up as a device on its own. Read-only for now: Home Assistant watches, it doesn't drive.
+    public class HomeAssistantBridge : IDisposable
+    {
+        private static readonly ILogger logger = LogManager.GetLogger();
+        private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(3);
+        private static readonly TimeSpan ReconnectDelay = TimeSpan.FromSeconds(10);
+
+        private readonly MqttConfig config;
+        private readonly LibraryService library;
+        private readonly DisplayService displays;
+        private readonly string version;
+        private readonly string node;
+        private readonly string stateTopic;
+        private readonly string availabilityTopic;
+        private readonly IMqttClient client;
+        private readonly CancellationTokenSource cts = new CancellationTokenSource();
+        private readonly SemaphoreSlim publishLock = new SemaphoreSlim(1, 1);
+        private Timer poll;
+        private string lastState;
+
+        public HomeAssistantBridge(MqttConfig config, LibraryService library, DisplayService displays, string version)
+        {
+            this.config = config;
+            this.library = library;
+            this.displays = displays;
+            this.version = version;
+            node = Regex.Replace(Environment.MachineName.ToLowerInvariant(), "[^a-z0-9_]+", "_");
+            var baseTopic = string.IsNullOrWhiteSpace(config.BaseTopic) ? "couchpilot" : config.BaseTopic.Trim('/');
+            stateTopic = $"{baseTopic}/{node}/state";
+            availabilityTopic = $"{baseTopic}/{node}/availability";
+            client = new MqttFactory().CreateMqttClient();
+        }
+
+        public void Start()
+        {
+            _ = KeepConnectedAsync();
+            poll = new Timer(_ => _ = PublishStateAsync(), null, PollInterval, PollInterval);
+        }
+
+        // Push right away instead of waiting for the next poll, e.g. when a game starts.
+        public void Nudge() => _ = PublishStateAsync();
+
+        public void Dispose()
+        {
+            cts.Cancel();
+            poll?.Dispose();
+            try
+            {
+                if (client.IsConnected)
+                {
+                    // A clean disconnect skips the last will, so say goodbye ourselves.
+                    Publish(availabilityTopic, "offline", true).Wait(TimeSpan.FromSeconds(2));
+                    client.DisconnectAsync().Wait(TimeSpan.FromSeconds(2));
+                }
+            }
+            catch (Exception e)
+            {
+                logger.Warn(e, "MQTT: disconnect failed");
+            }
+            client.Dispose();
+        }
+
+        // The broker can be down, restarting, or not there yet when Playnite starts:
+        // check every few seconds and (re)connect whenever we're not connected.
+        private async Task KeepConnectedAsync()
+        {
+            while (!cts.IsCancellationRequested)
+            {
+                if (!client.IsConnected)
+                {
+                    await ConnectAsync();
+                }
+                try
+                {
+                    await Task.Delay(ReconnectDelay, cts.Token);
+                }
+                catch (OperationCanceledException)
+                {
+                    return;
+                }
+            }
+        }
+
+        private async Task ConnectAsync()
+        {
+            var builder = new MqttClientOptionsBuilder()
+                .WithTcpServer(config.Host, config.Port)
+                .WithClientId($"couchpilot-{node}")
+                .WithCleanSession()
+                .WithWillTopic(availabilityTopic)
+                .WithWillPayload("offline")
+                .WithWillRetain(true);
+            if (!string.IsNullOrEmpty(config.Username))
+            {
+                builder = builder.WithCredentials(config.Username, config.Password ?? "");
+            }
+
+            try
+            {
+                await client.ConnectAsync(builder.Build(), cts.Token);
+                logger.Info($"MQTT: connected to {config.Host}:{config.Port}");
+                await PublishDiscovery();
+                await Publish(availabilityTopic, "online", true);
+                lastState = null;
+                await PublishStateAsync();
+            }
+            catch (Exception e) when (!cts.IsCancellationRequested)
+            {
+                logger.Warn($"MQTT: cannot connect to {config.Host}:{config.Port}: {e.Message}");
+            }
+        }
+
+        private async Task PublishStateAsync()
+        {
+            if (!client.IsConnected) return;
+            string json;
+            try
+            {
+                json = Json.Serialize(BuildState());
+            }
+            catch (Exception e)
+            {
+                logger.Warn(e, "MQTT: could not read the current state");
+                return;
+            }
+            if (json == lastState) return;
+
+            await publishLock.WaitAsync();
+            try
+            {
+                if (json == lastState) return;
+                await Publish(stateTopic, json, true);
+                lastState = json;
+            }
+            catch (Exception e)
+            {
+                logger.Warn($"MQTT: publish failed: {e.Message}");
+            }
+            finally
+            {
+                publishLock.Release();
+            }
+        }
+
+        private Dictionary<string, object> BuildState()
+        {
+            var game = library.Running().FirstOrDefault();
+            var screens = displays.Snapshot();
+            var preset = screens.Presets.FirstOrDefault(p => p.Id == screens.ActivePresetId);
+            return new Dictionary<string, object>
+            {
+                ["playing"] = game != null,
+                ["game"] = game?.Name,
+                ["game_id"] = game?.Id,
+                ["source"] = game?.Source,
+                ["started_at"] = game?.StartedAt,
+                ["preset"] = preset?.Name,
+                ["monitors"] = screens.Monitors.Count(m => !m.Virtual),
+                ["streaming"] = screens.StreamActive,
+            };
+        }
+
+        private async Task PublishDiscovery()
+        {
+            var device = new Dictionary<string, object>
+            {
+                ["identifiers"] = new[] { $"couchpilot_{node}" },
+                ["name"] = $"CouchPilot {Environment.MachineName}",
+                ["manufacturer"] = "CouchPilot",
+                ["model"] = "Playnite extension",
+                ["sw_version"] = version,
+            };
+
+            Dictionary<string, object> Entity(string id, string name, string icon, string valueTemplate)
+            {
+                return new Dictionary<string, object>
+                {
+                    ["name"] = name,
+                    ["unique_id"] = $"couchpilot_{node}_{id}",
+                    ["object_id"] = $"couchpilot_{node}_{id}",
+                    ["icon"] = icon,
+                    ["state_topic"] = stateTopic,
+                    ["value_template"] = valueTemplate,
+                    ["availability_topic"] = availabilityTopic,
+                    ["device"] = device,
+                };
+            }
+
+            var game = Entity("game", "Gioco", "mdi:gamepad-variant", "{{ value_json.get('game') or 'Nessuno' }}");
+            game["json_attributes_topic"] = stateTopic;
+            game["json_attributes_template"] =
+                "{{ {'game_id': value_json.get('game_id'), 'source': value_json.get('source'), 'started_at': value_json.get('started_at')} | tojson }}";
+
+            var playing = Entity("playing", "In gioco", "mdi:controller", "{{ 'ON' if value_json.get('playing') else 'OFF' }}");
+            playing["device_class"] = "running";
+
+            var preset = Entity("display_preset", "Preset schermo", "mdi:monitor-multiple",
+                "{{ value_json.get('preset') or 'Personalizzato' }}");
+            preset["json_attributes_topic"] = stateTopic;
+            preset["json_attributes_template"] = "{{ {'monitors': value_json.get('monitors')} | tojson }}";
+
+            var streaming = Entity("streaming", "Stream Vibepollo", "mdi:cast", "{{ 'ON' if value_json.get('streaming') else 'OFF' }}");
+
+            var prefix = string.IsNullOrWhiteSpace(config.DiscoveryPrefix) ? "homeassistant" : config.DiscoveryPrefix.Trim('/');
+            await Publish($"{prefix}/sensor/couchpilot_{node}/game/config", Json.Serialize(game), true);
+            await Publish($"{prefix}/binary_sensor/couchpilot_{node}/playing/config", Json.Serialize(playing), true);
+            await Publish($"{prefix}/sensor/couchpilot_{node}/display_preset/config", Json.Serialize(preset), true);
+            await Publish($"{prefix}/binary_sensor/couchpilot_{node}/streaming/config", Json.Serialize(streaming), true);
+        }
+
+        private Task Publish(string topic, string payload, bool retain)
+        {
+            var message = new MqttApplicationMessageBuilder()
+                .WithTopic(topic)
+                .WithPayload(payload)
+                .WithRetainFlag(retain)
+                .Build();
+            return client.PublishAsync(message, cts.Token);
+        }
+    }
+}

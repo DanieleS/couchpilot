@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using CouchPilot.HomeAssistant;
 using Playnite.SDK;
 using Playnite.SDK.Data;
 
@@ -7,13 +8,47 @@ namespace CouchPilot
     public class CouchPilotSettings : ObservableObject, ISettings
     {
         private readonly CouchPilotPlugin plugin;
-        private int editingPort;
+        private CouchPilotSettings editing;
 
         private int port = 8642;
         public int Port { get => port; set => SetValue(ref port, value); }
 
+        // Home Assistant over MQTT: off unless you turn it on.
+        private bool mqttEnabled;
+        public bool MqttEnabled { get => mqttEnabled; set => SetValue(ref mqttEnabled, value); }
+
+        private string mqttHost = "";
+        public string MqttHost { get => mqttHost; set => SetValue(ref mqttHost, value); }
+
+        private int mqttPort = 1883;
+        public int MqttPort { get => mqttPort; set => SetValue(ref mqttPort, value); }
+
+        private string mqttUsername = "";
+        public string MqttUsername { get => mqttUsername; set => SetValue(ref mqttUsername, value); }
+
+        // Stored in Playnite's extension data folder in plain text, like any other setting.
+        private string mqttPassword = "";
+        public string MqttPassword { get => mqttPassword; set => SetValue(ref mqttPassword, value); }
+
+        private string mqttBaseTopic = "couchpilot";
+        public string MqttBaseTopic { get => mqttBaseTopic; set => SetValue(ref mqttBaseTopic, value); }
+
+        private string mqttDiscoveryPrefix = "homeassistant";
+        public string MqttDiscoveryPrefix { get => mqttDiscoveryPrefix; set => SetValue(ref mqttDiscoveryPrefix, value); }
+
         [DontSerialize]
         public IReadOnlyList<string> Addresses => Server.NetworkInfo.LanUrls(Port);
+
+        [DontSerialize]
+        public MqttConfig Mqtt => new MqttConfig
+        {
+            Host = MqttHost?.Trim(),
+            Port = MqttPort,
+            Username = MqttUsername?.Trim(),
+            Password = MqttPassword,
+            BaseTopic = MqttBaseTopic,
+            DiscoveryPrefix = MqttDiscoveryPrefix,
+        };
 
         // Used by the serializer.
         public CouchPilotSettings() { }
@@ -24,26 +59,31 @@ namespace CouchPilot
             var saved = plugin.LoadPluginSettings<CouchPilotSettings>();
             if (saved != null)
             {
-                Port = saved.Port;
+                CopyFrom(saved);
             }
         }
 
         public void BeginEdit()
         {
-            editingPort = Port;
+            editing = new CouchPilotSettings();
+            editing.CopyFrom(this);
         }
 
         public void CancelEdit()
         {
-            Port = editingPort;
+            CopyFrom(editing);
         }
 
         public void EndEdit()
         {
             plugin.SavePluginSettings(this);
-            if (Port != editingPort)
+            if (Port != editing.Port)
             {
                 plugin.RestartServer();
+            }
+            if (MqttChanged(editing))
+            {
+                plugin.RestartHomeAssistant();
             }
         }
 
@@ -54,7 +94,32 @@ namespace CouchPilot
             {
                 errors.Add("La porta deve essere tra 1024 e 65535.");
             }
+            if (MqttEnabled && string.IsNullOrWhiteSpace(MqttHost))
+            {
+                errors.Add("Per Home Assistant serve l'indirizzo del broker MQTT.");
+            }
+            if (MqttEnabled && (MqttPort < 1 || MqttPort > 65535))
+            {
+                errors.Add("La porta del broker MQTT non è valida.");
+            }
             return errors.Count == 0;
+        }
+
+        private bool MqttChanged(CouchPilotSettings before) =>
+            MqttEnabled != before.MqttEnabled || MqttHost != before.MqttHost || MqttPort != before.MqttPort
+            || MqttUsername != before.MqttUsername || MqttPassword != before.MqttPassword
+            || MqttBaseTopic != before.MqttBaseTopic || MqttDiscoveryPrefix != before.MqttDiscoveryPrefix;
+
+        private void CopyFrom(CouchPilotSettings other)
+        {
+            Port = other.Port;
+            MqttEnabled = other.MqttEnabled;
+            MqttHost = other.MqttHost;
+            MqttPort = other.MqttPort;
+            MqttUsername = other.MqttUsername;
+            MqttPassword = other.MqttPassword;
+            MqttBaseTopic = other.MqttBaseTopic;
+            MqttDiscoveryPrefix = other.MqttDiscoveryPrefix;
         }
     }
 }

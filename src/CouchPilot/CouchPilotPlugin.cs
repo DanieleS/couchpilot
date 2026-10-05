@@ -3,6 +3,7 @@ using System.IO;
 using System.Windows.Controls;
 using CouchPilot.Displays;
 using CouchPilot.Games;
+using CouchPilot.HomeAssistant;
 using CouchPilot.Library;
 using CouchPilot.Server;
 using Playnite.SDK;
@@ -20,6 +21,7 @@ namespace CouchPilot
         private readonly GameControl gameControl;
         private readonly DisplayService displays;
         private RemoteServer server;
+        private HomeAssistantBridge homeAssistant;
 
         public CouchPilotSettings Settings { get; }
 
@@ -39,23 +41,28 @@ namespace CouchPilot
         {
             sessions.SeedFromDatabase(PlayniteApi.Database.Games);
             StartServer();
+            StartHomeAssistant();
         }
 
         public override void OnApplicationStopped(OnApplicationStoppedEventArgs args)
         {
             server?.Dispose();
             server = null;
+            homeAssistant?.Dispose();
+            homeAssistant = null;
             displays.Dispose();
         }
 
         public override void OnGameStarted(OnGameStartedEventArgs args)
         {
             sessions.Started(args.Game, args.StartedProcessId);
+            homeAssistant?.Nudge();
         }
 
         public override void OnGameStopped(OnGameStoppedEventArgs args)
         {
             sessions.Stopped(args.Game);
+            homeAssistant?.Nudge();
         }
 
         public override ISettings GetSettings(bool firstRunSettings) => Settings;
@@ -67,6 +74,21 @@ namespace CouchPilot
             server?.Dispose();
             server = null;
             StartServer();
+        }
+
+        internal void RestartHomeAssistant()
+        {
+            homeAssistant?.Dispose();
+            homeAssistant = null;
+            StartHomeAssistant();
+        }
+
+        private void StartHomeAssistant()
+        {
+            if (!Settings.MqttEnabled || string.IsNullOrWhiteSpace(Settings.MqttHost)) return;
+            var version = typeof(CouchPilotPlugin).Assembly.GetName().Version.ToString(3);
+            homeAssistant = new HomeAssistantBridge(Settings.Mqtt, library, displays, version);
+            homeAssistant.Start();
         }
 
         private void StartServer()

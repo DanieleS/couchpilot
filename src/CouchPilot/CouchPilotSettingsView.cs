@@ -1,36 +1,83 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Data;
 
 namespace CouchPilot
 {
-    // Built in code rather than XAML: one text box doesn't earn a XAML build step.
+    // Built in code rather than XAML: a handful of fields don't earn a XAML build step.
     public class CouchPilotSettingsView : UserControl
     {
+        private readonly CouchPilotSettings settings;
+        private readonly StackPanel panel = new StackPanel { Margin = new Thickness(20) };
+
         public CouchPilotSettingsView(CouchPilotSettings settings)
         {
-            var panel = new StackPanel { Margin = new Thickness(20) };
+            this.settings = settings;
 
-            panel.Children.Add(new TextBlock { Text = "Porta del server", Margin = new Thickness(0, 0, 0, 6) });
-            var port = new TextBox { Width = 120, HorizontalAlignment = HorizontalAlignment.Left };
-            port.SetBinding(TextBox.TextProperty, new Binding(nameof(CouchPilotSettings.Port))
-            {
-                Source = settings,
-                UpdateSourceTrigger = UpdateSourceTrigger.PropertyChanged,
-            });
-            panel.Children.Add(port);
-
-            panel.Children.Add(new TextBlock
-            {
-                Text = "Apri uno di questi indirizzi dal telefono (stessa rete):",
-                Margin = new Thickness(0, 20, 0, 6),
-            });
+            Heading("Telefono");
+            Field("Porta del server", nameof(CouchPilotSettings.Port), 120);
+            Hint("Apri uno di questi indirizzi dal telefono (stessa rete):");
             foreach (var url in settings.Addresses)
             {
                 panel.Children.Add(new TextBox { Text = url, IsReadOnly = true, BorderThickness = new Thickness(0), Background = null });
             }
 
-            Content = panel;
+            Heading("Home Assistant (MQTT)");
+            var enabled = new CheckBox { Content = "Pubblica lo stato del PC su Home Assistant", Margin = new Thickness(0, 0, 0, 10) };
+            enabled.SetBinding(ToggleButton.IsCheckedProperty, Bind(nameof(CouchPilotSettings.MqttEnabled)));
+            panel.Children.Add(enabled);
+
+            var mqtt = new StackPanel();
+            mqtt.SetBinding(IsEnabledProperty, Bind(nameof(CouchPilotSettings.MqttEnabled)));
+            panel.Children.Add(mqtt);
+            Field("Broker (indirizzo)", nameof(CouchPilotSettings.MqttHost), 260, mqtt);
+            Field("Porta", nameof(CouchPilotSettings.MqttPort), 120, mqtt);
+            Field("Utente", nameof(CouchPilotSettings.MqttUsername), 260, mqtt);
+
+            mqtt.Children.Add(new TextBlock { Text = "Password", Margin = new Thickness(0, 8, 0, 4) });
+            var password = new PasswordBox { Width = 260, HorizontalAlignment = HorizontalAlignment.Left, Password = settings.MqttPassword ?? "" };
+            password.PasswordChanged += (s, e) => settings.MqttPassword = password.Password;
+            mqtt.Children.Add(password);
+
+            Field("Topic di base", nameof(CouchPilotSettings.MqttBaseTopic), 260, mqtt);
+            Field("Prefisso discovery", nameof(CouchPilotSettings.MqttDiscoveryPrefix), 260, mqtt);
+            mqtt.Children.Add(new TextBlock
+            {
+                Text = "Il PC compare in Home Assistant come dispositivo con gioco in esecuzione, preset schermo e stream Vibepollo.",
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 10, 0, 0),
+                Opacity = 0.7,
+            });
+
+            Content = new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+        }
+
+        private Binding Bind(string path) => new Binding(path) { Source = settings, UpdateSourceTrigger = UpdateSourceTrigger.PropertyChanged };
+
+        private void Heading(string text)
+        {
+            panel.Children.Add(new TextBlock
+            {
+                Text = text,
+                FontSize = 16,
+                FontWeight = FontWeights.SemiBold,
+                Margin = new Thickness(0, panel.Children.Count == 0 ? 0 : 24, 0, 8),
+            });
+        }
+
+        private void Hint(string text)
+        {
+            panel.Children.Add(new TextBlock { Text = text, Margin = new Thickness(0, 12, 0, 4) });
+        }
+
+        private void Field(string label, string path, double width, Panel into = null)
+        {
+            into = into ?? panel;
+            into.Children.Add(new TextBlock { Text = label, Margin = new Thickness(0, 8, 0, 4) });
+            var box = new TextBox { Width = width, HorizontalAlignment = HorizontalAlignment.Left };
+            box.SetBinding(TextBox.TextProperty, Bind(path));
+            into.Children.Add(box);
         }
     }
 }
