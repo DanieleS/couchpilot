@@ -1,38 +1,45 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { useAudio } from '../audio'
+import { useAudio, type MixerChannel } from '../audio'
+import type { AudioFlow } from '../protocol'
 import { useCouchPilot } from '../store'
-import type { AudioEndpoint } from '../types'
 import AppIcon from './AppIcon.vue'
 import AudioAppRow from './AudioAppRow.vue'
 import AudioDeviceSheet from './AudioDeviceSheet.vue'
+import AudioGameCard from './AudioGameCard.vue'
 import LevelMeter from './LevelMeter.vue'
 import PcChip from './PcChip.vue'
 import VolumeSlider from './VolumeSlider.vue'
 import { deviceIcon } from './deviceIcon'
 
 const { status } = useCouchPilot()
-const { state, failed, set, setDefault } = useAudio()
+const { state, levelOf, set, setDefault } = useAudio()
+
+const channel = (role: MixerChannel['role']) => computed(() => state.value?.channels.find((c) => c.role === role) ?? null)
+const output = channel('output')
+const input = channel('input')
+const outputDevice = computed(() => state.value?.outputs.find((d) => d.isDefault) ?? null)
+const games = computed(() => state.value?.channels.filter((c) => c.role === 'game') ?? [])
+const apps = computed(() => state.value?.channels.filter((c) => c.role === 'app' || c.role === 'system') ?? [])
 
 const sheetOpen = ref(false)
-const sheetFlow = ref<'output' | 'input'>('output')
-const choose = (flow: 'output' | 'input') => {
+const sheetFlow = ref<AudioFlow>('output')
+const choose = (flow: AudioFlow) => {
   sheetFlow.value = flow
   sheetOpen.value = true
 }
 
 // Dragging a muted device's slider unmutes it, as in Windows.
-const endpointVolume = (e: () => AudioEndpoint | null | undefined) =>
+const endpointVolume = (c: () => MixerChannel | null) =>
   computed({
-    get: () => e()?.volume ?? 0,
+    get: () => c()?.volume ?? 0,
     set: (v) => {
-      const d = e()
-      if (d) set({ kind: 'device', id: d.id }, d.muted ? { volume: v, muted: false } : { volume: v })
+      const d = c()
+      if (d) set(d, d.muted ? { volume: v, muted: false } : { volume: v })
     },
   })
-const outputVolume = endpointVolume(() => state.value?.output)
-const inputVolume = endpointVolume(() => state.value?.input)
-const toggleMute = (d: AudioEndpoint) => set({ kind: 'device', id: d.id }, { muted: !d.muted })
+const outputVolume = endpointVolume(() => output.value)
+const inputVolume = endpointVolume(() => input.value)
 </script>
 
 <template>
@@ -42,8 +49,8 @@ const toggleMute = (d: AudioEndpoint) => set({ kind: 'device', id: d.id }, { mut
       <PcChip :name="status?.pc ?? null" />
     </header>
 
-    <div v-if="!state && failed" class="empty">
-      <p class="empty-title">Non riesco a leggere l'audio del PC</p>
+    <div v-if="!state && !status" class="empty">
+      <p class="empty-title">Mi collego al PC…</p>
       <p class="muted">Il PC e il telefono devono essere sulla stessa rete.</p>
     </div>
     <div v-else-if="!state" class="skeleton" />
@@ -51,66 +58,73 @@ const toggleMute = (d: AudioEndpoint) => set({ kind: 'device', id: d.id }, { mut
     <template v-else>
       <section class="output">
         <button class="device card" @click="choose('output')">
-          <span class="ico"><AppIcon :name="state.output ? deviceIcon(state.output.kind) : 'speaker-off'" :size="18" /></span>
+          <span class="ico"><AppIcon :name="outputDevice ? deviceIcon(outputDevice.kind) : 'speaker-off'" :size="18" /></span>
           <span class="text">
             <span class="label">Uscita</span>
-            <span class="name truncate">{{ state.output?.name ?? 'Nessuna uscita attiva' }}</span>
+            <span class="name truncate">{{ outputDevice?.name ?? 'Nessuna uscita attiva' }}</span>
           </span>
           <span class="change">Cambia</span>
         </button>
 
-        <div v-if="state.output" class="master card">
+        <div v-if="output" class="master card">
           <div class="master-top">
             <span class="label-strong">Volume generale</span>
-            <span class="big-number tabular" :class="{ off: state.output.muted }">{{ state.output.muted ? 'Muto' : state.output.volume }}</span>
+            <span class="big-number tabular" :class="{ off: output.muted }">{{ output.muted ? 'Muto' : output.volume }}</span>
           </div>
           <div class="row">
-            <VolumeSlider v-model="outputVolume" big label="Volume generale" :muted="state.output.muted" />
+            <VolumeSlider v-model="outputVolume" big label="Volume generale" :muted="output.muted" />
             <button
               class="icon-btn mute"
-              :class="{ on: state.output.muted }"
-              :aria-label="state.output.muted ? 'Riattiva l\'audio' : 'Silenzia tutto'"
-              :aria-pressed="state.output.muted"
-              @click="toggleMute(state.output)"
+              :class="{ on: output.muted }"
+              :aria-label="output.muted ? 'Riattiva l\'audio' : 'Silenzia tutto'"
+              :aria-pressed="output.muted"
+              @click="set(output, { muted: !output.muted })"
             >
-              <AppIcon :name="state.output.muted ? 'speaker-off' : 'speaker'" :size="18" />
+              <AppIcon :name="output.muted ? 'speaker-off' : 'speaker'" :size="18" />
             </button>
           </div>
-          <LevelMeter :peak="state.output.muted ? 0 : state.output.peak" />
+          <LevelMeter :level="levelOf(output)" />
         </div>
       </section>
 
-      <template v-if="state.output">
+      <template v-if="output">
         <p class="eyebrow">Mixer</p>
-        <p v-if="state.apps.length === 0" class="muted hint">Nessuna app sta usando l'audio adesso.</p>
+        <AudioGameCard v-for="g in games" :key="g.stableKey" class="game" :channel="g" :level="levelOf(g)" @change="set(g, $event)" />
+        <p v-if="apps.length === 0 && games.length === 0" class="muted hint">Nessuna app sta usando l'audio adesso.</p>
         <TransitionGroup v-else tag="ul" name="list" class="apps">
-          <AudioAppRow v-for="a in state.apps" :key="a.id" :app="a" @change="set({ kind: 'app', id: a.id }, $event)" />
+          <AudioAppRow v-for="a in apps" :key="a.stableKey" :app="a" :level="levelOf(a)" @change="set(a, $event)" />
         </TransitionGroup>
       </template>
 
       <p class="eyebrow">Ingresso</p>
       <div class="card mic">
         <button class="mic-head" @click="choose('input')">
-          <span class="ico small"><AppIcon :name="state.input?.muted ? 'mic-off' : 'mic'" :size="15" /></span>
-          <span class="name truncate">{{ state.input?.name ?? 'Nessun microfono attivo' }}</span>
+          <span class="ico small"><AppIcon :name="input?.muted ? 'mic-off' : 'mic'" :size="15" /></span>
+          <span class="name truncate">{{ input?.name ?? 'Nessun microfono attivo' }}</span>
           <span class="change">Cambia</span>
         </button>
-        <div v-if="state.input" class="row">
-          <VolumeSlider v-model="inputVolume" label="Volume del microfono" :muted="state.input.muted" />
-          <span class="pct tabular">{{ state.input.volume }}</span>
+        <div v-if="input" class="row">
+          <VolumeSlider v-model="inputVolume" label="Volume del microfono" :muted="input.muted" />
+          <span class="pct tabular">{{ input.volume }}</span>
           <button
             class="icon-btn mute"
-            :class="{ on: state.input.muted }"
-            :aria-label="state.input.muted ? 'Riattiva il microfono' : 'Silenzia il microfono'"
-            :aria-pressed="state.input.muted"
-            @click="toggleMute(state.input)"
+            :class="{ on: input.muted }"
+            :aria-label="input.muted ? 'Riattiva il microfono' : 'Silenzia il microfono'"
+            :aria-pressed="input.muted"
+            @click="set(input, { muted: !input.muted })"
           >
-            <AppIcon :name="state.input.muted ? 'mic-off' : 'mic'" :size="16" />
+            <AppIcon :name="input.muted ? 'mic-off' : 'mic'" :size="16" />
           </button>
         </div>
       </div>
 
-      <AudioDeviceSheet v-model:open="sheetOpen" v-model:flow="sheetFlow" :state="state" @select="setDefault" />
+      <AudioDeviceSheet
+        v-model:open="sheetOpen"
+        v-model:flow="sheetFlow"
+        :outputs="state.outputs"
+        :inputs="state.inputs"
+        @select="setDefault"
+      />
     </template>
   </div>
 </template>
@@ -136,6 +150,7 @@ const toggleMute = (d: AudioEndpoint) => set({ kind: 'device', id: d.id }, { mut
 .mute.on { background: var(--danger); color: #fff; }
 .pct { inline-size: 1.75rem; text-align: right; font-size: 0.75rem; font-weight: 750; }
 
+.game { margin-bottom: 6px; }
 .apps { display: grid; gap: 6px; }
 .list-move, .list-enter-active, .list-leave-active { transition: transform 200ms var(--ease-out-3), opacity 200ms; }
 .list-enter-from, .list-leave-to { opacity: 0; }

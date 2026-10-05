@@ -1,17 +1,18 @@
 <script setup lang="ts">
-import type { AudioState } from '../types'
+import { computed } from 'vue'
+import type { AudioDevice, AudioFlow } from '../protocol'
 import AppIcon from './AppIcon.vue'
 import BottomSheet from './BottomSheet.vue'
 import { deviceIcon } from './deviceIcon'
 
-const props = defineProps<{ state: AudioState }>()
-const emit = defineEmits<{ select: [id: string] }>()
+const props = defineProps<{ outputs: AudioDevice[]; inputs: AudioDevice[] }>()
+const emit = defineEmits<{ select: [flow: AudioFlow, index: number] }>()
 const open = defineModel<boolean>('open', { required: true })
-const flow = defineModel<'output' | 'input'>('flow', { required: true })
+const flow = defineModel<AudioFlow>('flow', { required: true })
 
-const pick = (id: string) => {
-  const current = flow.value === 'output' ? props.state.output : props.state.input
-  if (id !== current?.id) emit('select', id)
+const devices = computed(() => (flow.value === 'output' ? props.outputs : props.inputs))
+const pick = (d: AudioDevice) => {
+  if (!d.isDefault) emit('select', flow.value, d.index)
   open.value = false
 }
 </script>
@@ -24,22 +25,18 @@ const pick = (id: string) => {
       <button role="tab" :aria-selected="flow === 'input'" :class="{ on: flow === 'input' }" @click="flow = 'input'">Ingresso</button>
     </div>
     <ul class="list">
-      <li v-for="d in flow === 'output' ? state.outputs : state.inputs" :key="d.id">
-        <button
-          class="device"
-          :class="{ on: d.id === (flow === 'output' ? state.output : state.input)?.id }"
-          @click="pick(d.id)"
-        >
+      <li v-for="d in devices" :key="d.index">
+        <button class="device" :class="{ on: d.isDefault }" @click="pick(d)">
           <span class="ico"><AppIcon :name="deviceIcon(d.kind)" :size="18" /></span>
           <span class="text">
             <span class="name truncate">{{ d.name }}</span>
             <span v-if="d.detail" class="detail truncate">{{ d.detail }}</span>
           </span>
-          <AppIcon v-if="d.id === (flow === 'output' ? state.output : state.input)?.id" name="check" :size="18" class="check" />
+          <AppIcon v-if="d.isDefault" name="check" :size="18" class="check" />
         </button>
       </li>
     </ul>
-    <p v-if="(flow === 'output' ? state.outputs : state.inputs).length === 0" class="muted empty">
+    <p v-if="devices.length === 0" class="muted empty">
       {{ flow === 'output' ? 'Nessuna uscita audio attiva sul PC.' : 'Nessun microfono attivo sul PC.' }}
     </p>
     <p class="muted note">

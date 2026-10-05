@@ -10,60 +10,29 @@ using System.Security.Cryptography;
 using System.Text;
 using CouchPilot.Games;
 using CouchPilot.Native;
+using Playnite.SDK;
 using Playnite.SDK.Models;
+using static CouchPilot.Audio.AudioProtocol;
 using static CouchPilot.Native.CoreAudio;
 
 namespace CouchPilot.Audio
 {
-    public class AudioDeviceDto
-    {
-        public string Id { get; set; }
-        public string Name { get; set; }
-        // The adapter it hangs off ("NVIDIA High Definition Audio"), to tell twin names apart.
-        public string Detail { get; set; }
-        // speakers | headphones | display | mic
-        public string Kind { get; set; }
-    }
-
-    public class AudioEndpointDto : AudioDeviceDto
-    {
-        public int Volume { get; set; }
-        public bool Muted { get; set; }
-        public double Peak { get; set; }
-    }
-
-    public class AudioAppDto
-    {
-        public string Id { get; set; }
-        public string Name { get; set; }
-        public int Volume { get; set; }
-        public bool Muted { get; set; }
-        public double Peak { get; set; }
-        public bool System { get; set; }
-        // Set when the app is a game Playnite launched.
-        public string GameId { get; set; }
-        public bool HasIcon { get; set; }
-    }
-
-    public class AudioStateDto
-    {
-        public AudioEndpointDto Output { get; set; }
-        public AudioEndpointDto Input { get; set; }
-        public List<AudioDeviceDto> Outputs { get; set; }
-        public List<AudioDeviceDto> Inputs { get; set; }
-        public List<AudioAppDto> Apps { get; set; }
-    }
-
-    // The PC's sound, the way Windows' volume mixer sees it: the default output and input,
-    // their volume, and one entry per app playing on the default output. Apps are grouped
-    // by executable, so a browser's many sessions are one slider, as in Windows.
+    // The PC's sound, the way Windows' volume mixer sees it: the default output and input, and
+    // one channel per app playing on the default output. Apps are grouped by executable, so a
+    // browser's many sessions are one slider, as in Windows.
+    //
+    // Two speeds: Rescan enumerates devices and sessions (once a second is plenty), Refresh
+    // re-reads volume, mute and level of the channels already found (cheap, many times a second).
     public class AudioService
     {
-        public const string SystemSoundsId = "system";
+        private static readonly ILogger logger = LogManager.GetLogger();
         private static readonly TimeSpan GamePidsMaxAge = TimeSpan.FromSeconds(3);
+        private const string SystemSoundsKey = "system";
 
         private readonly GameControl games;
         private readonly object gate = new object();
+        private AudioModel model = new AudioModel();
+        private string shape = "";
         private Dictionary<int, Game> gamePids = new Dictionary<int, Game>();
         private DateTime gamePidsAt = DateTime.MinValue;
         private readonly Dictionary<string, string> appPaths = new Dictionary<string, string>();
@@ -74,75 +43,103 @@ namespace CouchPilot.Audio
             this.games = games;
         }
 
-        public AudioStateDto Snapshot()
+        // Set when a read failed (a device unplugged, a session gone): the next tick should rescan.
+        public bool Stale { get; private set; }
+
+        // Reads everything again. True when the channel list changed shape: then the generation
+        // moved on, and the phone needs a new STATE.
+        public bool Rescan()
         {
             lock (gate)
             {
-                var enumerator = CreateEnumerator();
-                var output = DefaultDevice(enumerator, EDataFlow.Render);
-                var input = DefaultDevice(enumerator, EDataFlow.Capture);
-                return new AudioStateDto
+                AudioModel next;
+                try
                 {
-                    Output = output == null ? null : Endpoint(output, EDataFlow.Render),
-                    Input = input == null ? null : Endpoint(input, EDataFlow.Capture),
-                    Outputs = Devices(enumerator, EDataFlow.Render).Select(d => Describe(d, EDataFlow.Render)).ToList(),
-                    Inputs = Devices(enumerator, EDataFlow.Capture).Select(d => Describe(d, EDataFlow.Capture)).ToList(),
-                    Apps = output == null ? new List<AudioAppDto>() : Apps(output),
-                };
-            }
-        }
-
-        // Makes an output or input the Windows default; false if no such active device.
-        public bool SetDefault(string deviceId)
-        {
-            lock (gate)
-            {
-                if (FindDevice(deviceId) == null) return false;
-                SetDefaultEndpoint(deviceId);
-                return true;
-            }
-        }
-
-        public bool SetDevice(string deviceId, double? volume, bool? muted)
-        {
-            lock (gate)
-            {
-                var device = FindDevice(deviceId);
-                if (device == null) return false;
-                var endpoint = Activate<IAudioEndpointVolume>(device, IID_IAudioEndpointVolume);
-                var context = Guid.Empty;
-                if (volume.HasValue) Marshal.ThrowExceptionForHR(endpoint.SetMasterVolumeLevelScalar(Level(volume.Value), ref context));
-                if (muted.HasValue) Marshal.ThrowExceptionForHR(endpoint.SetMute(muted.Value, ref context));
-                return true;
-            }
-        }
-
-        public bool SetApp(string appId, double? volume, bool? muted)
-        {
-            lock (gate)
-            {
-                var output = DefaultDevice(CreateEnumerator(), EDataFlow.Render);
-                if (output == null) return false;
-                var found = false;
-                foreach (var session in Sessions(output).Where(s => s.AppId == appId))
-                {
-                    var simple = (ISimpleAudioVolume)session.Control;
-                    var context = Guid.Empty;
-                    if (volume.HasValue) Marshal.ThrowExceptionForHR(simple.SetMasterVolume(Level(volume.Value), ref context));
-                    if (muted.HasValue) Marshal.ThrowExceptionForHR(simple.SetMute(muted.Value, ref context));
-                    found = true;
+                    next = Build();
                 }
-                return found;
+                catch (Exception e)
+                {
+                    logger.Warn(e, "Reading the PC's audio failed");
+                    Stale = true;
+                    return false;
+                }
+                Stale = false;
+                var nextShape = Shape(next);
+                var changed = nextShape != shape;
+                next.Generation = changed ? unchecked((byte)(model.Generation + 1)) : model.Generation;
+                model = next;
+                shape = nextShape;
+                return changed;
+            }
+        }
+
+        public void Refresh()
+        {
+            lock (gate)
+            {
+                foreach (var c in model.Channels)
+                {
+                    try { Read(c); } catch { Stale = true; }
+                }
+            }
+        }
+
+        public byte[] State() { lock (gate) return AudioProtocol.State(model); }
+
+        public byte[] Volumes() { lock (gate) return AudioProtocol.Volumes(model); }
+
+        public byte[] Levels() { lock (gate) return AudioProtocol.Levels(model); }
+
+        // A command from the phone (VOLUME, MUTE, DEFAULT). Commands for an older generation, or
+        // naming a channel or device that isn't there, are dropped: the phone will get the
+        // current STATE soon enough. True when the devices changed and a rescan is due.
+        public bool Handle(byte[] m)
+        {
+            lock (gate)
+            {
+                if (m.Length < 4 || m[1] != model.Generation) return false;
+                switch (m[0])
+                {
+                    case OpSetVolume:
+                    {
+                        if (m[2] >= model.Channels.Count) return false;
+                        var c = model.Channels[m[2]];
+                        var level = Math.Min(m[3], (byte)100) / 100f;
+                        var context = Guid.Empty;
+                        if (c.Endpoint != null) c.Endpoint.SetMasterVolumeLevelScalar(level, ref context);
+                        foreach (var s in c.Sessions) s.SetMasterVolume(level, ref context);
+                        return false;
+                    }
+                    case OpSetMute:
+                    {
+                        if (m[2] >= model.Channels.Count) return false;
+                        var c = model.Channels[m[2]];
+                        var muted = m[3] != 0;
+                        var context = Guid.Empty;
+                        if (c.Endpoint != null) c.Endpoint.SetMute(muted, ref context);
+                        foreach (var s in c.Sessions) s.SetMute(muted, ref context);
+                        return false;
+                    }
+                    case OpSetDefault:
+                    {
+                        var list = m[2] == FlowOutput ? model.Outputs : m[2] == FlowInput ? model.Inputs : null;
+                        if (list == null || m[3] >= list.Count) return false;
+                        SetDefaultEndpoint(list[m[3]].Id);
+                        return true;
+                    }
+                    default:
+                        return false;
+                }
             }
         }
 
         // The app's executable icon as PNG, or null when there is none to show.
-        public byte[] AppIcon(string appId)
+        public byte[] AppIcon(string key)
         {
             lock (gate)
             {
-                if (icons.TryGetValue(appId, out var cached)) return cached;
-                if (!appPaths.TryGetValue(appId, out var path)) return null;
+                if (icons.TryGetValue(key, out var cached)) return cached;
+                if (!appPaths.TryGetValue(key, out var path)) return null;
                 byte[] png = null;
                 try
                 {
@@ -158,50 +155,108 @@ namespace CouchPilot.Audio
                     }
                 }
                 catch { }
-                icons[appId] = png;
+                icons[key] = png;
                 return png;
             }
         }
 
-        private List<AudioAppDto> Apps(IMMDevice output)
+        private AudioModel Build()
+        {
+            var enumerator = CreateEnumerator();
+            var output = DefaultDevice(enumerator, EDataFlow.Render);
+            var input = DefaultDevice(enumerator, EDataFlow.Capture);
+            var next = new AudioModel
+            {
+                Outputs = Devices(enumerator, EDataFlow.Render, output),
+                Inputs = Devices(enumerator, EDataFlow.Capture, input),
+            };
+            if (output != null) next.Channels.Add(EndpointChannel(output, EDataFlow.Render));
+            if (input != null) next.Channels.Add(EndpointChannel(input, EDataFlow.Capture));
+            if (output != null) next.Channels.AddRange(AppChannels(output).Take(MaxItems - next.Channels.Count));
+            foreach (var c in next.Channels)
+            {
+                try { Read(c); } catch { }
+            }
+            return next;
+        }
+
+        private static AudioModel.Channel EndpointChannel(IMMDevice device, EDataFlow flow) => new AudioModel.Channel
+        {
+            Role = flow == EDataFlow.Render ? RoleOutput : RoleInput,
+            Name = Describe(device, flow).Name,
+            Endpoint = Activate<IAudioEndpointVolume>(device, IID_IAudioEndpointVolume),
+            EndpointMeter = Activate<IAudioMeterInformation>(device, IID_IAudioMeterInformation),
+        };
+
+        private IEnumerable<AudioModel.Channel> AppChannels(IMMDevice output)
         {
             var running = GamePids();
-            var apps = new Dictionary<string, AudioAppDto>();
+            var apps = new Dictionary<string, AudioModel.Channel>();
             foreach (var session in Sessions(output))
             {
-                var simple = (ISimpleAudioVolume)session.Control;
-                simple.GetMasterVolume(out var level);
-                simple.GetMute(out var muted);
-                var peak = Peak((IAudioMeterInformation)session.Control);
-
-                if (apps.TryGetValue(session.AppId, out var app))
+                if (!apps.TryGetValue(session.Key, out var app))
                 {
-                    // Several sessions of one app: show the loudest, and muted only if all are.
-                    app.Peak = Math.Max(app.Peak, peak);
-                    app.Muted &= muted;
-                    continue;
+                    running.TryGetValue(session.Pid, out var game);
+                    if (session.Path != null) appPaths[session.Key] = session.Path;
+                    app = new AudioModel.Channel
+                    {
+                        Role = game != null ? RoleGame : session.System ? RoleSystem : RoleApp,
+                        Name = game?.Name ?? AppName(session),
+                        Key = session.Key,
+                        GameId = game?.Id ?? Guid.Empty,
+                        HasIcon = session.Path != null,
+                    };
+                    apps[session.Key] = app;
                 }
-
-                running.TryGetValue(session.Pid, out var game);
-                if (session.Path != null) appPaths[session.AppId] = session.Path;
-                apps[session.AppId] = new AudioAppDto
-                {
-                    Id = session.AppId,
-                    Name = game?.Name ?? AppName(session),
-                    Volume = Percent(level),
-                    Muted = muted,
-                    Peak = peak,
-                    System = session.System,
-                    GameId = game?.Id.ToString(),
-                    HasIcon = session.Path != null,
-                };
+                app.Sessions.Add((ISimpleAudioVolume)session.Control);
+                app.SessionMeters.Add((IAudioMeterInformation)session.Control);
             }
 
             // The game first, since that's what you came to adjust; system sounds last.
             return apps.Values
-                .OrderBy(a => a.GameId != null ? 0 : a.System ? 2 : 1)
-                .ThenBy(a => a.Name, StringComparer.CurrentCultureIgnoreCase)
-                .ToList();
+                .OrderBy(a => a.Role == RoleGame ? 0 : a.Role == RoleSystem ? 2 : 1)
+                .ThenBy(a => a.Name, StringComparer.CurrentCultureIgnoreCase);
+        }
+
+        private static void Read(AudioModel.Channel c)
+        {
+            if (c.Endpoint != null)
+            {
+                c.Endpoint.GetMasterVolumeLevelScalar(out var level);
+                c.Endpoint.GetMute(out var muted);
+                c.Volume = Percent(level);
+                c.Muted = muted;
+                c.Peak = Peak(c.EndpointMeter);
+                return;
+            }
+            // Several sessions of one app: the first one's volume, muted only if all are, the loudest level.
+            var first = true;
+            var allMuted = true;
+            double peak = 0;
+            foreach (var s in c.Sessions)
+            {
+                s.GetMute(out var muted);
+                allMuted &= muted;
+                if (first)
+                {
+                    s.GetMasterVolume(out var level);
+                    c.Volume = Percent(level);
+                    first = false;
+                }
+            }
+            foreach (var meter in c.SessionMeters) peak = Math.Max(peak, Peak(meter));
+            c.Muted = allMuted;
+            c.Peak = peak;
+        }
+
+        // What decides whether the phone needs a new STATE: anything in it but volumes and levels.
+        private static string Shape(AudioModel m)
+        {
+            var text = new StringBuilder();
+            foreach (var d in m.Outputs.Concat(m.Inputs)) text.Append($"{d.Id}|{d.Name}|{d.Detail}|{d.Kind}|{d.Default}\n");
+            text.Append("--\n");
+            foreach (var c in m.Channels) text.Append($"{c.Role}|{c.Key}|{c.Name}|{c.HasIcon}|{c.GameId}\n");
+            return text.ToString();
         }
 
         private class SessionEntry
@@ -211,7 +266,7 @@ namespace CouchPilot.Audio
             public bool System;
             public string Path;
             public string DisplayName;
-            public string AppId;
+            public string Key;
         }
 
         private static IEnumerable<SessionEntry> Sessions(IMMDevice device)
@@ -240,7 +295,7 @@ namespace CouchPilot.Audio
                     System = system,
                     Path = path,
                     DisplayName = displayName,
-                    AppId = system ? SystemSoundsId : path != null ? "app-" + Hash(path.ToLowerInvariant()) : "pid-" + pid,
+                    Key = system ? SystemSoundsKey : path != null ? "app-" + Hash(path.ToLowerInvariant()) : "pid-" + pid,
                 };
             }
         }
@@ -262,7 +317,7 @@ namespace CouchPilot.Audio
 
         private Dictionary<int, Game> GamePids()
         {
-            // Finding a game's processes walks every process on the PC: not on every poll.
+            // Finding a game's processes walks every process on the PC: not on every rescan.
             if (DateTime.UtcNow - gamePidsAt > GamePidsMaxAge)
             {
                 try { gamePids = games.RunningProcesses(); } catch { gamePids = new Dictionary<int, Game>(); }
@@ -271,25 +326,7 @@ namespace CouchPilot.Audio
             return gamePids;
         }
 
-        private static AudioEndpointDto Endpoint(IMMDevice device, EDataFlow flow)
-        {
-            var info = Describe(device, flow);
-            var endpoint = Activate<IAudioEndpointVolume>(device, IID_IAudioEndpointVolume);
-            endpoint.GetMasterVolumeLevelScalar(out var level);
-            endpoint.GetMute(out var muted);
-            return new AudioEndpointDto
-            {
-                Id = info.Id,
-                Name = info.Name,
-                Detail = info.Detail,
-                Kind = info.Kind,
-                Volume = Percent(level),
-                Muted = muted,
-                Peak = Peak(Activate<IAudioMeterInformation>(device, IID_IAudioMeterInformation)),
-            };
-        }
-
-        private static AudioDeviceDto Describe(IMMDevice device, EDataFlow flow)
+        private static AudioModel.Device Describe(IMMDevice device, EDataFlow flow)
         {
             device.GetId(out var id);
             string name = null, detail = null;
@@ -301,7 +338,7 @@ namespace CouchPilot.Audio
                 formFactor = GetUInt(store, PKEY_AudioEndpoint_FormFactor);
                 if (string.IsNullOrWhiteSpace(name)) name = GetString(store, PKEY_Device_FriendlyName);
             }
-            return new AudioDeviceDto
+            return new AudioModel.Device
             {
                 Id = id,
                 Name = string.IsNullOrWhiteSpace(name) ? "Dispositivo audio" : name,
@@ -310,51 +347,41 @@ namespace CouchPilot.Audio
             };
         }
 
-        private static string Kind(uint? formFactor, EDataFlow flow)
+        private static byte Kind(uint? formFactor, EDataFlow flow)
         {
             switch (formFactor)
             {
                 case FormFactorHeadphones:
-                case FormFactorHeadset: return "headphones";
-                case FormFactorDigitalDisplay: return "display";
-                case FormFactorMicrophone: return "mic";
-                default: return flow == EDataFlow.Capture ? "mic" : "speakers";
+                case FormFactorHeadset: return KindHeadphones;
+                case FormFactorDigitalDisplay: return KindDisplay;
+                case FormFactorMicrophone: return KindMic;
+                default: return flow == EDataFlow.Capture ? KindMic : KindSpeakers;
             }
         }
 
         private static IMMDevice DefaultDevice(IMMDeviceEnumerator enumerator, EDataFlow flow) =>
             enumerator.GetDefaultAudioEndpoint(flow, ERole.Multimedia, out var device) == 0 ? device : null;
 
-        private static List<IMMDevice> Devices(IMMDeviceEnumerator enumerator, EDataFlow flow)
+        private static List<AudioModel.Device> Devices(IMMDeviceEnumerator enumerator, EDataFlow flow, IMMDevice current)
         {
-            var result = new List<IMMDevice>();
+            var result = new List<AudioModel.Device>();
+            string currentId = null;
+            current?.GetId(out currentId);
             if (enumerator.EnumAudioEndpoints(flow, DEVICE_STATE_ACTIVE, out var collection) != 0) return result;
             collection.GetCount(out var count);
-            for (var i = 0; i < count; i++)
+            for (var i = 0; i < count && result.Count < MaxItems; i++)
             {
-                if (collection.Item(i, out var device) == 0) result.Add(device);
+                if (collection.Item(i, out var device) != 0) continue;
+                var d = Describe(device, flow);
+                d.Default = d.Id == currentId;
+                result.Add(d);
             }
             return result;
         }
 
-        // Only active devices: a stale id from the phone must not resurrect an unplugged one.
-        private static IMMDevice FindDevice(string deviceId)
-        {
-            if (string.IsNullOrEmpty(deviceId)) return null;
-            var enumerator = CreateEnumerator();
-            foreach (var flow in new[] { EDataFlow.Render, EDataFlow.Capture })
-            {
-                foreach (var device in Devices(enumerator, flow))
-                {
-                    if (device.GetId(out var id) == 0 && id == deviceId) return device;
-                }
-            }
-            return null;
-        }
-
         private static double Peak(IAudioMeterInformation meter)
         {
-            try { return meter.GetPeakValue(out var peak) == 0 ? Math.Round(peak, 3) : 0; } catch { return 0; }
+            try { return meter != null && meter.GetPeakValue(out var peak) == 0 ? peak : 0; } catch { return 0; }
         }
 
         private static bool IsAlive(int pid)
@@ -362,9 +389,7 @@ namespace CouchPilot.Audio
             try { return !Process.GetProcessById(pid).HasExited; } catch { return false; }
         }
 
-        private static int Percent(float level) => (int)Math.Round(level * 100);
-
-        private static float Level(double percent) => (float)(Math.Max(0, Math.Min(100, percent)) / 100);
+        private static byte Percent(float level) => (byte)Math.Max(0, Math.Min(100, Math.Round(level * 100)));
 
         private static string Hash(string text)
         {

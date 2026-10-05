@@ -1,0 +1,452 @@
+# The live socket protocol
+
+The phone and the PC talk over one WebSocket. Up it go the touchpad, the keyboard and the mixer's commands; down it come the PC's state and the audio mixer, levels included, 25 times a second. Everything else (the game library, cover art, starting a game, display presets) stays plain HTTP under `/api`.
+
+This document is the specification. The implementations must follow it byte for byte:
+
+| Side | File | Covers |
+|---|---|---|
+| PC | `src/CouchPilot/Server/LiveSocket.cs` | connection, HELLO, STATUS, SUBSCRIBE, dispatch, timing |
+| PC | `src/CouchPilot/Audio/AudioProtocol.cs` | audio messages, encoding |
+| PC | `src/CouchPilot/Audio/AudioService.cs` | audio commands, channels, generations |
+| PC | `src/CouchPilot/Input/RemoteInput.cs` | mouse and keyboard commands |
+| Phone | `web/src/protocol.ts` | every opcode, decoding and encoding |
+| Phone | `web/src/live.ts`, `audio.ts`, `input.ts` | connection, audio, input |
+| Phone | `web/src/mock.ts` | a pretend PC speaking the same bytes, for `pnpm dev:mock` |
+
+Change one, change this document and the others in the same commit.
+
+## Contents
+
+1. [Connection](#1-connection)
+2. [Encoding](#2-encoding)
+3. [Opcodes](#3-opcodes)
+4. [A session, start to finish](#4-a-session-start-to-finish)
+5. [PC → phone](#5-pc--phone): HELLO, STATUS, AUDIO STATE, AUDIO VOLUMES, AUDIO LEVELS
+6. [Phone → PC](#6-phone--pc): mouse and keyboard, audio commands, SUBSCRIBE
+7. [The audio model](#7-the-audio-model)
+8. [Timing](#8-timing)
+9. [Errors and edge cases](#9-errors-and-edge-cases)
+10. [Versioning](#10-versioning)
+
+## 1. Connection
+
+- **URL:** `ws://<pc>:<port>/ws`, on the same port as the web app (8642 by default).
+- **Origin:** the PC accepts the connection only if the `Origin` header is missing or names the same host and port as the `Host` header. WebSockets skip the browser's same-origin rules; without this check any web page open on a device on the network could type on the PC.
+- **Frames:** binary only. Text frames are ignored.
+- **Size:** at most 16 KiB per message from the phone. Messages from the PC have no limit, but in practice the largest is a STATUS of a few kilobytes.
+- **Lifetime:** the phone opens the socket while the page is on screen and closes it when the page goes to the background (`visibilitychange`). After an unexpected close it reconnects after 0.4 s, 0.8 s, 1.6 s, 3.2 s, then every 5 s.
+- **Offline:** the phone shows the PC as offline only after 3 s without a connection, so a brief drop doesn't flash.
+- **Authentication:** none. The port must not be exposed beyond the local network (see the README).
+
+## 2. Encoding
+
+Every message is one WebSocket frame. Its first byte is the **opcode**, followed by the opcode's fields in the order given, without padding or separators.
+
+| Type | Size | Meaning |
+|---|---|---|
+| `u8` | 1 | unsigned integer, 0–255 |
+| `i16` | 2 | signed integer, **little-endian**, −32768–32767 |
+| `str` | 1 + n | a `u8` byte count n (0–255), then n bytes of UTF-8. Longer text is cut by the sender at a character boundary, never inside one |
+| `guid` | 16 | a Playnite id as raw bytes, **big-endian in the order its text form reads**: `6de22bd5-1691-40df-9a93-4a319d8f2d3a` is `6d e2 2b d5 16 91 40 df 9a 93 4a 31 9d 8f 2d 3a`. This is *not* .NET's `Guid.ToByteArray()` order |
+| `utf8…` | rest | UTF-8 up to the end of the message, no length prefix |
+| `json…` | rest | UTF-8 JSON up to the end of the message |
+
+Flags are bit sets in a `u8`. Bit values are given as numbers (1, 2, 4…). Bits this document doesn't name must be sent as 0 and ignored on receipt.
+
+## 3. Opcodes
+
+The first byte tells the reader both the direction and the subsystem.
+
+| Range | Direction | Subsystem |
+|---|---|---|
+| `0x01`–`0x0F` | phone → PC | mouse and keyboard |
+| `0x10`–`0x1F` | phone → PC | audio commands |
+| `0x20`–`0x2F` | phone → PC | the connection itself |
+| `0x30`–`0x7F` | — | reserved |
+| `0x80`–`0x8F` | PC → phone | state |
+| `0x90`–`0xFF` | — | reserved |
+
+| Op | Name | Direction | Section |
+|---|---|---|---|
+| `0x01` | MOVE | phone → PC | [6.1](#61-mouse-and-keyboard-0x010x0f) |
+| `0x02` | WHEEL | phone → PC | 6.1 |
+| `0x03` | DOWN | phone → PC | 6.1 |
+| `0x04` | UP | phone → PC | 6.1 |
+| `0x05` | CLICK | phone → PC | 6.1 |
+| `0x06` | KEY | phone → PC | 6.1 |
+| `0x07` | CHAR | phone → PC | 6.1 |
+| `0x08` | TEXT | phone → PC | 6.1 |
+| `0x10` | VOLUME | phone → PC | [6.2](#62-audio-commands-0x100x1f) |
+| `0x11` | MUTE | phone → PC | 6.2 |
+| `0x12` | DEFAULT | phone → PC | 6.2 |
+| `0x20` | SUBSCRIBE | phone → PC | [6.3](#63-subscribe-0x20) |
+| `0x80` | HELLO | PC → phone | [5.1](#51-hello-0x80) |
+| `0x81` | STATUS | PC → phone | [5.2](#52-status-0x81) |
+| `0x82` | AUDIO STATE | PC → phone | [5.3](#53-audio-state-0x82) |
+| `0x83` | AUDIO VOLUMES | PC → phone | [5.4](#54-audio-volumes-0x83) |
+| `0x84` | AUDIO LEVELS | PC → phone | [5.5](#55-audio-levels-0x84) |
+
+A receiver **ignores an opcode it doesn't know**: it comes from a newer peer, and skipping it must be safe. That is the rule that lets the protocol grow without breaking older phones or PCs.
+
+## 4. A session, start to finish
+
+```mermaid
+sequenceDiagram
+    participant P as Phone
+    participant C as PC
+    P->>C: WebSocket upgrade to /ws
+    C-->>P: HELLO (version 1)
+    C-->>P: STATUS (JSON)
+    Note over P,C: Games, Schermi, Controllo tabs: STATUS whenever the PC's state changes
+    P->>C: MOVE, CLICK, KEY… (if the PC allows input)
+    Note over P: The Audio tab opens
+    P->>C: SUBSCRIBE audio
+    C-->>P: AUDIO STATE (gen 3)
+    loop every 40 ms while subscribed
+        C-->>P: AUDIO VOLUMES (only if a volume or mute changed)
+        C-->>P: AUDIO LEVELS (only if a level changed)
+    end
+    P->>C: VOLUME (gen 3, channel 2, 80)
+    C-->>P: AUDIO VOLUMES (gen 3)
+    Note over C: An app starts playing
+    C-->>P: AUDIO STATE (gen 4)
+    Note over P: The Audio tab closes
+    P->>C: SUBSCRIBE none
+```
+
+## 5. PC → phone
+
+### 5.1 HELLO `0x80`
+
+The first message on every connection.
+
+| Offset | Field | Type | |
+|---|---|---|---|
+| 0 | op | `u8` | `0x80` |
+| 1 | version | `u8` | the protocol version, currently `1` |
+
+```
+80 01
+```
+
+If the version isn't the one the page was built for, the page is a stale copy of the app (the PC was updated, the phone kept the old one cached). The phone reloads itself to get the app the PC serves now, at most once a minute so that a mismatch reloading can't fix doesn't loop.
+
+### 5.2 STATUS `0x81`
+
+The PC's state at a glance, as JSON. Sent right after HELLO, then whenever it changes.
+
+| Offset | Field | Type |
+|---|---|---|
+| 0 | op | `u8` `0x81` |
+| 1 | status | `json…` |
+
+The JSON is the same object `GET /api/status` returns (property names camelCase):
+
+```jsonc
+{
+  "pc": "PC-GAMING",                      // the PC's name
+  "running": [                            // games Playnite started, oldest first
+    {
+      "id": "6de22bd5-1691-40df-9a93-4a319d8f2d3a",
+      "name": "Hades II",
+      "source": "Steam",
+      "startedAt": "2026-10-05T18:02:11.0000000Z",  // null if running before Playnite started
+      "hasCover": true,
+      "hasBackground": true
+    }
+  ],
+  "displays": {
+    "monitors": [                         // the layout right now
+      { "name": "LG TV SSCR2", "devicePath": "\\\\?\\DISPLAY#…", "x": 0, "y": 0,
+        "width": 3840, "height": 2160, "refreshHz": 120, "primary": true, "virtual": false }
+    ],
+    "presets": [ { "id": "…", "name": "Solo TV", "monitors": [ /* as above */ ] } ],
+    "activePresetId": "…",                // the preset matching the layout, or null
+    "pending": {                          // a preset on trial, or null
+      "presetId": "…",
+      "previousPresetId": "…",            // what to roll back to, or null
+      "secondsLeft": 12                   // until the PC rolls back by itself
+    },
+    "streamActive": false                 // a Vibepollo stream owns the displays
+  },
+  "input": true                           // the phone may use mouse and keyboard
+}
+```
+
+JSON, not a binary layout, because STATUS is nested, varies in shape and changes a few times a minute at most: a binary layout would save nothing that matters and cost a second schema to keep in step with `/api/status`.
+
+**When it's sent.** The PC builds STATUS about twice a second and right after anything that changes it: a game starting or stopping, a preset applied, kept, reverted, saved, renamed or deleted, the input setting toggled. It sends it only if something differs from the last one sent, **ignoring `pending.secondsLeft`**: the countdown alone isn't news. The phone counts down by itself from the last value it got.
+
+### 5.3 AUDIO STATE `0x82`
+
+| Offset | Field | Type | |
+|---|---|---|---|
+| 0 | op | `u8` | `0x82` |
+| 1 | gen | `u8` | the generation, see [7.2](#72-generations) |
+| 2 | outputs | `u8` | number of output devices |
+| | | DEVICE × outputs | |
+| | inputs | `u8` | number of input devices |
+| | | DEVICE × inputs | |
+| | channels | `u8` | number of channels |
+| | | CHANNEL × channels | |
+
+The whole mixer: the active devices you can switch to, and the channels with their volumes. Sent only to subscribed phones: when they subscribe, and whenever the list changes shape (a new generation).
+
+**DEVICE**
+
+| Field | Type | |
+|---|---|---|
+| kind | `u8` | 0 speakers, 1 headphones (or headset), 2 display (HDMI/DisplayPort audio), 3 microphone |
+| flags | `u8` | 1 = this is Windows' default device for its direction |
+| name | `str` | what Windows calls the device, e.g. `LG TV SSCR2`, `Speakers` |
+| detail | `str` | the adapter it hangs off, e.g. `NVIDIA High Definition Audio`; may be empty. Tells two devices with the same name apart |
+
+A device's **index** is its position in its own list (outputs from 0, inputs from 0). DEFAULT names devices by it.
+
+**CHANNEL**
+
+| Field | Type | Present | |
+|---|---|---|---|
+| role | `u8` | always | 0 output, 1 input, 2 app, 3 system sounds, 4 game |
+| volume | `u8` | always | 0–100 |
+| flags | `u8` | always | 1 muted, 2 has an icon |
+| name | `str` | always | the device's name for 0 and 1; the app's or game's name otherwise |
+| key | `str` | role ≥ 2 | the app's stable key, see [7.1](#71-channels) |
+| gameId | `guid` | role = 4 | the game's Playnite id |
+
+A channel's **index** is its position in this list. VOLUMES, LEVELS, VOLUME and MUTE all go by it.
+
+**Example.** Generation 3. Outputs: *LG TV* (display, default) and *Cuffie* (headphones). Input: *Yeti* (default). Channels: the output at 62, the input at 70 and muted, the game *Hades II* at 80, *Spotify* at 35. 134 bytes:
+
+```
+82 03                                  STATE, gen 3
+02                                     2 outputs
+   02 01 05 4c 47 20 54 56             display, default, "LG TV"
+         06 4e 56 49 44 49 41                            "NVIDIA"
+   01 00 06 43 75 66 66 69 65          headphones, –, "Cuffie"
+         03 55 53 42                                     "USB"
+01                                     1 input
+   03 01 04 59 65 74 69                mic, default, "Yeti"
+         03 55 53 42                                   "USB"
+04                                     4 channels
+   00 3e 00 05 4c 47 20 54 56          #0 output, 62, –, "LG TV"
+   01 46 01 04 59 65 74 69             #1 input, 70, muted, "Yeti"
+   04 50 02 08 48 61 64 65 73 20 49 49 #2 game, 80, icon, "Hades II"
+      10 61 70 70 2d 31 66 32 65 33 64 34 63 35 62 36 61
+                                          key "app-1f2e3d4c5b6a"
+      6d e2 2b d5 16 91 40 df 9a 93 4a 31 9d 8f 2d 3a
+                                          6de22bd5-1691-40df-9a93-4a319d8f2d3a
+   02 23 02 07 53 70 6f 74 69 66 79    #3 app, 35, icon, "Spotify"
+      10 61 70 70 2d 39 63 38 62 37 61 36 66 35 65 34 64
+                                          key "app-9c8b7a6f5e4d"
+```
+
+### 5.4 AUDIO VOLUMES `0x83`
+
+| Offset | Field | Type | |
+|---|---|---|---|
+| 0 | op | `u8` | `0x83` |
+| 1 | gen | `u8` | |
+| 2 + 2i | volume | `u8` | channel i, 0–100 |
+| 3 + 2i | flags | `u8` | channel i, 1 = muted |
+
+Length: 2 + 2 × channels. Sent to subscribed phones when any volume or mute changed since the last STATE or VOLUMES, whoever changed it: the phone, the PC's own volume keys, another app. The example above after Spotify is muted:
+
+```
+83 03  3e 00  46 01  50 00  23 01
+       #0     #1     #2     #3
+```
+
+A phone drops a VOLUMES whose `gen` isn't the one of its last STATE.
+
+### 5.5 AUDIO LEVELS `0x84`
+
+| Offset | Field | Type | |
+|---|---|---|---|
+| 0 | op | `u8` | `0x84` |
+| 1 | gen | `u8` | |
+| 2 + i | level | `u8` | channel i |
+
+Length: 2 + channels. How loud each channel is right now, sent to subscribed phones up to 25 times a second.
+
+**level** = round(√peak × 255), where *peak* is Windows' peak meter for the channel, 0.0–1.0 of full scale (linear amplitude). The square root reads closer to loudness than the raw peak and gives quiet sounds most of the byte's range: a peak of 0.04 (−28 dBFS) is already 51. A muted channel always reads 0. The phone shows level ÷ 255 as is.
+
+For the example above:
+
+```
+84 03  80  00  e6  33
+       #0  #1  #2  #3
+```
+
+#0 at peak 0.25 → 128, #1 muted → 0, #2 at 0.81 → 230, #3 at 0.04 → 51.
+
+LEVELS are **lossy by design**: the PC sends one only when some level changed (silence costs nothing after the first all-zero message), and skips it for a phone that hasn't finished receiving the previous messages, since a late level is worth nothing. STATE and VOLUMES are never skipped.
+
+> The microphone's level is usually 0: Windows only meters an input while some app is recording from it.
+
+## 6. Phone → PC
+
+### 6.1 Mouse and keyboard `0x01`–`0x0F`
+
+Acted on only while **Permetti al telefono di usare mouse e tastiera del PC** is on in the extension settings (`input` in STATUS). Otherwise the PC drops them silently: the socket stays up for audio and state.
+
+| Op | Name | Fields | |
+|---|---|---|---|
+| `0x01` | MOVE | `i16` dx, `i16` dy | move the pointer by this many pixels |
+| `0x02` | WHEEL | `i16` vertical, `i16` horizontal | scroll; 120 is one notch, positive is up / right |
+| `0x03` | DOWN | `u8` button | press and hold: 0 left, 1 right, 2 middle (anything else is left) |
+| `0x04` | UP | `u8` button | release, if held |
+| `0x05` | CLICK | `u8` button | press and release |
+| `0x06` | KEY | `u8` mods, `u8` vk | tap a [Windows virtual key](https://learn.microsoft.com/windows/win32/inputdev/virtual-key-codes) with modifiers held; vk 0 is ignored |
+| `0x07` | CHAR | `u8` mods, `utf8…` | the key that types this character on the PC's layout, with modifiers: Ctrl + `c`. If no key types it, or there are no modifiers, it's typed as text |
+| `0x08` | TEXT | `utf8…` | type this text as Unicode, whatever the PC's keyboard layout |
+
+**mods**: 1 Ctrl, 2 Alt, 4 Shift, 8 Win.
+
+```
+01 0c 00 fd ff     MOVE 12, −3
+02 88 ff 00 00     WHEEL −120 (one notch down), 0
+03 00              DOWN left
+04 00              UP left
+06 02 09           KEY Alt + Tab (vk 0x09)
+06 00 af           KEY volume up (vk 0xAF)
+07 01 63           CHAR Ctrl + "c"
+08 63 69 61 6f     TEXT "ciao"
+```
+
+Buttons held with DOWN are released when the socket closes, so a phone that drops mid-drag doesn't leave the button stuck.
+
+### 6.2 Audio commands `0x10`–`0x1F`
+
+| Op | Name | Fields | |
+|---|---|---|---|
+| `0x10` | VOLUME | `u8` gen, `u8` channel, `u8` volume | set a channel's volume, 0–100 (more is taken as 100) |
+| `0x11` | MUTE | `u8` gen, `u8` channel, `u8` muted | 0 unmute, anything else mute |
+| `0x12` | DEFAULT | `u8` gen, `u8` flow, `u8` device | make a device Windows' default; flow 0 output, 1 input; device is its index in STATE |
+
+`gen` is the generation of the STATE the phone is looking at. The PC drops a command whose `gen` isn't its current one, or that names a channel or device that isn't there: see [7.2](#72-generations).
+
+For an app, VOLUME and MUTE apply to every one of its sessions (see [7.1](#71-channels)). DEFAULT sets the device for all three of Windows' roles (console, multimedia, communications), like the sound flyout on the taskbar. Apps that follow the default move to it; apps pinned to a device in Windows' settings stay where they are.
+
+```
+10 03 02 50        VOLUME gen 3, channel #2, 80
+11 03 03 01        MUTE gen 3, channel #3, muted
+12 03 00 01        DEFAULT gen 3, output #1
+```
+
+Nothing comes back as a reply. The effect shows up in the next VOLUMES, or for DEFAULT in a new STATE.
+
+### 6.3 SUBSCRIBE `0x20`
+
+| Offset | Field | Type | |
+|---|---|---|---|
+| 0 | op | `u8` | `0x20` |
+| 1 | streams | `u8` | flags: 1 audio |
+
+Which optional streams the phone wants. Each SUBSCRIBE replaces the previous one. A new connection starts with none.
+
+- Turning **audio** on: the PC sends an AUDIO STATE straight away, then VOLUMES and LEVELS as they change.
+- Turning it off: they stop.
+
+The phone subscribes while the Audio tab is on screen, and again after every reconnect. The PC enumerates audio devices and reads meters only while at least one phone is subscribed.
+
+```
+20 01      audio on
+20 00      everything off
+```
+
+## 7. The audio model
+
+### 7.1 Channels
+
+What the mixer shows is one list of channels, in this order:
+
+1. **Output** (role 0): Windows' default output device, if there is one.
+2. **Input** (role 1): the default input device, if there is one.
+3. **Games** (role 4): apps whose process belongs to a game Playnite started.
+4. **Apps** (role 2): every other app with an audio session on the default output, by name.
+5. **System sounds** (role 3), last.
+
+Roles 2–4 are *apps*: one per executable with sessions on the default output, active or idle (Windows' own mixer does the same). A browser's tabs, or a game's several sessions, are one channel. For an app with several sessions:
+
+- its volume is the first session's;
+- it's muted only if every session is;
+- its level is the loudest session's.
+
+Each app has a **key**:
+
+- `app-` followed by 12 hex digits: a hash of its executable's path. Stable across generations, sessions and PC restarts.
+- `system` for Windows' system sounds.
+- `pid-` followed by the process id: an app whose executable the PC isn't allowed to read (elevated processes). Stable only while the process runs.
+
+The key names the app's icon: `GET /api/audio/apps/{key}/icon` returns its executable's icon as PNG, if flag 2 is set and the icon can be read. For a game the phone first tries Playnite's icon, `GET /api/games/{gameId}/icon`, and uses the game's id to show its cover, art and metadata from the library.
+
+### 7.2 Generations
+
+Channels and devices are addressed by index, so an index only means something together with the list it indexes. That list is identified by the **generation**, a `u8` in every audio message.
+
+- The PC moves to the next generation (wrapping from 255 to 0) whenever the list changes **shape**: a device or channel appears, disappears or is renamed, the defaults change, an icon becomes available. Volumes, mutes and levels changing don't count.
+- Each new generation goes to subscribed phones as a STATE.
+- VOLUMES and LEVELS carry the generation they belong to. The phone drops those whose generation isn't that of its last STATE.
+- Commands carry the generation the phone was looking at. The PC drops those that don't match its current one.
+
+So a tap can never land on the wrong app: if Discord starts playing and takes Spotify's index just as you drag Spotify's slider, that VOLUME carries the old generation and is dropped, and the new STATE arrives within a second. To make the drag still count, the phone looks up the index by the app's **key** only at the moment it sends, using its newest STATE.
+
+### 7.3 What the phone does while you drag
+
+Not part of the wire format, but it explains the traffic you see:
+
+- **Rate:** while a slider moves, the phone sends at most one VOLUME every 30 ms for that channel, and always the final value.
+- **Hold:** for 1 s after the last change, the slider shows the phone's own value rather than the PC's. Otherwise a VOLUMES already on its way would snap it back mid-drag.
+- **Unmuting:** dragging a muted channel's slider sends MUTE 0 before the VOLUME.
+
+## 8. Timing
+
+The PC serves every phone from one loop, which runs every **40 ms** while at least one phone is connected and stops when the last one leaves.
+
+| What | When |
+|---|---|
+| STATUS | checked every ~0.5 s (12 ticks), and on the next tick after a change the PC knows about; sent only if it differs |
+| AUDIO STATE | to a phone that just subscribed; to every subscribed phone when the generation changes |
+| Device and session scan | every 1 s (25 ticks), on the next tick after a DEFAULT, after a subscription, after a failed read |
+| AUDIO VOLUMES | checked every tick; sent if any volume or mute differs from the last sent |
+| AUDIO LEVELS | checked every tick; sent if any level differs, per phone only if its queue is empty |
+
+So a volume changed on the PC shows on the phone within about 40 ms, and a new app appears within about a second.
+
+Messages to one phone leave in the order they were queued, one at a time. A slow phone has its own queue and never holds up the others.
+
+**Bandwidth**, with 6 channels and something playing: LEVELS 8 bytes × 25/s = 200 B/s, plus WebSocket framing (2 bytes per message from the PC, 6 from the phone). A STATE is 20–40 bytes per channel. A slider drag is 4 bytes every 30 ms.
+
+## 9. Errors and edge cases
+
+- **Unknown opcode:** ignored by both sides.
+- **Message too short for its opcode:** ignored by both sides. The PC also writes malformed mouse and keyboard commands to Playnite's log.
+- **Malformed message from the PC** (a `str` running past the end, bad JSON): the phone drops it and logs a warning in the console.
+- **Stale generation, channel or device out of range:** dropped, see 7.2.
+- **Windows refuses a change** (device unplugged in the meantime): nothing is sent back. The next scan brings a STATE that reflects reality.
+- **No default output:** STATE has no output channel and no app channels; the input may still be there.
+- **More than 255 devices or channels:** the lists are cut at 255.
+- **Input turned off while a phone is connected:** held buttons are released, STATUS goes out with `"input": false`, and input commands are dropped from then on.
+- **Socket closes:** the PC releases held mouse buttons and forgets the phone's subscription.
+
+## 10. Versioning
+
+`version` in HELLO is the protocol version, currently **1**.
+
+These changes are **compatible** and don't change the version, because receivers ignore what they don't know:
+
+- a new opcode in a free slot of the right range;
+- a new flag bit;
+- a new SUBSCRIBE stream;
+- a new property in the STATUS JSON;
+- a new field at the end of HELLO, AUDIO STATE or a fixed-size command (MOVE, WHEEL, DOWN, UP, CLICK, KEY, VOLUME, MUTE, DEFAULT, SUBSCRIBE). Receivers check only that a message is long enough, never that it isn't longer.
+
+Anything else changes the version:
+
+- a field added anywhere else. In particular nothing can be appended to AUDIO VOLUMES and AUDIO LEVELS, whose per-channel entries run to the end of the message, nor to a DEVICE or CHANNEL record, which would shift the ones after it;
+- a field's meaning or size changed;
+- an opcode reused.
+
+The phone and the PC ship together, and the phone reloads on a mismatch, so a version bump only costs a reload.

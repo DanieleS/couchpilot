@@ -5,7 +5,6 @@ using System.Threading.Tasks;
 using CouchPilot.Audio;
 using CouchPilot.Displays;
 using CouchPilot.Games;
-using CouchPilot.Input;
 using CouchPilot.Library;
 using EmbedIO;
 using EmbedIO.Routing;
@@ -19,27 +18,23 @@ namespace CouchPilot.Server
         private readonly LibraryService library;
         private readonly GameControl games;
         private readonly DisplayService displays;
-        private readonly RemoteInput input;
         private readonly AudioService audio;
+        private readonly StatusSource status;
+        private readonly LiveSocket live;
 
-        public ApiController(LibraryService library, GameControl games, DisplayService displays, RemoteInput input, AudioService audio)
+        public ApiController(LibraryService library, GameControl games, DisplayService displays, AudioService audio, StatusSource status, LiveSocket live)
         {
             this.library = library;
             this.games = games;
             this.displays = displays;
-            this.input = input;
             this.audio = audio;
+            this.status = status;
+            this.live = live;
         }
 
-        // One call the phone polls: what's running and what the screens look like.
+        // The phone gets this pushed over the live socket; here for anything else that wants a look.
         [Route(HttpVerbs.Get, "/status")]
-        public object Status() => new
-        {
-            pc = Environment.MachineName,
-            running = library.Running(),
-            displays = displays.Snapshot(),
-            input = input.Enabled,
-        };
+        public object Status() => status.Snapshot();
 
         [Route(HttpVerbs.Get, "/games")]
         public object Games() => library.All();
@@ -63,12 +58,14 @@ namespace CouchPilot.Server
             if (!game.Installed) throw new HttpException(HttpStatusCode.Conflict, "Il gioco non è installato.");
             if (game.Running) throw new HttpException(HttpStatusCode.Conflict, "Il gioco è già in esecuzione.");
             games.Start(ParseId(id));
+            live.Nudge();
         }
 
         [Route(HttpVerbs.Post, "/games/{id}/stop")]
         public void Stop(string id)
         {
             if (!games.Stop(ParseId(id))) throw new HttpException(HttpStatusCode.Conflict, "Non trovo processi di questo gioco.");
+            live.Nudge();
         }
 
         [Route(HttpVerbs.Post, "/games/{id}/focus")]
@@ -81,7 +78,9 @@ namespace CouchPilot.Server
         public async Task<object> SavePreset()
         {
             var body = await ReadBody<NameBody>();
-            return displays.SaveCurrent(body?.Name);
+            var preset = displays.SaveCurrent(body?.Name);
+            live.Nudge();
+            return preset;
         }
 
         [Route(HttpVerbs.Patch, "/displays/presets/{id}")]
@@ -89,50 +88,35 @@ namespace CouchPilot.Server
         {
             var body = await ReadBody<NameBody>();
             if (!displays.Rename(id, body?.Name)) throw HttpException.NotFound("Preset non trovato.");
+            live.Nudge();
         }
 
         [Route(HttpVerbs.Delete, "/displays/presets/{id}")]
         public void DeletePreset(string id)
         {
             if (!displays.Delete(id)) throw HttpException.NotFound("Preset non trovato.");
+            live.Nudge();
         }
 
         [Route(HttpVerbs.Post, "/displays/presets/{id}/apply")]
         public void ApplyPreset(string id)
         {
             if (!displays.Apply(id)) throw HttpException.NotFound("Preset non trovato.");
+            live.Nudge();
         }
 
         [Route(HttpVerbs.Post, "/displays/confirm")]
-        public void Confirm() => displays.Confirm();
+        public void Confirm()
+        {
+            displays.Confirm();
+            live.Nudge();
+        }
 
         [Route(HttpVerbs.Post, "/displays/revert")]
-        public void Revert() => displays.Revert();
-
-        // Polled on its own, and faster than /status, only while the Audio tab is open.
-        [Route(HttpVerbs.Get, "/audio")]
-        public object Audio() => audio.Snapshot();
-
-        // Device ids are long and full of braces: they travel in the body, not the URL.
-        [Route(HttpVerbs.Post, "/audio/default")]
-        public async Task SetDefaultAudio()
+        public void Revert()
         {
-            var body = await ReadBody<AudioBody>();
-            if (!audio.SetDefault(body?.Id)) throw HttpException.NotFound("Dispositivo audio non trovato.");
-        }
-
-        [Route(HttpVerbs.Post, "/audio/device")]
-        public async Task SetAudioDevice()
-        {
-            var body = await ReadBody<AudioBody>();
-            if (!audio.SetDevice(body?.Id, body?.Volume, body?.Muted)) throw HttpException.NotFound("Dispositivo audio non trovato.");
-        }
-
-        [Route(HttpVerbs.Post, "/audio/app")]
-        public async Task SetAudioApp()
-        {
-            var body = await ReadBody<AudioBody>();
-            if (!audio.SetApp(body?.Id, body?.Volume, body?.Muted)) throw HttpException.NotFound("L'app non sta più usando l'audio.");
+            displays.Revert();
+            live.Nudge();
         }
 
         [Route(HttpVerbs.Get, "/audio/apps/{id}/icon")]
@@ -147,13 +131,6 @@ namespace CouchPilot.Server
         public class NameBody
         {
             public string Name { get; set; }
-        }
-
-        public class AudioBody
-        {
-            public string Id { get; set; }
-            public double? Volume { get; set; }
-            public bool? Muted { get; set; }
         }
 
         private async Task<T> ReadBody<T>() where T : class

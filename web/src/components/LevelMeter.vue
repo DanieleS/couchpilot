@@ -1,11 +1,11 @@
 <script setup lang="ts">
-// How loud it is right now. Peaks are linear amplitude: the square root reads closer to
-// what the ear hears, so quiet sounds still move the bar.
-defineProps<{ peak: number }>()
+// How loud it is right now, 0..1. The PC already sends the peak's square root, which reads
+// closer to what the ear hears than the raw peak.
+defineProps<{ level: number }>()
 </script>
 
 <template>
-  <span class="meter" aria-hidden="true"><span class="level" :style="{ transform: `scaleX(${Math.sqrt(peak)})` }" /></span>
+  <span class="meter" aria-hidden="true"><span class="level" :style="{ transform: `scaleX(${level})` }" /></span>
 </template>
 
 <style scoped>
@@ -15,7 +15,7 @@ defineProps<{ peak: number }>()
   block-size: 100%;
   background: var(--ok);
   transform-origin: left;
-  /* Polls come every half second: glide between them instead of jumping. */
-  transition: transform 450ms linear;
+  /* Levels come 25 times a second: just enough glide to hide the steps. */
+  transition: transform 60ms linear;
 }
 </style>

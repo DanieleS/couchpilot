@@ -1,4 +1,5 @@
-import type { AudioApp, AudioState, Game, GameDetail, Preset, Status, VolumeChange } from './types'
+import type { AudioChannel } from './protocol'
+import type { Game, GameDetail, Preset } from './types'
 import { mockRequest } from './mock'
 
 const useMock = import.meta.env.VITE_MOCK === '1'
@@ -22,7 +23,6 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 }
 
 export const api = {
-  status: () => request<Status>('GET', '/status'),
   games: () => request<Game[]>('GET', '/games'),
   game: (id: string) => request<GameDetail>('GET', `/games/${id}`),
   start: (id: string) => request<void>('POST', `/games/${id}/start`),
@@ -34,17 +34,13 @@ export const api = {
   applyPreset: (id: string) => request<void>('POST', `/displays/presets/${id}/apply`),
   confirmDisplays: () => request<void>('POST', '/displays/confirm'),
   revertDisplays: () => request<void>('POST', '/displays/revert'),
-  audio: () => request<AudioState>('GET', '/audio'),
-  setDefaultAudio: (id: string) => request<void>('POST', '/audio/default', { id }),
-  setAudioDevice: (id: string, change: VolumeChange) => request<void>('POST', '/audio/device', { id, ...change }),
-  setAudioApp: (id: string, change: VolumeChange) => request<void>('POST', '/audio/app', { id, ...change }),
 }
 
 export const imageUrl = (id: string, kind: 'cover' | 'background') =>
   useMock ? null : `/api/games/${id}/${kind}`
 
 // A game shows its Playnite icon, any other app (or a game without one) its executable's.
-export const audioAppIconUrls = (app: AudioApp) =>
+export const audioAppIconUrls = (app: AudioChannel) =>
   useMock
     ? []
-    : [app.gameId && `/api/games/${app.gameId}/icon`, app.hasIcon && `/api/audio/apps/${app.id}/icon`].filter((u): u is string => !!u)
+    : [app.gameId && `/api/games/${app.gameId}/icon`, app.hasIcon && app.key && `/api/audio/apps/${app.key}/icon`].filter((u): u is string => !!u)

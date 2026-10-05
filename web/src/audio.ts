@@ -1,97 +1,89 @@
-import { computed, onScopeDispose, reactive, ref } from 'vue'
-import { api } from './api'
-import { useCouchPilot } from './store'
-import type { AudioState, VolumeChange } from './types'
+import { computed, onScopeDispose, reactive, shallowRef } from 'vue'
+import { listenToAudio, send } from './live'
+import { encodeMute, encodeSetDefault, encodeVolume, type AudioChannel, type AudioFlow, type AudioState } from './protocol'
+import type { VolumeChange } from './types'
 
-// Faster than the status poll, so the level meters move; only while the Audio tab is open.
-const POLL_MS = 500
-// While you drag, and for a moment after, the slider shows what you set, not what the
-// last poll said: an answer already in flight would otherwise snap it back.
-const HOLD_MS = 1200
-// A drag sends at most one change every 80 ms, always ending with the last value.
-const SEND_MS = 80
+// While you drag, and for a moment after, a slider shows what you set, not what the PC last
+// said: a VOLUMES already on its way would otherwise snap it back.
+const HOLD_MS = 1000
+// A drag sends at most one change every 30 ms, always ending with the last value.
+const SEND_MS = 30
 
-export type AudioTarget = { kind: 'device' | 'app'; id: string }
+// A channel as the Audio tab draws it: what the PC said, with what you're dragging on top.
+export type MixerChannel = AudioChannel & { stableKey: string }
 
-const keyOf = (t: AudioTarget) => `${t.kind}:${t.id}`
+// Endpoints keep their slot across generations by role; apps by their key.
+const stableKey = (c: AudioChannel) => (c.role === 'output' || c.role === 'input' ? c.role : `app:${c.key}`)
 
+// The mixer for as long as the Audio tab is on screen: STATE, VOLUMES and LEVELS from the PC,
+// VOLUME, MUTE and DEFAULT back (docs/protocol.md).
 export function useAudio() {
-  const { error } = useCouchPilot()
-  const server = ref<AudioState | null>(null)
-  const failed = ref(false)
+  const server = shallowRef<AudioState | null>(null)
+  // One byte per channel, in STATE order: the peak's square root × 255. Kept apart from the
+  // rest so 25 updates a second only redraw the meters.
+  const levels = shallowRef<Uint8Array>(new Uint8Array())
   const held = reactive(new Map<string, { change: VolumeChange; until: number }>())
   const queues = new Map<string, { pending: VolumeChange; timer: number; lastSent: number }>()
 
-  let timer = 0
-  let stopped = false
-  // Only the latest poll keeps the loop going, so an extra one after a change doesn't fork it.
-  let latest = 0
-  async function poll() {
-    window.clearTimeout(timer)
-    const mine = ++latest
-    try {
-      const state = await api.audio()
-      if (stopped || mine !== latest) return
-      server.value = state
-      failed.value = false
-      const now = Date.now()
-      for (const [key, h] of held) if (h.until < now) held.delete(key)
-    } catch {
-      if (mine !== latest) return
-      failed.value = true
+  const stop = listenToAudio((m) => {
+    const s = server.value
+    if (m.op === 'audioState') {
+      server.value = m.state
+      levels.value = new Uint8Array(m.state.channels.length)
+    } else if (m.op === 'audioVolumes' && s && m.gen === s.gen) {
+      server.value = { ...s, channels: s.channels.map((c, i) => ({ ...c, ...m.volumes[i] })) }
+    } else if (m.op === 'audioLevels' && s && m.gen === s.gen) {
+      levels.value = m.levels
+      return
+    } else {
+      return
     }
-    if (!stopped) timer = window.setTimeout(poll, document.hidden ? POLL_MS * 6 : POLL_MS)
-  }
-  poll()
+    const now = Date.now()
+    for (const [key, h] of held) if (h.until < now) held.delete(key)
+  })
   onScopeDispose(() => {
-    stopped = true
-    window.clearTimeout(timer)
-    for (const q of queues.values()) window.clearTimeout(q.timer)
+    stop()
+    for (const q of queues.values()) clearTimeout(q.timer)
   })
 
-  const heldFor = (t: AudioTarget) => held.get(keyOf(t))?.change ?? {}
-
-  const state = computed<AudioState | null>(() => {
+  const state = computed(() => {
     const s = server.value
     if (!s) return null
-    const endpoint = (e: AudioState['output']) => e && { ...e, ...heldFor({ kind: 'device', id: e.id }) }
-    return {
-      ...s,
-      output: endpoint(s.output),
-      input: endpoint(s.input),
-      apps: s.apps.map((a) => ({ ...a, ...heldFor({ kind: 'app', id: a.id }) })),
-    }
+    const channels: MixerChannel[] = s.channels.map((c) => {
+      const key = stableKey(c)
+      return { ...c, ...held.get(key)?.change, stableKey: key }
+    })
+    return { ...s, channels }
   })
 
-  function set(target: AudioTarget, change: VolumeChange) {
-    const key = keyOf(target)
-    held.set(key, { change: { ...held.get(key)?.change, ...change }, until: Date.now() + HOLD_MS })
+  const levelOf = (c: AudioChannel) => (levels.value[c.index] ?? 0) / 255
 
+  // Sent by key, resolved to a channel index only when it leaves: if the list changed shape in
+  // the meantime, the change still lands on the right app, or nowhere if it's gone.
+  function set(c: MixerChannel, change: VolumeChange) {
+    const key = c.stableKey
+    held.set(key, { change: { ...held.get(key)?.change, ...change }, until: Date.now() + HOLD_MS })
     const q = queues.get(key) ?? { pending: {}, timer: 0, lastSent: 0 }
     queues.set(key, q)
     q.pending = { ...q.pending, ...change }
     if (q.timer) return
     q.timer = window.setTimeout(() => {
-      const send = q.pending
+      const { volume, muted } = q.pending
       q.pending = {}
       q.timer = 0
       q.lastSent = Date.now()
-      const call = target.kind === 'device' ? api.setAudioDevice(target.id, send) : api.setAudioApp(target.id, send)
-      call.catch((e) => {
-        held.delete(key)
-        error.value = (e as Error).message
-      })
+      const s = server.value
+      const target = s?.channels.find((x) => stableKey(x) === key)
+      if (!s || !target) return
+      if (muted !== undefined) send(encodeMute(s.gen, target.index, muted))
+      if (volume !== undefined) send(encodeVolume(s.gen, target.index, volume))
     }, Math.max(0, q.lastSent + SEND_MS - Date.now()))
   }
 
-  async function setDefault(id: string) {
-    try {
-      await api.setDefaultAudio(id)
-    } catch (e) {
-      error.value = (e as Error).message
-    }
-    poll()
+  function setDefault(flow: AudioFlow, device: number) {
+    const s = server.value
+    if (s) send(encodeSetDefault(s.gen, flow, device))
   }
 
-  return { state, failed, set, setDefault }
+  return { state, levelOf, set, setDefault }
 }

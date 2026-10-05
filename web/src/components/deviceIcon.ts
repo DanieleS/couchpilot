@@ -1,4 +1,4 @@
-import type { AudioDeviceKind } from '../types'
+import type { AudioDeviceKind } from '../protocol'
 import type { IconName } from './AppIcon.vue'
 
 export const deviceIcon = (kind: AudioDeviceKind): IconName =>

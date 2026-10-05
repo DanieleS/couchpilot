@@ -18,10 +18,13 @@ namespace CouchPilot.Server
     {
         private readonly WebServer server;
         private readonly CancellationTokenSource cts = new CancellationTokenSource();
+        private readonly LiveSocket live;
 
         public RemoteServer(int port, string webRoot, LibraryService library, GameControl games, DisplayService displays, RemoteInput input, AudioService audio)
         {
             Swan.Logging.Logger.NoLogging();
+            var status = new StatusSource(library, displays, input);
+            live = new LiveSocket("/ws", input, audio, status);
 
             // EmbedIO's own listener: unlike HttpListener it can bind every interface
             // without an admin-only `netsh http add urlacl`.
@@ -29,8 +32,8 @@ namespace CouchPilot.Server
                     .WithUrlPrefix($"http://*:{port}/")
                     .WithMode(HttpListenerMode.EmbedIO))
                 .WithCors()
-                .WithWebApi("/api", SerializeJson, m => m.WithController(() => new ApiController(library, games, displays, input, audio)))
-                .WithModule(new InputSocket("/ws/input", input));
+                .WithWebApi("/api", SerializeJson, m => m.WithController(() => new ApiController(library, games, displays, audio, status, live)))
+                .WithModule(live);
 
             if (Directory.Exists(webRoot))
             {
@@ -56,6 +59,9 @@ namespace CouchPilot.Server
             var run = server.RunAsync(cts.Token);
             if (run.Wait(TimeSpan.FromMilliseconds(500))) run.GetAwaiter().GetResult();
         }
+
+        // Something changed on the PC: phones hear about it now rather than on the next check.
+        public void Nudge() => live.Nudge();
 
         public void Dispose()
         {

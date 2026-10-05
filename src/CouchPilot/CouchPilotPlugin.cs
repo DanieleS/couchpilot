@@ -62,12 +62,14 @@ namespace CouchPilot
         public override void OnGameStarted(OnGameStartedEventArgs args)
         {
             sessions.Started(args.Game, args.StartedProcessId);
+            server?.Nudge();
             homeAssistant?.Nudge();
         }
 
         public override void OnGameStopped(OnGameStoppedEventArgs args)
         {
             sessions.Stopped(args.Game);
+            server?.Nudge();
             homeAssistant?.Nudge();
         }
 
@@ -82,8 +84,12 @@ namespace CouchPilot
             StartServer();
         }
 
-        // Takes effect at once: turning it off also drops any phone that's connected.
-        internal void ApplyInputSetting() => input.Enabled = Settings.RemoteInput;
+        // Takes effect at once: turning it off lets go of anything held, and phones hear about it.
+        internal void ApplyInputSetting()
+        {
+            input.Enabled = Settings.RemoteInput;
+            server?.Nudge();
+        }
 
         internal void RestartHomeAssistant()
         {

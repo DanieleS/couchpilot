@@ -63,41 +63,4 @@ export type Status = {
   input: boolean
 }
 
-export type AudioDeviceKind = 'speakers' | 'headphones' | 'display' | 'mic'
-
-export type AudioDevice = {
-  id: string
-  name: string
-  // The adapter it hangs off, to tell two «Speakers» apart.
-  detail: string | null
-  kind: AudioDeviceKind
-}
-
-// Volumes are 0..100, peaks 0..1.
-export type AudioEndpoint = AudioDevice & {
-  volume: number
-  muted: boolean
-  peak: number
-}
-
-export type AudioApp = {
-  id: string
-  name: string
-  volume: number
-  muted: boolean
-  peak: number
-  system: boolean
-  // Set when the app is a game Playnite launched.
-  gameId: string | null
-  hasIcon: boolean
-}
-
-export type AudioState = {
-  output: AudioEndpoint | null
-  input: AudioEndpoint | null
-  outputs: AudioDevice[]
-  inputs: AudioDevice[]
-  apps: AudioApp[]
-}
-
 export type VolumeChange = { volume?: number; muted?: boolean }

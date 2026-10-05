@@ -1,7 +1,7 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 
-// `pnpm dev` proxies /api (and the input WebSocket on /ws) to a running CouchPilot; set COUCHPILOT_HOST to the PC's address.
+// `pnpm dev` proxies /api (and the live WebSocket on /ws) to a running CouchPilot; set COUCHPILOT_HOST to the PC's address.
 export default defineConfig({
   plugins: [vue()],
   build: {
