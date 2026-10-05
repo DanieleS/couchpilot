@@ -16,6 +16,8 @@ const games: Game[] = names.map(([name, source, hours], i) => ({
   name,
   source,
   installed: i % 5 !== 4,
+  installing: false,
+  uninstalling: false,
   favorite: i % 4 === 0,
   hidden: false,
   running: false,
@@ -66,6 +68,19 @@ function status(): Status {
       pending: pending && { presetId: pending.presetId, previousPresetId: pending.previousPresetId, secondsLeft: Math.ceil((pending.deadline - Date.now()) / 1000) },
     },
   }
+}
+
+// Bumped whenever a game changes, like Playnite's ItemUpdated: the link then sends CHANGED library.
+let libraryRevision = 0
+// Installing or uninstalling takes a few seconds, like a small game from a fast CDN.
+function libraryJob(game: Game, job: 'installing' | 'uninstalling') {
+  game[job] = true
+  libraryRevision++
+  setTimeout(() => {
+    game[job] = false
+    game.installed = job === 'installing'
+    libraryRevision++
+  }, 4000)
 }
 
 // A pretend PC on the other end of the live socket (docs/protocol.md). It speaks the real byte
@@ -154,6 +169,7 @@ export function createMockLink(receive: (m: ServerMessage) => void, onClose: () 
   let shape = ''
   let lastVolumes = ''
   let lastStatus = ''
+  let lastLibrary = libraryRevision
   const deliver = (bytes: Uint8Array) => setTimeout(() => !closed && receive(decode(bytes)))
   const shapeOf = (channels: MockChannel[]) =>
     JSON.stringify([defaultOutput, defaultInput, channels.map((c) => [c.role, c.key, c.name])])
@@ -195,6 +211,10 @@ export function createMockLink(receive: (m: ServerMessage) => void, onClose: () 
   deliver(Uint8Array.of(0x81, 1 | 2))
   let tick = 0
   const timer = setInterval(() => {
+    if (tick % 12 === 0 && libraryRevision !== lastLibrary) {
+      lastLibrary = libraryRevision
+      deliver(Uint8Array.of(0x81, 2))
+    }
     if (tick++ % 12 === 0) pushStatus()
     if (audio) pushAudio()
   }, 40)
@@ -247,6 +267,14 @@ async function handle(method: string, path: string, body?: any): Promise<unknown
     if (!game.installed) throw new Error('Il gioco non è installato.')
     running.push({ id: game.id, name: game.name, source: game.source, startedAt: new Date().toISOString(), hasCover: false, hasBackground: false })
     return
+  }
+  if (method === 'POST' && a === 'games' && game && c === 'install') {
+    if (game.installed) throw new Error('Il gioco è già installato.')
+    return void libraryJob(game, 'installing')
+  }
+  if (method === 'POST' && a === 'games' && game && c === 'uninstall') {
+    if (running.some((r) => r.id === game.id)) throw new Error('Chiudi il gioco prima di disinstallarlo.')
+    return void libraryJob(game, 'uninstalling')
   }
   if (method === 'POST' && a === 'games' && c === 'stop') {
     setTimeout(() => running.splice(running.findIndex((r) => r.id === b), 1), 1500)

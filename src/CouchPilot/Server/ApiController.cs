@@ -61,6 +61,25 @@ namespace CouchPilot.Server
             live.Nudge();
         }
 
+        [Route(HttpVerbs.Post, "/games/{id}/install")]
+        public void Install(string id)
+        {
+            var game = library.Get(ParseId(id)) ?? throw HttpException.NotFound("Gioco non trovato.");
+            if (game.Installed) throw new HttpException(HttpStatusCode.Conflict, "Il gioco è già installato.");
+            if (game.Installing || game.Uninstalling) throw new HttpException(HttpStatusCode.Conflict, "Playnite ci sta già lavorando.");
+            games.Install(ParseId(id));
+        }
+
+        [Route(HttpVerbs.Post, "/games/{id}/uninstall")]
+        public void Uninstall(string id)
+        {
+            var game = library.Get(ParseId(id)) ?? throw HttpException.NotFound("Gioco non trovato.");
+            if (!game.Installed) throw new HttpException(HttpStatusCode.Conflict, "Il gioco non è installato.");
+            if (game.Running) throw new HttpException(HttpStatusCode.Conflict, "Chiudi il gioco prima di disinstallarlo.");
+            if (game.Installing || game.Uninstalling) throw new HttpException(HttpStatusCode.Conflict, "Playnite ci sta già lavorando.");
+            games.Uninstall(ParseId(id));
+        }
+
         [Route(HttpVerbs.Post, "/games/{id}/stop")]
         public void Stop(string id)
         {

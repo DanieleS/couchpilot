@@ -13,17 +13,32 @@ import GamesView from './components/GamesView.vue'
 import NamePrompt from './components/NamePrompt.vue'
 import TabBar, { type Tab } from './components/TabBar.vue'
 
-const { error, running, runningIds, act } = useCouchPilot()
+const { error, games, running, runningIds, act } = useCouchPilot()
 
 const tab = ref<Tab>('games')
 watch(tab, () => window.scrollTo({ top: 0 }))
 
-// Game sheet
-const sheetGame = ref<Game | null>(null)
+// Game sheet. It follows the library while open, so an install finishing shows up in it.
+const sheetGameId = ref<string | null>(null)
+const sheetSnapshot = ref<Game | null>(null)
+const sheetGame = computed(() => games.value?.find((g) => g.id === sheetGameId.value) ?? sheetSnapshot.value)
 const sheetOpen = ref(false)
 const openGame = (g: Game) => {
-  sheetGame.value = g
+  sheetGameId.value = g.id
+  sheetSnapshot.value = g
   sheetOpen.value = true
+}
+const installSheetGame = () => sheetGame.value && act(() => api.install(sheetGame.value!.id))
+
+// Uninstalling asks first: getting the game back means downloading it again.
+const uninstalling = ref<Game | null>(null)
+const uninstallOpen = computed({
+  get: () => uninstalling.value !== null,
+  set: (v) => !v && (uninstalling.value = null),
+})
+const confirmUninstall = () => {
+  const g = uninstalling.value
+  if (g) act(() => api.uninstall(g.id))
 }
 const start = async (g: Game) => {
   if (await act(() => api.start(g.id))) sheetOpen.value = false
@@ -118,6 +133,17 @@ const toastOpen = computed({
       @start="startSheetGame"
       @focus="focusSheetGame"
       @stop="askCloseFromSheet"
+      @install="installSheetGame"
+      @uninstall="uninstalling = sheetGame"
+    />
+
+    <ConfirmDialog
+      v-model:open="uninstallOpen"
+      icon="trash"
+      :title="`Disinstallare ${uninstalling?.name ?? ''}?`"
+      description="Lo disinstalla Playnite, col client della sua libreria se serve: potrebbe chiederti una conferma anche sul PC. Per giocarci di nuovo andrà riscaricato."
+      confirm-label="Disinstalla"
+      @confirm="confirmUninstall"
     />
 
     <ConfirmDialog

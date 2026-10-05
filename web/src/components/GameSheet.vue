@@ -9,7 +9,7 @@ import GameCover from './GameCover.vue'
 
 const props = defineProps<{ game: Game | null; running: boolean }>()
 const open = defineModel<boolean>('open', { required: true })
-const emit = defineEmits<{ start: []; focus: []; stop: [] }>()
+const emit = defineEmits<{ start: []; focus: []; stop: []; install: []; uninstall: [] }>()
 
 const detail = ref<GameDetail | null>(null)
 watch(
@@ -46,9 +46,14 @@ const description = computed(() => (detail.value?.description ? stripHtml(detail
         <button class="btn btn-dark" @click="emit('focus')"><AppIcon name="focus" :size="16" />Primo piano</button>
         <button class="btn btn-danger" @click="emit('stop')"><AppIcon name="power" :size="16" />Chiudi gioco</button>
       </div>
-      <button v-else class="btn btn-ink btn-block play" :disabled="!game.installed" @click="emit('start')">
-        <AppIcon name="play" :size="18" />{{ game.installed ? 'Gioca' : 'Non installato' }}
+      <button v-else-if="game.installing || game.uninstalling" class="btn btn-ink btn-block play" disabled>
+        <span class="spinner" aria-hidden="true" />{{ game.installing ? 'Installazione in corso…' : 'Disinstallazione in corso…' }}
       </button>
+      <template v-else-if="game.installed">
+        <button class="btn btn-ink btn-block play" @click="emit('start')"><AppIcon name="play" :size="18" />Gioca</button>
+        <button class="uninstall" @click="emit('uninstall')"><AppIcon name="trash" :size="14" />Disinstalla</button>
+      </template>
+      <button v-else class="btn btn-dark btn-block play" @click="emit('install')"><AppIcon name="download" :size="18" />Installa</button>
 
       <p v-if="description" class="desc">{{ description }}</p>
     </template>
@@ -63,6 +68,27 @@ const description = computed(() => (detail.value?.description ? stripHtml(detail
 .meta { font-size: 0.75rem; color: var(--ink-2); margin-top: 4px; }
 .actions.two { display: grid; grid-template-columns: 1fr 1fr; gap: var(--size-2); margin-top: var(--size-4); }
 .play { margin-top: var(--size-4); padding-block: 0.9rem; font-size: 0.9375rem; }
+.uninstall {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  inline-size: 100%;
+  margin-top: var(--size-2);
+  padding: 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--ink-2);
+}
+.spinner {
+  inline-size: 16px;
+  block-size: 16px;
+  border-radius: var(--radius-round);
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  animation: spin 800ms linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
 .desc {
   margin: var(--size-4) 0 var(--size-2);
   font-size: 0.8125rem;

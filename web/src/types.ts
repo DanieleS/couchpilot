@@ -3,6 +3,9 @@ export type Game = {
   name: string
   source: string
   installed: boolean
+  // Playnite is installing or uninstalling it right now.
+  installing: boolean
+  uninstalling: boolean
   favorite: boolean
   hidden: boolean
   running: boolean

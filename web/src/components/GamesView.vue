@@ -132,7 +132,7 @@ const setFilter = (v: unknown) => v && (filter.value = v as Filter)
           :id="g.id"
           :name="g.name"
           :has-cover="g.hasCover"
-          :badge="runningIds.has(g.id) ? 'In gioco' : undefined"
+          :badge="runningIds.has(g.id) ? 'In gioco' : g.installing ? 'Installo…' : g.uninstalling ? 'Disinstallo…' : undefined"
           :class="{ running: runningIds.has(g.id) }"
         />
         <span class="caption line-clamp-2">{{ g.name }}</span>
