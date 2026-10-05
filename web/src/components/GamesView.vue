@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { ToggleGroupItem, ToggleGroupRoot } from 'reka-ui'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import type { Game, RunningGame } from '../types'
+import { playDayKey, useCaptures } from '../captures'
+import type { Capture, Game, RunningGame } from '../types'
 import { useLive } from '../live'
 import { useCouchPilot } from '../store'
 import AppIcon from './AppIcon.vue'
+import CaptureThumb from './CaptureThumb.vue'
 import DisplayConfirm from './DisplayConfirm.vue'
 import GameCover from './GameCover.vue'
 import NowPlayingBar from './NowPlayingBar.vue'
@@ -25,10 +27,18 @@ const emit = defineEmits<{
   revertDisplays: []
   manageDisplays: []
   stats: []
+  gallery: []
+  viewCapture: [items: Capture[], index: number]
 }>()
 
 const { status, games, running, runningIds, displays } = useCouchPilot()
 const { unreachable } = useLive()
+const { capture, items: captures, unseen } = useCaptures()
+// Today's screenshots and clips, whichever game: a day of play, 5:00 to 5:00.
+const today = computed(() => {
+  const day = playDayKey(new Date().toISOString())
+  return captures.value.filter((c) => playDayKey(c.takenAt) === day)
+})
 
 const query = ref('')
 const filter = ref<Filter>('installed')
@@ -83,7 +93,10 @@ const setFilter = (v: unknown) => v && (filter.value = v as Filter)
     <header class="page-header">
       <h1>Giochi</h1>
       <span class="header-tools">
-        <button class="icon-btn stats" aria-label="Statistiche" @click="emit('stats')"><AppIcon name="chart" :size="17" /></button>
+        <button v-if="capture" class="icon-btn tool" aria-label="Galleria" @click="emit('gallery')">
+          <AppIcon name="image" :size="17" /><span v-if="unseen" class="new" aria-label="Catture nuove" />
+        </button>
+        <button class="icon-btn tool stats" aria-label="Statistiche" @click="emit('stats')"><AppIcon name="chart" :size="17" /></button>
         <PcChip :name="status?.pc ?? null" />
       </span>
     </header>
@@ -91,6 +104,18 @@ const setFilter = (v: unknown) => v && (filter.value = v as Filter)
     <div v-if="current" ref="hero" class="hero-slot">
       <NowPlayingCard :game="current" :screen="activeScreen" @focus="emit('focus', current)" @close="emit('close', current)" />
     </div>
+
+    <template v-if="capture && today.length">
+      <div class="eyebrow">
+        <span>Catture di oggi · {{ today.length }}</span>
+        <button class="link" @click="emit('gallery')">Galleria</button>
+      </div>
+      <div class="scroll-row">
+        <button v-for="(c, i) in today.slice(0, 12)" :key="c.id" class="today" @click="emit('viewCapture', today, i)">
+          <CaptureThumb :capture="c" time />
+        </button>
+      </div>
+    </template>
 
     <template v-if="displays">
       <div class="eyebrow">
@@ -164,7 +189,11 @@ const setFilter = (v: unknown) => v && (filter.value = v as Filter)
 .drop-enter-from, .drop-leave-to { transform: translateY(-100%); opacity: 0; }
 
 .header-tools { display: flex; align-items: center; gap: 6px; }
-.stats { color: var(--ink-2); background: var(--card); box-shadow: var(--card-edge); }
+.tool { position: relative; color: var(--ink); background: var(--card); box-shadow: var(--card-edge); }
+.stats { color: var(--ink-2); }
+.new { position: absolute; top: 2px; right: 2px; inline-size: 9px; block-size: 9px; border-radius: var(--radius-round); background: var(--accent); box-shadow: 0 0 0 2px var(--bg); }
+.today { flex-shrink: 0; inline-size: 9.5rem; border-radius: var(--r-inner); overflow: hidden; transition: transform 100ms var(--ease-out-2); }
+.today:active { transform: scale(0.97); }
 .hero-slot { margin-top: var(--size-3); }
 .link { font-size: 0.75rem; font-weight: 600; letter-spacing: 0.02em; text-transform: none; color: var(--ink-2); }
 .confirm { margin-top: var(--size-2); }

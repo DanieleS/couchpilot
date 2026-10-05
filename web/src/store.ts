@@ -13,7 +13,7 @@ const pendingDeadline = ref<number | null>(null)
 let started = false
 
 // One fetch at a time: a CHANGED arriving mid-fetch queues exactly one more.
-function serialized(fetch: () => Promise<unknown>) {
+export function serialized(fetch: () => Promise<unknown>) {
   let running: Promise<unknown> | null = null
   let again = false
   const run = (): void => {

@@ -1,8 +1,15 @@
 import type { AudioChannel } from './protocol'
-import type { AudioOutput, Game, GameDetail, GameStats, NowPlaying, Preset, Stats, StatsRangeName, Status } from './types'
-import { mockRequest } from './mock'
+import type { AudioOutput, Capture, Captures, Game, GameDetail, GameStats, NowPlaying, Preset, Stats, StatsRangeName, Status } from './types'
+import { mockCaptureArt, mockRequest } from './mock'
 
 const useMock = import.meta.env.VITE_MOCK === '1'
+
+// What the PC answered when it refused; `code` says what's wrong when it can (see CaptureService.cs).
+export class ApiError extends Error {
+  constructor(message: string, readonly code: string | null) {
+    super(message)
+  }
+}
 
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   if (useMock) return mockRequest(method, path, body) as Promise<T>
@@ -13,10 +20,13 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   })
   if (!res.ok) {
     let message = res.statusText
+    let code: string | null = null
     try {
-      message = (await res.json()).error ?? message
+      const error = await res.json()
+      message = error.error ?? message
+      code = error.code ?? null
     } catch {}
-    throw new Error(message)
+    throw new ApiError(message, code)
   }
   const text = await res.text()
   return (text ? JSON.parse(text) : undefined) as T
@@ -44,6 +54,13 @@ export const api = {
   mediaPlayPause: () => request<void>('POST', '/media/play-pause'),
   mediaNext: () => request<void>('POST', '/media/next'),
   mediaPrevious: () => request<void>('POST', '/media/previous'),
+  captures: () => request<Captures>('GET', '/captures'),
+  // These answer once the file is on the PC's disk, with the new capture.
+  screenshot: () => request<Capture>('POST', '/captures/screenshot'),
+  saveReplay: () => request<Capture>('POST', '/captures/replay'),
+  startRecording: () => request<void>('POST', '/captures/record/start'),
+  stopRecording: () => request<Capture>('POST', '/captures/record/stop'),
+  deleteCapture: (id: string) => request<void>('DELETE', `/captures/${id}`),
   confirmDisplays: () => request<void>('POST', '/displays/confirm'),
   revertDisplays: () => request<void>('POST', '/displays/revert'),
 }
@@ -58,3 +75,6 @@ export const audioAppIconUrls = (app: AudioChannel) =>
     : [app.gameId && `/api/games/${app.gameId}/icon`, app.hasIcon && app.key && `/api/audio/apps/${app.key}/icon`].filter((u): u is string => !!u)
 
 export const mediaArtUrl = (version: string) => (useMock ? null : `/api/media/art?v=${encodeURIComponent(version)}`)
+
+export const captureThumbUrl = (c: Capture) => (useMock ? mockCaptureArt(c) : `/api/captures/${c.id}/thumb?v=${c.version}`)
+export const captureFileUrl = (c: Capture) => (useMock ? (c.kind === 'photo' ? mockCaptureArt(c) : null) : `/api/captures/${c.id}/file?v=${c.version}`)

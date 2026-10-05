@@ -25,6 +25,8 @@
   <ItemGroup>
     <Reference Include="PresentationCore" />
     <Reference Include="PresentationFramework" />
+    <!-- Sends deleted captures to the Recycle Bin. -->
+    <Reference Include="Microsoft.VisualBasic" />
     <Reference Include="System.Drawing" />
     <!-- Lets C# await WinRT async operations. -->
     <Reference Include="System.Runtime.WindowsRuntime" />

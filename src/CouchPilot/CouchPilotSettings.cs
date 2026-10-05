@@ -25,6 +25,18 @@ namespace CouchPilot
         private bool remoteInput;
         public bool RemoteInput { get => remoteInput; set => SetValue(ref remoteInput, value); }
 
+        // Screenshots and clips from the phone, and the gallery: off unless you turn it on, since
+        // whoever reaches the port could see them.
+        private bool captures;
+        public bool Captures { get => captures; set => SetValue(ref captures, value); }
+
+        private Captures.CaptureTool captureTool = CouchPilot.Captures.CaptureTool.GameBar;
+        public Captures.CaptureTool CaptureTool { get => captureTool; set => SetValue(ref captureTool, value); }
+
+        // A folder of your own shown in the gallery too, besides Game Bar's and NVIDIA's.
+        private string captureFolder = "";
+        public string CaptureFolder { get => captureFolder; set => SetValue(ref captureFolder, value); }
+
         // Home Assistant over MQTT: off unless you turn it on.
         private bool mqttEnabled;
         public bool MqttEnabled { get => mqttEnabled; set => SetValue(ref mqttEnabled, value); }
@@ -98,6 +110,7 @@ namespace CouchPilot
                 plugin.RestartServer();
             }
             plugin.ApplyInputSetting();
+            plugin.ApplyCaptureSettings();
             if (MqttChanged(editing))
             {
                 plugin.RestartHomeAssistant();
@@ -105,6 +118,8 @@ namespace CouchPilot
         }
 
         internal void PickCertificate() => plugin?.PickCertificate();
+
+        internal void PickCaptureFolder() => plugin?.PickCaptureFolder();
 
         public bool VerifySettings(out List<string> errors)
         {
@@ -123,6 +138,10 @@ namespace CouchPilot
                 {
                     errors.Add(e.Message);
                 }
+            }
+            if (!string.IsNullOrWhiteSpace(CaptureFolder) && !System.IO.Directory.Exists(CaptureFolder.Trim()))
+            {
+                errors.Add("La cartella delle catture non esiste.");
             }
             if (MqttEnabled && string.IsNullOrWhiteSpace(MqttHost))
             {
@@ -146,6 +165,9 @@ namespace CouchPilot
             CertificatePath = other.CertificatePath;
             CertificatePassword = other.CertificatePassword;
             RemoteInput = other.RemoteInput;
+            Captures = other.Captures;
+            CaptureTool = other.CaptureTool;
+            CaptureFolder = other.CaptureFolder;
             MqttEnabled = other.MqttEnabled;
             MqttHost = other.MqttHost;
             MqttPort = other.MqttPort;

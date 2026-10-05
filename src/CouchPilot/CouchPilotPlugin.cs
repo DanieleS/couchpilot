@@ -1,9 +1,11 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Threading.Tasks;
 using System.Security.Cryptography.X509Certificates;
 using System.Windows.Controls;
 using CouchPilot.Audio;
+using CouchPilot.Captures;
 using CouchPilot.Displays;
 using CouchPilot.Games;
 using CouchPilot.HomeAssistant;
@@ -31,6 +33,11 @@ namespace CouchPilot
         private readonly SessionLog sessionLog;
         private readonly StatsService stats;
         private readonly RemoteInput input = new RemoteInput();
+        private readonly CaptureLibrary captureLibrary;
+        private readonly CaptureService captures;
+        private readonly Thumbnails thumbnails;
+        // The extra folder the gallery was last set up with; null until it first is.
+        private string capturesConfiguredFor;
         private RemoteServer server;
         private HomeAssistantBridge homeAssistant;
 
@@ -53,6 +60,11 @@ namespace CouchPilot
             stats = new StatsService(api, sessionLog, sessions);
             displays = new DisplayService(Path.Combine(GetPluginUserDataPath(), "display-presets.json"));
             new AudioFollowsDisplays(displays, audio);
+            captureLibrary = new CaptureLibrary(() => api.Database.Games, sessionLog, sessions, GetPluginUserDataPath());
+            captures = new CaptureService(captureLibrary);
+            thumbnails = new Thumbnails(Path.Combine(GetPluginUserDataPath(), "thumbnails"));
+            captureLibrary.Changed += () => server?.CapturesChanged();
+            captures.StatusChanged += () => server?.Nudge();
             ApplyInputSetting();
         }
 
@@ -64,6 +76,7 @@ namespace CouchPilot
             PlayniteApi.Database.Games.ItemCollectionChanged += (_, __) => server?.LibraryChanged();
             media.Changed += () => server?.MediaChanged();
             media.Start();
+            ApplyCaptureSettings();
             StartServer();
             StartHomeAssistant();
         }
@@ -76,6 +89,8 @@ namespace CouchPilot
             homeAssistant = null;
             displays.Dispose();
             media.Dispose();
+            captureLibrary.Dispose();
+            thumbnails.Dispose();
         }
 
         public override void OnGameStarted(OnGameStartedEventArgs args)
@@ -89,6 +104,7 @@ namespace CouchPilot
         {
             sessions.Stopped(args.Game);
             sessionLog.Add(args.Game.Id, DateTime.UtcNow, (long)args.ElapsedSeconds);
+            captures.GameStopped();
             server?.Nudge();
             homeAssistant?.Nudge();
         }
@@ -109,6 +125,38 @@ namespace CouchPilot
         {
             input.Enabled = Settings.RemoteInput;
             server?.Nudge();
+        }
+
+        // The folders are scanned in the background, and only once the gallery is on: with
+        // GeForce Experience's default that's the whole Videos folder.
+        internal void ApplyCaptureSettings()
+        {
+            captures.Enabled = Settings.Captures;
+            captures.Tool = Settings.CaptureTool;
+            var folder = Settings.CaptureFolder?.Trim() ?? "";
+            if (Settings.Captures && capturesConfiguredFor != folder)
+            {
+                capturesConfiguredFor = folder;
+                Task.Run(() =>
+                {
+                    try
+                    {
+                        captureLibrary.Configure(folder);
+                    }
+                    catch (Exception e)
+                    {
+                        logger.Error(e, "Reading the capture folders failed");
+                    }
+                });
+            }
+            server?.Nudge();
+            server?.CapturesChanged();
+        }
+
+        internal void PickCaptureFolder()
+        {
+            var path = PlayniteApi.Dialogs.SelectFolder();
+            if (!string.IsNullOrEmpty(path)) Settings.CaptureFolder = path;
         }
 
         internal void RestartHomeAssistant()
@@ -153,7 +201,7 @@ namespace CouchPilot
                             NotificationType.Error));
                     }
                 }
-                server = new RemoteServer(Settings.Port, certificate, webRoot, library, gameControl, displays, input, audio, media, stats);
+                server = new RemoteServer(Settings.Port, certificate, webRoot, library, gameControl, displays, input, audio, media, stats, captures, captureLibrary, thumbnails);
                 server.Start();
                 PlayniteApi.Notifications.Remove("couchpilot-server");
                 Addresses = NetworkInfo.LanUrls(Settings.Port, certificate != null, certificate == null ? null : ServerCertificate.HostName(certificate));

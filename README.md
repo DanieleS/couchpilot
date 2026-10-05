@@ -17,6 +17,7 @@ CouchPilot is a Playnite extension that serves a small web app on your local net
 - **Audio with a preset (optional)**: a display preset can switch the audio output too, say to the TV over HDMI for «Solo TV». If the preset is rolled back, the audio goes back as well. Presets leave the audio alone unless you pick an output for them (the speaker button next to each preset).
 - **Vibepollo-aware**: while Vibepollo streams, its virtual display owns the screens, so presets are locked and the automatic rollback stands down.
 - **Home Assistant (optional)**: publishes the running game, the active display preset and whether a Vibepollo stream is on to an MQTT broker, with discovery, so the PC shows up as a device; optionally also takes commands (switch preset, close, focus or start a game).
+- **Screenshots and clips (optional)**: take a screenshot, start and stop a recording, or save the last 30 seconds from the running game's card; Game Bar or NVIDIA does the capturing. Everything they saved shows up in a gallery by day and by game, to watch on the phone, share to any app or send to the PC's Recycle Bin.
 - **Touchpad and keyboard (optional)**: drive the PC's mouse and keyboard from the phone. One finger moves, a tap clicks, two fingers scroll or right-click, tap and hold drags. The phone's own keyboard types on the PC, with a Termux-style bar of extra keys above it (Esc, Tab, Ctrl/Alt/Win/Shift, arrows, F1–F12), plus shortcuts.
 
 ## Install
@@ -97,6 +98,27 @@ Off by default: whoever reaches the port could type on the PC. Turn it on in the
 
 Input travels over the phone's live WebSocket, a few bytes per command. Connections from pages on other sites are refused, and a button held down is let go if the phone drops.
 
+## Screenshots and clips
+
+Off by default: whoever reaches the port could see what you captured. Turn it on in the extension settings with **Mostra screenshot e clip sul telefono** and pick who captures:
+
+| | Game Bar (Windows) | NVIDIA (GeForce Experience, NVIDIA app) |
+|---|---|---|
+| Scatta (screenshot) | Win+Alt+PrtScn | Alt+F1 |
+| Registra (start / stop) | Win+Alt+R | Alt+F9 |
+| Ultimi 30 s (replay) | Win+Alt+G | Alt+F10 |
+
+CouchPilot presses the tool's own shortcut, as you would at the keyboard, and waits for the file. So:
+
+- the shortcuts have to be the tools' defaults, and the game has to be in the foreground (it is while you play; **Primo piano** brings it back otherwise);
+- saving the last seconds needs the tool to be keeping them: in Windows, *Settings → Gaming → Captures → Record what happened*; in NVIDIA's overlay (Alt+Z), *Instant Replay → On*. If it isn't, the phone says how to turn it on. With Game Bar the button shows how long it keeps, read from Windows' settings;
+- CouchPilot can't ask the tools whether they're recording: it remembers the recording it started, and forgets it once the recording turns up in the folder (Game Bar stops by itself at its time limit or when the game closes);
+- games running as administrator ignore the shortcuts, like the touchpad (Windows drops synthetic input aimed at them).
+
+The gallery shows Game Bar's *Captures* folder (wherever you moved it), NVIDIA's folder (the one set in its settings, or *Videos\NVIDIA*) and one more of your choice. Screenshots and MP4 clips are listed with their game: the game whose session they fall in, from CouchPilot's own session log, or the game their file or folder is named after. A new file shows up on the phone a moment after the tool finishes writing it, with a notice; that includes captures made at the PC.
+
+Thumbnails are made once, on the PC, and kept with the extension's data (`thumbnails`); a video's thumbnail is the one Explorer shows, so a codec Windows lacks (HEVC without its extension, AV1) gives a plain tile. Videos stream with seeking; **Condividi** hands the file to the phone's apps (it needs HTTPS, see above), **Salva** downloads it, **Elimina** moves it to the PC's Recycle Bin.
+
 ## Home Assistant
 
 Off by default. In the extension settings tick **Pubblica lo stato del PC su Home Assistant** and fill in the MQTT broker (address, port, user, password). With discovery on (the default `homeassistant` prefix) Home Assistant creates a *CouchPilot &lt;PC name&gt;* device with:
@@ -142,6 +164,7 @@ src/CouchPilot/      Playnite generic extension (C#, .NET Framework 4.6.2)
   Library/           Game list and images from the Playnite database
   Games/             Running sessions, closing and focusing games
   Displays/          Display presets on top of the Windows CCD API
+  Captures/          Screenshots and clips through Game Bar or NVIDIA, the gallery's index and thumbnails
 ```
 
 Web app against fake data, no PC needed:

@@ -1,6 +1,6 @@
 // In-memory stand-in for the plugin's API, for `pnpm dev:mock` on a machine without Playnite.
 import { decode, type ServerMessage } from './protocol'
-import type { Game, Monitor, Preset, RunningGame, Status } from './types'
+import type { Capture, CaptureStatus, Game, Monitor, Preset, RunningGame, Status } from './types'
 
 const names: [string, string, number][] = [
   ['Elden Ring', 'Steam', 142], ['Warhammer 40,000: Space Marine 2', 'Steam', 31], ['Hades II', 'Epic', 54],
@@ -61,6 +61,7 @@ function status(): Status {
     pc: 'PC-GAMING',
     running,
     input: inputEnabled,
+    capture: captureStatus(),
     // `?nopads=1` pretends no controller is connected.
     controllers: new URLSearchParams(location.search).has('nopads')
       ? []
@@ -182,6 +183,90 @@ function mockGameStats(index: number) {
   }
 }
 
+// Captures: a few a day on the days games were played, plus the odd one of the desktop.
+// `?nocapture=1` pretends they're off in the settings, `?nvidia=1` that NVIDIA makes them,
+// `?noreplay=1` that Game Bar isn't recording in the background.
+const query = new URLSearchParams(location.search)
+const captureTool = query.has('nvidia') ? 'nvidia' : 'gamebar'
+let recordingSince: string | null = null
+let captureRevision = 0
+const captures: Capture[] = []
+function mockCapture(gameIndex: number | null, at: Date, kind: Capture['kind'], seconds: number | null = null, replay = false): Capture {
+  const id = (seed(at.toISOString() + kind) >>> 0).toString(16).padStart(8, '0') + String(captures.length).padStart(4, '0')
+  const g = gameIndex === null ? null : games[gameIndex]
+  return {
+    id, kind, replay, takenAt: at.toISOString(), seconds,
+    bytes: kind === 'photo' ? 2_800_000 + (seed(id) % 900_000) : Math.round((seconds ?? 30) * 1_600_000),
+    width: 2560, height: 1440,
+    gameId: g?.id ?? null, game: g?.name ?? 'Desktop', tool: captureTool,
+    fileName: `${g?.name ?? 'Desktop'} ${at.toISOString().slice(0, 19).replace(/[T:]/g, '-')}.${kind === 'photo' ? 'png' : 'mp4'}`,
+    version: '1',
+  }
+}
+for (let back = 0; back < 14; back++) {
+  const day = new Date(playDay().getTime() - back * DAY)
+  for (const [g] of playedOn(day)) {
+    const h = seed(dayKey(day) + g)
+    for (let i = 0; i < 2 + (h % 5); i++) {
+      const at = new Date(day.getTime() + (20 * 60 + ((h >> i) % 180)) * 60000 + i * 97000)
+      if (at.getTime() > Date.now()) continue
+      const video = (h >> (i + 2)) % 4 === 0
+      captures.push(mockCapture(g, at, video ? 'video' : 'photo', video ? ((h >> i) % 3 === 0 ? 134 : 30) : null, video && (h >> i) % 3 !== 0))
+    }
+  }
+  if (back % 5 === 2) captures.push(mockCapture(null, new Date(day.getTime() + 15 * 3600000), 'photo'))
+}
+captures.sort((a, b) => b.takenAt.localeCompare(a.takenAt))
+
+function captureStatus(): CaptureStatus | null {
+  if (query.has('nocapture')) return null
+  return { tool: captureTool, recordingSince, replaySeconds: captureTool === 'gamebar' && !query.has('noreplay') ? 30 : null }
+}
+
+// After a moment, as the PC answers once the file is on disk.
+async function captureCommand(what: string): Promise<Capture | undefined> {
+  const fail = (message: string, code: string) => Object.assign(new Error(message), { code })
+  const playing = running[0] ? games.findIndex((g) => g.id === running[0].id) : null
+  const add = (c: Capture) => {
+    captures.unshift(c)
+    captureRevision++
+    return c
+  }
+  if (what === 'screenshot') {
+    await new Promise((r) => setTimeout(r, 700))
+    return add(mockCapture(playing, new Date(), 'photo'))
+  }
+  if (what === 'replay') {
+    if (query.has('noreplay')) {
+      throw captureTool === 'nvidia'
+        ? fail('Il PC non ha salvato nessuna clip: il Replay istantaneo di NVIDIA è acceso?', 'replay-off')
+        : fail('Game Bar non sta registrando in sottofondo: non c\'è niente da salvare.', 'replay-off')
+    }
+    await new Promise((r) => setTimeout(r, 2500))
+    return add(mockCapture(playing, new Date(), 'video', 30, true))
+  }
+  if (what === 'start') {
+    recordingSince = new Date().toISOString()
+    return
+  }
+  if (what === 'stop') {
+    const since = recordingSince ? new Date(recordingSince) : new Date()
+    recordingSince = null
+    await new Promise((r) => setTimeout(r, 1500))
+    return add(mockCapture(playing, since, 'video', Math.max(1, Math.round((Date.now() - since.getTime()) / 1000))))
+  }
+}
+
+// A stand-in for the thumbnail: the game's colours, a sun and a mountain, a little different each time.
+export function mockCaptureArt(c: Capture) {
+  const h = seed(c.game ?? 'x') % 360
+  const k = seed(c.id)
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 90"><rect width="160" height="90" fill="hsl(${h} 35% 22%)"/>` +
+    `<circle cx="${30 + (k % 100)}" cy="${24 + (k % 20)}" r="${14 + (k % 10)}" fill="hsl(${(h + 50) % 360} 80% 65%)"/>` +
+    `<polygon points="${k % 40},90 ${60 + (k % 30)},${36 + (k % 18)} ${130 + (k % 30)},90" fill="rgb(0 0 0 / 0.35)"/></svg>`
+  return `data:image/svg+xml,${encodeURIComponent(svg)}`
+}
+
 // Bumped whenever a game changes, like Playnite's ItemUpdated: the link then sends CHANGED library.
 let libraryRevision = 0
 // Installing or uninstalling takes a few seconds, like a small game from a fast CDN.
@@ -283,6 +368,7 @@ export function createMockLink(receive: (m: ServerMessage) => void, onClose: () 
   let lastStatus = ''
   let lastLibrary = libraryRevision
   let lastMedia = mediaRevision
+  let lastCaptures = captureRevision
   const deliver = (bytes: Uint8Array) => setTimeout(() => !closed && receive(decode(bytes)))
   const shapeOf = (channels: MockChannel[]) =>
     JSON.stringify([defaultOutput, defaultInput, channels.map((c) => [c.role, c.key, c.name])])
@@ -321,7 +407,7 @@ export function createMockLink(receive: (m: ServerMessage) => void, onClose: () 
   deliver(Uint8Array.of(0x80, 1))
   // Everything counts as changed on a new connection.
   lastStatus = statusKey()
-  deliver(Uint8Array.of(0x81, 1 | 2 | 4))
+  deliver(Uint8Array.of(0x81, 1 | 2 | 4 | 8))
   let tick = 0
   const timer = setInterval(() => {
     if (tick % 12 === 0 && libraryRevision !== lastLibrary) {
@@ -331,6 +417,10 @@ export function createMockLink(receive: (m: ServerMessage) => void, onClose: () 
     if (mediaRevision !== lastMedia) {
       lastMedia = mediaRevision
       deliver(Uint8Array.of(0x81, 4))
+    }
+    if (captureRevision !== lastCaptures) {
+      lastCaptures = captureRevision
+      deliver(Uint8Array.of(0x81, 8))
     }
     if (tick++ % 12 === 0) pushStatus()
     if (audio) pushAudio()
@@ -391,6 +481,18 @@ async function handle(method: string, path: string, body?: any): Promise<unknown
     }
   }
   if (method === 'POST' && a === 'media') return mediaCommand(b)
+  if (a === 'captures') {
+    if (!captureStatus()) throw new Error('Le catture sono spente nelle impostazioni di CouchPilot.')
+    if (method === 'GET' && !b) return { items: captures, bytes: captures.reduce((t, x) => t + x.bytes, 0), folders: ['C:\\Users\\pc\\Videos\\Captures'] }
+    if (method === 'POST') return captureCommand(b === 'record' ? c : b)
+    if (method === 'DELETE') {
+      const i = captures.findIndex((x) => x.id === b)
+      if (i < 0) throw new Error('Cattura non trovata.')
+      captures.splice(i, 1)
+      captureRevision++
+      return
+    }
+  }
   if (method === 'GET' && a === 'audio' && b === 'outputs') {
     const kinds = ['speakers', 'headphones', 'display'] as const
     return outputs.map((d, i) => ({ id: d.id, name: d.name, detail: d.detail, kind: kinds[d.kind] ?? 'speakers', default: i === defaultOutput }))
