@@ -1,0 +1,18 @@
+# .NET
+bin/
+obj/
+*.user
+.vs/
+
+# Web
+node_modules/
+src/CouchPilot/wwwroot/
+
+# Packaging
+*.pext
+dist/
+
+.DS_Store
+
+# Local tooling
+.claude/

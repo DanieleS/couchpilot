@@ -1,0 +1,58 @@
+/* Shared by every Reka overlay: bottom sheets, alert dialogs, the name prompt. */
+
+.sheet-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: var(--scrim);
+  animation: fade-in 180ms var(--ease-out-2);
+}
+.sheet {
+  position: fixed;
+  inset: auto 0 0;
+  z-index: 41;
+  max-block-size: 88dvh;
+  overflow-y: auto;
+  padding: var(--size-3) var(--gutter) var(--safe-bottom);
+  border-radius: 24px 24px 0 0;
+  background: var(--card);
+  box-shadow: 0 -8px 32px rgb(0 0 0 / 0.2);
+  animation: sheet-up 240ms var(--ease-out-3);
+  outline: none;
+}
+.sheet .grabber {
+  display: block;
+  inline-size: 2.5rem;
+  block-size: 4px;
+  margin: 0 auto var(--size-3);
+  border-radius: var(--radius-round);
+  background: var(--line);
+}
+@keyframes sheet-up { from { transform: translateY(100%); } }
+@keyframes fade-in { from { opacity: 0; } }
+
+.dialog {
+  position: fixed;
+  z-index: 41;
+  inset: 50% auto auto 50%;
+  transform: translate(-50%, -50%);
+  inline-size: min(22rem, calc(100vw - 2 * var(--gutter)));
+  padding: var(--size-5) var(--size-4) var(--size-4);
+  text-align: center;
+  animation: pop-in 180ms var(--ease-out-3);
+  outline: none;
+}
+.dialog .badge {
+  display: grid;
+  place-items: center;
+  inline-size: 3rem;
+  block-size: 3rem;
+  margin: 0 auto var(--size-3);
+  border-radius: var(--r-field);
+  background: color-mix(in srgb, var(--danger) 15%, transparent);
+  color: var(--danger);
+}
+.dialog .title { margin: 0; font-size: 1rem; font-weight: 800; }
+.dialog .desc { margin: 6px 0 0; font-size: 0.8125rem; line-height: 1.4; color: var(--ink-2); }
+.dialog .actions { display: grid; grid-template-columns: 1fr 1fr; gap: var(--size-2); margin-top: var(--size-4); }
+@keyframes pop-in { from { opacity: 0; transform: translate(-50%, -46%) scale(0.97); } }

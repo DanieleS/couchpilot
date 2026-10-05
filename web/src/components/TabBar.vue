@@ -1,0 +1,55 @@
+<script setup lang="ts">
+export type Tab = 'games' | 'displays' | 'control'
+
+const tab = defineModel<Tab>({ required: true })
+const tabs: { key: Tab; label: string; shape: 'circle' | 'square' | 'triangle' }[] = [
+  { key: 'games', label: 'Giochi', shape: 'circle' },
+  { key: 'displays', label: 'Schermi', shape: 'square' },
+  { key: 'control', label: 'Controllo', shape: 'triangle' },
+]
+</script>
+
+<template>
+  <nav class="tabbar" aria-label="Sezioni">
+    <button
+      v-for="t in tabs"
+      :key="t.key"
+      :class="{ on: tab === t.key }"
+      :aria-current="tab === t.key ? 'page' : undefined"
+      @click="tab = t.key"
+    >
+      <span class="shape" :class="t.shape" aria-hidden="true" />
+      {{ t.label }}
+    </button>
+  </nav>
+</template>
+
+<style scoped>
+.tabbar {
+  position: fixed;
+  inset: auto 0 0;
+  z-index: 30;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  padding: var(--size-2) 0 var(--safe-bottom);
+  background: var(--nav-bg);
+  box-shadow: var(--nav-edge);
+  backdrop-filter: blur(12px);
+}
+button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0;
+  font-size: 0.65625rem;
+  font-weight: 700;
+  color: var(--ink-2);
+}
+button.on { color: var(--ink); }
+.shape { inline-size: 16px; block-size: 16px; background: var(--nav-shape); transition: background 150ms, transform 150ms var(--ease-spring-3); }
+.on .shape { background: var(--accent); transform: scale(1.1); }
+.circle { border-radius: var(--radius-round); }
+.square { border-radius: 4px; }
+.triangle { clip-path: polygon(50% 0, 100% 100%, 0 100%); }
+</style>

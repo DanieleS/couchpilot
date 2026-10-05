@@ -1,0 +1,208 @@
+@import "open-props/style";
+@import "@fontsource-variable/archivo/wdth.css";
+
+/*
+  CouchPilot: a calm Bauhaus. Archivo throughout, rounded cards, and three primaries
+  that each have one job:
+    --run    yellow  a game is running
+    --wait   blue    waiting on you (a display preset to keep or revert)
+    --accent red     the primary monitor, and closing things
+  Light by default, dark when the phone is.
+*/
+:root {
+  color-scheme: light dark;
+
+  --bg: #f4f1ea;
+  --card: #ffffff;
+  --card-edge: 0 1px 2px rgb(30 25 15 / 0.06), 0 4px 14px rgb(30 25 15 / 0.06);
+  --line: #ddd6c8;
+  --well: #f4f1ea;
+  --ink: #1d1b18;
+  --ink-2: #7a746a;
+  --accent: #e8543a;
+  --run: #f6c443;
+  --run-ink: #1d1b18;
+  --wait: #3263d6;
+  --ok: #2f9e65;
+  --danger: #e8543a;
+  --selected: #3263d6;
+  --selected-ink: #ffffff;
+  --selected-ink-2: rgb(255 255 255 / 0.7);
+  --selected-well: rgb(255 255 255 / 0.15);
+  --selected-glow: 0 6px 16px -6px rgb(50 99 214 / 0.6);
+  --monitor: #ddd6c8;
+  --monitor-selected: rgb(255 255 255 / 0.45);
+  --monitor-primary-selected: #ffffff;
+  --button-dark: #1d1b18;
+  --button-dark-ink: #ffffff;
+  --nav-bg: rgb(255 255 255 / 0.9);
+  --nav-edge: 0 -1px 0 #ebe5da;
+  --nav-shape: #d3ccbf;
+  --hero-deco-1: rgb(255 255 255 / 0.28);
+  --hero-deco-2: rgb(50 99 214 / 0.18);
+  --scrim: rgb(29 27 24 / 0.45);
+
+  --font: "Archivo Variable", var(--font-system-ui);
+  --r-card: 16px;
+  --r-inner: 10px;
+  --r-field: 14px;
+  --r-cover: 12px;
+  --r-hero: 20px;
+  --r-button: 12px;
+  --gutter: var(--size-3);
+  --safe-top: max(env(safe-area-inset-top), var(--size-2));
+  --safe-bottom: max(env(safe-area-inset-bottom), var(--size-3));
+  --nav-height: calc(3.75rem + var(--safe-bottom));
+
+  font-family: var(--font);
+  font-size: 16px;
+  line-height: var(--font-lineheight-2);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #141416;
+    --card: #1e1e21;
+    --card-edge: 0 0 0 1px #2c2c30;
+    --line: #3a3a3f;
+    --well: #151517;
+    --ink: #f3efe6;
+    --ink-2: #9a958c;
+    --accent: #ff3b4e;
+    --run: #ffc600;
+    --run-ink: #141414;
+    --wait: #4d7dff;
+    --ok: #3ccf82;
+    --danger: #ff3b4e;
+    --selected: #f3efe6;
+    --selected-ink: #141414;
+    --selected-ink-2: rgb(20 20 20 / 0.6);
+    --selected-well: #e3ddd1;
+    --selected-glow: none;
+    --monitor: #3a3a3f;
+    --monitor-selected: #bdb6aa;
+    --monitor-primary-selected: #e4002b;
+    --button-dark: #141414;
+    --button-dark-ink: #f3efe6;
+    --nav-bg: rgb(20 20 22 / 0.92);
+    --nav-edge: 0 -1px 0 #2c2c30;
+    --nav-shape: #4a4a50;
+    --hero-deco-1: #e4002b;
+    --hero-deco-2: #0047bb;
+    --scrim: rgb(0 0 0 / 0.6);
+  }
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
+}
+
+h1, h2, h3, p { margin: 0; }
+ul { margin: 0; padding: 0; list-style: none; }
+
+h1 {
+  font-size: 2rem;
+  font-weight: 750;
+  letter-spacing: -0.03em;
+  line-height: 1;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+button:disabled { cursor: default; }
+input { font: inherit; color: inherit; }
+svg { display: block; }
+
+.page { padding: var(--safe-top) var(--gutter) calc(var(--nav-height) + var(--size-5)); }
+
+.page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--size-3);
+  padding-top: var(--size-2);
+}
+
+.eyebrow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: var(--size-5) 0 var(--size-2);
+  font-size: 0.65625rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+
+.card {
+  background: var(--card);
+  box-shadow: var(--card-edge);
+  border-radius: var(--r-card);
+}
+
+.muted { color: var(--ink-2); }
+.tabular { font-variant-numeric: tabular-nums; }
+.truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.line-clamp-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.scroll-row {
+  display: flex;
+  gap: var(--size-2);
+  overflow-x: auto;
+  margin-inline: calc(var(--gutter) * -1);
+  padding: 2px var(--gutter) var(--size-2);
+  scrollbar-width: none;
+}
+.scroll-row::-webkit-scrollbar { display: none; }
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--size-2);
+  padding: 0.75rem var(--size-3);
+  border-radius: var(--r-button);
+  font-size: 0.8125rem;
+  font-weight: 700;
+  transition: transform 100ms var(--ease-out-2), opacity 100ms;
+}
+.btn:active:not(:disabled) { transform: scale(0.97); }
+.btn:disabled { opacity: 0.45; }
+.btn-dark { background: var(--button-dark); color: var(--button-dark-ink); }
+.btn-danger { background: var(--danger); color: #fff; }
+.btn-wait { background: var(--wait); color: #fff; }
+.btn-ink { background: var(--ink); color: var(--bg); }
+.btn-ghost { box-shadow: inset 0 0 0 2px var(--ink); }
+.btn-block { inline-size: 100%; }
+
+.icon-btn {
+  display: grid;
+  place-items: center;
+  inline-size: 2.25rem;
+  block-size: 2.25rem;
+  border-radius: var(--radius-round);
+  flex-shrink: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
