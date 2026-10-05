@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using CouchPilot.Displays;
 using CouchPilot.Input;
 using CouchPilot.Library;
@@ -28,7 +29,15 @@ namespace CouchPilot.Server
             Running = library.Running(),
             Displays = displays.Snapshot(),
             Input = input.Enabled,
+            Controllers = Native.XInput.Pads().Select(p => new ControllerDto
+            {
+                Slot = p.Slot + 1,
+                Wired = p.Wired,
+                Battery = p.Level == null ? null : Levels[Math.Min(p.Level.Value, Levels.Length - 1)],
+            }).ToList(),
         };
+
+        private static readonly string[] Levels = { "empty", "low", "medium", "full" };
 
         // What decides whether phones are told the status changed: the status as JSON, with the
         // pending display change's countdown left out. The countdown alone isn't news, the phone
@@ -50,5 +59,16 @@ namespace CouchPilot.Server
         public DisplaysDto Displays { get; set; }
         // Touchpad and keyboard are allowed in the extension settings.
         public bool Input { get; set; }
+        public List<ControllerDto> Controllers { get; set; }
+    }
+
+    // An Xbox-style controller connected to the PC.
+    public class ControllerDto
+    {
+        // 1–4, like the light on the controller.
+        public int Slot { get; set; }
+        public bool Wired { get; set; }
+        // empty, low, medium or full; null when wired or when the pad doesn't say.
+        public string Battery { get; set; }
     }
 }

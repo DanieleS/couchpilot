@@ -161,7 +161,7 @@ Right after HELLO the PC sends CHANGED with every topic set (`81 03`), so a phon
 
 **Why not send the data itself.** Status and library are nested, vary in shape and change a few times a minute at most. As JSON on HTTP they keep one schema, readable with a browser or `curl`, and need no binary layout to keep in step with it. The socket only carries what has to be immediate or compact. One round trip after a CHANGED costs a few milliseconds on a home network.
 
-**Status.** The PC compares the status about twice a second, and on the next tick after anything it knows changes it: a game starting or stopping, a preset applied, kept, reverted, saved, renamed or deleted, the input setting toggled. CHANGED goes out only if the status differs from the last one announced, **ignoring `displays.pending.secondsLeft`**: the countdown alone isn't news, and the phone counts down by itself from the value it fetched.
+**Status.** The PC compares the status about twice a second, and on the next tick after anything it knows changes it: a game starting or stopping, a preset applied, kept, reverted, saved, renamed or deleted, the input setting toggled. A controller connecting, disconnecting or changing battery level shows up at the next twice-a-second check. CHANGED goes out only if the status differs from the last one announced, **ignoring `displays.pending.secondsLeft`**: the countdown alone isn't news, and the phone counts down by itself from the value it fetched.
 
 **Library.** Sent when Playnite adds, removes or updates a game: an import, an install, the playtime after a session, a cover downloaded. An import can update hundreds of games in a row, so the PC announces the library at most twice a second.
 
@@ -196,7 +196,11 @@ Right after HELLO the PC sends CHANGED with every topic set (`81 03`), so a phon
     },
     "streamActive": false                 // a Vibepollo stream owns the displays
   },
-  "input": true                           // the phone may use mouse and keyboard
+  "input": true,                          // the phone may use mouse and keyboard
+  "controllers": [                        // Xbox-style pads (XInput), by slot
+    { "slot": 1, "wired": false, "battery": "medium" },  // empty, low, medium, full
+    { "slot": 2, "wired": true, "battery": null }        // null when wired or unknown
+  ]
 }
 ```
 

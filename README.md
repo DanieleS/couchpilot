@@ -9,6 +9,7 @@ CouchPilot is a Playnite extension that serves a small web app on your local net
 - **Library**: your Playnite games with covers, search, and filters (installed, recent, favourites).
 - **Install and uninstall**: install a game from the phone, or uninstall it after a confirmation; Playnite hands the job to the game's library (Steam, Epic, GOG…), whose client may open on the PC.
 - **Launch and close**: start a game; close it gracefully (every window is asked to close first, forced only after 10 s); bring it back to the foreground.
+- **Controllers**: the Xbox-style pads connected to the PC, with their battery, on the running game's card and in the Control tab; a low battery turns red. PlayStation and Switch pads don't speak XInput, so they show up only through Steam Input.
 - **Display presets**: save the current monitor layout under a name, apply any saved layout with one tap. If you don't confirm within 15 s the previous layout comes back by itself, so a preset that leaves you with a black screen can't strand you.
 - **Audio**: pick the PC's output and input device, set the overall volume and each app's volume, like Windows' volume mixer. The running game gets a card at the top of the mixer with its art and Playnite's metadata, and every app has a live level meter.
 - **Vibepollo-aware**: while Vibepollo streams, its virtual display owns the screens, so presets are locked and the automatic rollback stands down.

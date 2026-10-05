@@ -64,6 +64,16 @@ export type Status = {
   displays: Displays
   // Touchpad and keyboard are allowed in the extension settings.
   input: boolean
+  controllers: Controller[]
+}
+
+// An Xbox-style controller connected to the PC.
+export type Controller = {
+  // 1–4, like the light on the controller.
+  slot: number
+  wired: boolean
+  // Null when wired, or when the pad doesn't say.
+  battery: 'empty' | 'low' | 'medium' | 'full' | null
 }
 
 export type VolumeChange = { volume?: number; muted?: boolean }

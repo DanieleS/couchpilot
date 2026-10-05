@@ -3,6 +3,7 @@ import { computed, nextTick, ref, watch } from 'vue'
 import { useRemoteInput, Vk, type Mod } from '../input'
 import { useCouchPilot } from '../store'
 import { useVisualViewport } from '../viewport'
+import ControllerChips from './ControllerChips.vue'
 import KeyboardBar from './KeyboardBar.vue'
 import PcChip from './PcChip.vue'
 import TouchPad from './TouchPad.vue'
@@ -75,6 +76,11 @@ watch(
       Tastiera
     </button>
 
+    <template v-if="status?.controllers?.length">
+      <p class="eyebrow">Controller</p>
+      <ControllerChips :controllers="status.controllers" />
+    </template>
+
     <p class="eyebrow">Scorciatoie</p>
     <div class="scroll-row">
       <button v-for="s in shortcuts" :key="s.label" class="key chip" :disabled="disabled" @click="input.key(s.vk, s.mods)">{{ s.label }}</button>
@@ -99,7 +105,7 @@ watch(
 .muted { font-size: 0.75rem; line-height: 1.45; margin-top: 4px; }
 .keyboard { margin-top: var(--size-3); }
 /* While typing only the touchpad stays: everything else would sit under the keyboard. */
-.typing .keyboard, .typing .eyebrow, .typing .scroll-row { display: none; }
+.typing .keyboard, .typing .eyebrow, .typing .scroll-row, .typing .pads { display: none; }
 
 .key {
   block-size: 2.75rem;

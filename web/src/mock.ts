@@ -60,6 +60,10 @@ function status(): Status {
     pc: 'PC-GAMING',
     running,
     input: inputEnabled,
+    // `?nopads=1` pretends no controller is connected.
+    controllers: new URLSearchParams(location.search).has('nopads')
+      ? []
+      : [{ slot: 1, wired: false, battery: 'medium' }, { slot: 2, wired: false, battery: 'low' }, { slot: 3, wired: true, battery: null }],
     displays: {
       monitors: current,
       presets,
