@@ -94,6 +94,94 @@ function mediaCommand(command: string) {
   mediaRevision++
 }
 
+// Statistics: invented but stable sessions over the last 60 days, a game or two a day,
+// days off included. Days of play run 5:00 to 5:00, like StatsService.cs.
+const DAY = 86400000
+const dayKey = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+const playDay = (t = Date.now()) => {
+  const d = new Date(t - 5 * 3600000)
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate())
+}
+const seed = (text: string) => [...text].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 17)
+const trackingSince = new Date(playDay().getTime() - 60 * DAY)
+// [gameIndex, seconds] played on a day.
+function playedOn(day: Date): [number, number][] {
+  if (day < trackingSince || day > playDay()) return []
+  const h = seed(dayKey(day))
+  if (h % 10 < 3) return []
+  const main = [0, 7, 2, 13][h % 4]
+  const out: [number, number][] = [[main, 1800 + (h % 9) * 1200]]
+  if (h % 3 === 0) out.push([[5, 9, 11][h % 3 === 0 ? (h >> 3) % 3 : 0], 900 + (h % 5) * 600])
+  return out
+}
+function mockStats(range: string, offset: number) {
+  const today = playDay()
+  let from: Date, to: Date, prev: Date
+  if (range === 'month') {
+    from = new Date(today.getFullYear(), today.getMonth() + offset, 1)
+    to = new Date(from.getFullYear(), from.getMonth() + 1, 1)
+    prev = new Date(from.getFullYear(), from.getMonth() - 1, 1)
+  } else if (range === 'year') {
+    from = new Date(today.getFullYear() + offset, 0, 1)
+    to = new Date(from.getFullYear() + 1, 0, 1)
+    prev = new Date(from.getFullYear() - 1, 0, 1)
+  } else {
+    range = 'week'
+    from = new Date(today.getTime() - ((today.getDay() + 6) % 7) * DAY + offset * 7 * DAY)
+    to = new Date(from.getTime() + 7 * DAY)
+    prev = new Date(from.getTime() - 7 * DAY)
+  }
+  const buckets = new Map<string, number>()
+  if (range === 'year') for (let m = 0; m < 12; m++) buckets.set(dayKey(new Date(from.getFullYear(), m, 1)), 0)
+  else for (let d = new Date(from); d < to; d = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1)) buckets.set(dayKey(d), 0)
+  const perGame = new Map<number, number>()
+  let total = 0, previous = 0, sessions = 0
+  // Like StatsService.cs: the period under way against the previous one up to the same point.
+  const previousTo = today >= from && today < to ? new Date(Math.min(from.getTime(), prev.getTime() + (today.getTime() - from.getTime()) + DAY)) : from
+  for (let d = new Date(prev); d < to; d = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1)) {
+    for (const [g, s] of playedOn(d)) {
+      if (d < from) { if (d < previousTo) previous += s; continue }
+      total += s
+      sessions++
+      const key = range === 'year' ? dayKey(new Date(d.getFullYear(), d.getMonth(), 1)) : dayKey(d)
+      buckets.set(key, (buckets.get(key) ?? 0) + s)
+      perGame.set(g, (perGame.get(g) ?? 0) + s)
+    }
+  }
+  return {
+    range, offset, from: dayKey(from), to: dayKey(to), today: dayKey(today), trackingSince: dayKey(trackingSince),
+    totalSeconds: total, previousTotalSeconds: previous, previousFrom: dayKey(prev), sessions,
+    buckets: [...buckets].map(([date, seconds]) => ({ date, seconds })),
+    top: [...perGame].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([g, seconds]) => ({ id: games[g].id, name: games[g].name, seconds, hasCover: false })),
+    library: {
+      playtimeSeconds: games.reduce((t, g) => t + g.playtimeMinutes * 60, 0), games: games.length,
+      installed: games.filter((g) => g.installed).length, installedNeverPlayed: 1, playedThisYear: 9,
+    },
+    resume: [10, 12, 9].map((i) => ({ id: games[i].id, name: games[i].name, playtimeSeconds: games[i].playtimeMinutes * 60, lastActivity: new Date(Date.now() - (120 + i * 9) * DAY).toISOString(), hasCover: false })),
+  }
+}
+function mockGameStats(index: number) {
+  const g = games[index]
+  const weeks = new Array(12).fill(0)
+  let sessions = 0, seconds = 0
+  let last: { start: string; seconds: number } | null = null
+  const monday = new Date(playDay().getTime() - ((playDay().getDay() + 6) % 7) * DAY)
+  for (let d = new Date(trackingSince); d <= playDay(); d = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1)) {
+    for (const [gi, s] of playedOn(d)) {
+      if (gi !== index) continue
+      sessions++
+      seconds += s
+      last = { start: new Date(d.getTime() + 21 * 3600000).toISOString(), seconds: s }
+      const w = 11 - Math.floor((monday.getTime() - (d.getTime() - ((d.getDay() + 6) % 7) * DAY)) / (7 * DAY))
+      if (w >= 0) weeks[w] += s
+    }
+  }
+  return {
+    playtimeSeconds: g.playtimeMinutes * 60, playCount: 20 + index, lastActivity: g.lastActivity, completionStatus: index % 3 ? 'In corso' : 'Completato',
+    sessions, averageSeconds: sessions ? Math.round(seconds / sessions) : 0, weeks, lastSession: last, trackingSince: dayKey(trackingSince),
+  }
+}
+
 // Bumped whenever a game changes, like Playnite's ItemUpdated: the link then sends CHANGED library.
 let libraryRevision = 0
 // Installing or uninstalling takes a few seconds, like a small game from a fast CDN.
@@ -289,6 +377,11 @@ export async function mockRequest(method: string, path: string, body?: any): Pro
 async function handle(method: string, path: string, body?: any): Promise<unknown> {
   const [, a, b, c] = path.split('/')
   if (method === 'GET' && a === 'status') return status()
+  if (method === 'GET' && a?.startsWith('stats')) {
+    const q = new URLSearchParams(path.split('?')[1] ?? '')
+    return mockStats(q.get('range') ?? 'week', Number(q.get('offset') ?? 0))
+  }
+  if (method === 'GET' && a === 'games' && c === 'stats') return mockGameStats(games.findIndex((g) => g.id === b))
   if (method === 'GET' && a === 'media' && !b) {
     const t = tracks[player.track]
     return {

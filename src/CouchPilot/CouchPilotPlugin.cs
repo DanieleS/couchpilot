@@ -9,6 +9,7 @@ using CouchPilot.Input;
 using CouchPilot.Library;
 using CouchPilot.Media;
 using CouchPilot.Server;
+using CouchPilot.Stats;
 using Playnite.SDK;
 using Playnite.SDK.Events;
 using Playnite.SDK.Plugins;
@@ -25,6 +26,8 @@ namespace CouchPilot
         private readonly DisplayService displays;
         private readonly AudioService audio;
         private readonly MediaService media = new MediaService();
+        private readonly SessionLog sessionLog;
+        private readonly StatsService stats;
         private readonly RemoteInput input = new RemoteInput();
         private RemoteServer server;
         private HomeAssistantBridge homeAssistant;
@@ -41,6 +44,8 @@ namespace CouchPilot
             library = new LibraryService(api, sessions);
             gameControl = new GameControl(api, sessions);
             audio = new AudioService(gameControl);
+            sessionLog = new SessionLog(Path.Combine(GetPluginUserDataPath(), "sessions.jsonl"));
+            stats = new StatsService(api, sessionLog, sessions);
             displays = new DisplayService(Path.Combine(GetPluginUserDataPath(), "display-presets.json"));
             new AudioFollowsDisplays(displays, audio);
             ApplyInputSetting();
@@ -78,6 +83,7 @@ namespace CouchPilot
         public override void OnGameStopped(OnGameStoppedEventArgs args)
         {
             sessions.Stopped(args.Game);
+            sessionLog.Add(args.Game.Id, DateTime.UtcNow, (long)args.ElapsedSeconds);
             server?.Nudge();
             homeAssistant?.Nudge();
         }
@@ -120,7 +126,7 @@ namespace CouchPilot
             var webRoot = Path.Combine(Path.GetDirectoryName(typeof(CouchPilotPlugin).Assembly.Location), "wwwroot");
             try
             {
-                server = new RemoteServer(Settings.Port, webRoot, library, gameControl, displays, input, audio, media);
+                server = new RemoteServer(Settings.Port, webRoot, library, gameControl, displays, input, audio, media, stats);
                 server.Start();
                 logger.Info($"CouchPilot listening on port {Settings.Port}");
             }

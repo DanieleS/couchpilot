@@ -7,6 +7,7 @@ using CouchPilot.Displays;
 using CouchPilot.Games;
 using CouchPilot.Library;
 using CouchPilot.Media;
+using CouchPilot.Stats;
 using EmbedIO;
 using EmbedIO.Routing;
 using EmbedIO.WebApi;
@@ -21,16 +22,18 @@ namespace CouchPilot.Server
         private readonly DisplayService displays;
         private readonly AudioService audio;
         private readonly MediaService media;
+        private readonly StatsService stats;
         private readonly StatusSource status;
         private readonly LiveSocket live;
 
-        public ApiController(LibraryService library, GameControl games, DisplayService displays, AudioService audio, MediaService media, StatusSource status, LiveSocket live)
+        public ApiController(LibraryService library, GameControl games, DisplayService displays, AudioService audio, MediaService media, StatsService stats, StatusSource status, LiveSocket live)
         {
             this.library = library;
             this.games = games;
             this.displays = displays;
             this.audio = audio;
             this.media = media;
+            this.stats = stats;
             this.status = status;
             this.live = live;
         }
@@ -44,6 +47,14 @@ namespace CouchPilot.Server
 
         [Route(HttpVerbs.Get, "/games/{id}")]
         public object Game(string id) => library.Get(ParseId(id)) ?? throw HttpException.NotFound("Gioco non trovato.");
+
+        // Playnite's totals for the game, and what CouchPilot logged of its sessions.
+        [Route(HttpVerbs.Get, "/games/{id}/stats")]
+        public object GameStats(string id) => stats.Game(ParseId(id)) ?? throw HttpException.NotFound("Gioco non trovato.");
+
+        // ?range=week|month|year&offset=0 (−1 the one before, and so on).
+        [Route(HttpVerbs.Get, "/stats")]
+        public object Stats([QueryField] string range, [QueryField] int offset) => stats.Range(range, Math.Max(-500, Math.Min(0, offset)));
 
         [Route(HttpVerbs.Get, "/games/{id}/cover")]
         public Task Cover(string id) => SendImage(id, ImageKind.Cover);

@@ -1,5 +1,5 @@
 import type { AudioChannel } from './protocol'
-import type { AudioOutput, Game, GameDetail, NowPlaying, Preset, Status } from './types'
+import type { AudioOutput, Game, GameDetail, GameStats, NowPlaying, Preset, Stats, StatsRangeName, Status } from './types'
 import { mockRequest } from './mock'
 
 const useMock = import.meta.env.VITE_MOCK === '1'
@@ -26,6 +26,8 @@ export const api = {
   status: () => request<Status>('GET', '/status'),
   games: () => request<Game[]>('GET', '/games'),
   game: (id: string) => request<GameDetail>('GET', `/games/${id}`),
+  gameStats: (id: string) => request<GameStats>('GET', `/games/${id}/stats`),
+  stats: (range: StatsRangeName, offset: number) => request<Stats>('GET', `/stats?range=${range}&offset=${offset}`),
   start: (id: string) => request<void>('POST', `/games/${id}/start`),
   stop: (id: string) => request<void>('POST', `/games/${id}/stop`),
   install: (id: string) => request<void>('POST', `/games/${id}/install`),

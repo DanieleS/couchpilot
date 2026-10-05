@@ -11,13 +11,20 @@ import DisplaysView from './components/DisplaysView.vue'
 import GameSheet from './components/GameSheet.vue'
 import GamesView from './components/GamesView.vue'
 import NamePrompt from './components/NamePrompt.vue'
+import StatsView from './components/StatsView.vue'
 import PresetAudioSheet from './components/PresetAudioSheet.vue'
 import TabBar, { type Tab } from './components/TabBar.vue'
 
 const { error, games, running, runningIds, act } = useCouchPilot()
 
 const tab = ref<Tab>('games')
-watch(tab, () => window.scrollTo({ top: 0 }))
+// Statistics live behind an icon in Giochi: a page of that tab, not a tab of their own.
+const statsOpen = ref(false)
+watch(tab, () => {
+  statsOpen.value = false
+  window.scrollTo({ top: 0 })
+})
+watch(statsOpen, () => window.scrollTo({ top: 0 }))
 
 // Game sheet. It follows the library while open, so an install finishing shows up in it.
 const sheetGameId = ref<string | null>(null)
@@ -110,8 +117,9 @@ const toastOpen = computed({
 <template>
   <ToastProvider :duration="4000" swipe-direction="down">
     <main>
+      <StatsView v-if="tab === 'games' && statsOpen" @back="statsOpen = false" @open="openGame" />
       <GamesView
-        v-if="tab === 'games'"
+        v-else-if="tab === 'games'"
         @open="openGame"
         @focus="(g) => focusGame(g.id)"
         @close="askClose"
@@ -120,6 +128,7 @@ const toastOpen = computed({
         @keep-displays="keepDisplays"
         @revert-displays="revertDisplays"
         @manage-displays="tab = 'displays'"
+        @stats="statsOpen = true"
       />
       <DisplaysView
         v-else-if="tab === 'displays'"

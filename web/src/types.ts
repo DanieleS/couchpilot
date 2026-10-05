@@ -106,4 +106,42 @@ export type NowPlaying = {
   artVersion: string | null
 }
 
+export type StatsRangeName = 'week' | 'month' | 'year'
+
+// GET /api/stats. Days are days of play, 5:00 to 5:00, as yyyy-MM-dd.
+export type Stats = {
+  range: StatsRangeName
+  offset: number
+  from: string
+  // Exclusive.
+  to: string
+  today: string
+  // The first day CouchPilot logged a session, or null: before it, only Playnite's totals exist.
+  trackingSince: string | null
+  totalSeconds: number
+  // The previous period, up to the same point when this one is under way.
+  previousTotalSeconds: number
+  previousFrom: string
+  sessions: number
+  // Days for a week or month, months for a year.
+  buckets: { date: string; seconds: number }[]
+  top: { id: string; name: string; seconds: number; hasCover: boolean }[]
+  library: { playtimeSeconds: number; games: number; installed: number; installedNeverPlayed: number; playedThisYear: number }
+  resume: { id: string; name: string; playtimeSeconds: number; lastActivity: string | null; hasCover: boolean }[]
+}
+
+// GET /api/games/{id}/stats.
+export type GameStats = {
+  playtimeSeconds: number
+  playCount: number
+  lastActivity: string | null
+  completionStatus: string | null
+  sessions: number
+  averageSeconds: number
+  // The last 12 weeks, oldest first, this week last.
+  weeks: number[]
+  lastSession: { start: string; seconds: number } | null
+  trackingSince: string | null
+}
+
 export type VolumeChange = { volume?: number; muted?: boolean }

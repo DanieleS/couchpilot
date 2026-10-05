@@ -23,6 +23,7 @@ const emit = defineEmits<{
   keepDisplays: []
   revertDisplays: []
   manageDisplays: []
+  stats: []
 }>()
 
 const { status, games, running, runningIds, displays } = useCouchPilot()
@@ -79,7 +80,10 @@ const setFilter = (v: unknown) => v && (filter.value = v as Filter)
 
     <header class="page-header">
       <h1>Giochi</h1>
-      <PcChip :name="status?.pc ?? null" />
+      <span class="header-tools">
+        <button class="icon-btn stats" aria-label="Statistiche" @click="emit('stats')"><AppIcon name="chart" :size="17" /></button>
+        <PcChip :name="status?.pc ?? null" />
+      </span>
     </header>
 
     <div v-if="current" ref="hero" class="hero-slot">
@@ -153,6 +157,8 @@ const setFilter = (v: unknown) => v && (filter.value = v as Filter)
 .drop-enter-active, .drop-leave-active { transition: transform 200ms var(--ease-out-3), opacity 200ms; }
 .drop-enter-from, .drop-leave-to { transform: translateY(-100%); opacity: 0; }
 
+.header-tools { display: flex; align-items: center; gap: 6px; }
+.stats { color: var(--ink-2); background: var(--card); box-shadow: var(--card-edge); }
 .hero-slot { margin-top: var(--size-3); }
 .link { font-size: 0.75rem; font-weight: 600; letter-spacing: 0.02em; text-transform: none; color: var(--ink-2); }
 .confirm { margin-top: var(--size-2); }

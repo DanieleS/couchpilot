@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { api } from '../api'
-import type { Game, GameDetail } from '../types'
-import { stripHtml } from '../utils'
+import type { Game, GameDetail, GameStats } from '../types'
+import { duration, stripHtml } from '../utils'
 import AppIcon from './AppIcon.vue'
 import BottomSheet from './BottomSheet.vue'
 import GameCover from './GameCover.vue'
@@ -12,14 +12,28 @@ const open = defineModel<boolean>('open', { required: true })
 const emit = defineEmits<{ start: []; focus: []; stop: []; install: []; uninstall: [] }>()
 
 const detail = ref<GameDetail | null>(null)
+const stats = ref<GameStats | null>(null)
 watch(
   () => props.game?.id,
   (id) => {
     detail.value = null
+    stats.value = null
     if (id) api.game(id).then((d) => (detail.value = d)).catch(() => {})
+    if (id) api.gameStats(id).then((s) => (stats.value = s)).catch(() => {})
   },
   { immediate: true },
 )
+// Sessions only exist since CouchPilot started logging them; Playnite's totals always do.
+const weeksMax = computed(() => Math.max(1, ...(stats.value?.weeks ?? [1])))
+const lastPlayed = computed(() => {
+  const s = stats.value
+  const when = s?.lastSession?.start ?? s?.lastActivity
+  if (!when) return null
+  const date = new Date(when)
+  const days = Math.round((new Date().setHours(0, 0, 0, 0) - new Date(date).setHours(0, 0, 0, 0)) / 86400000)
+  const day = days === 0 ? 'oggi' : days === 1 ? 'ieri' : days < 7 ? `${days} giorni fa` : date.toLocaleDateString('it-IT', { day: 'numeric', month: 'long', year: days > 300 ? 'numeric' : undefined })
+  return { day, length: s?.lastSession ? duration(s.lastSession.seconds) : null }
+})
 
 const hours = (m: number) => (m < 60 ? `${m} min` : `${Math.round(m / 60)} h`)
 const meta = computed(() => {
@@ -55,6 +69,26 @@ const description = computed(() => (detail.value?.description ? stripHtml(detail
       </template>
       <button v-else class="btn btn-dark btn-block play" @click="emit('install')"><AppIcon name="download" :size="18" />Installa</button>
 
+      <section v-if="stats && stats.playtimeSeconds > 0" class="stats" aria-label="Statistiche">
+        <div class="figures">
+          <div><span class="n tabular">{{ duration(stats.playtimeSeconds) }}</span><span class="l">in tutto</span></div>
+          <div v-if="stats.sessions"><span class="n tabular">{{ stats.sessions }}</span><span class="l">{{ stats.sessions === 1 ? 'sessione' : 'sessioni' }}</span></div>
+          <div v-else><span class="n tabular">{{ stats.playCount }}</span><span class="l">avvii</span></div>
+          <div v-if="stats.sessions"><span class="n tabular">{{ duration(stats.averageSeconds) }}</span><span class="l">a sessione</span></div>
+          <div v-else-if="stats.playCount"><span class="n tabular">{{ duration(stats.playtimeSeconds / stats.playCount) }}</span><span class="l">ad avvio</span></div>
+        </div>
+        <div v-if="stats.sessions" class="weeks">
+          <p class="weeks-head"><span>Ultime 12 settimane</span><span>{{ duration(stats.weeks[11]) }} questa</span></p>
+          <div class="spark" role="img" :aria-label="`Ore per settimana nelle ultime 12 settimane, l'ultima ${duration(stats.weeks[11])}`">
+            <i v-for="(w, i) in stats.weeks" :key="i" :class="{ cur: i === 11 }" :style="{ height: `${(w / weeksMax) * 100}%` }" />
+          </div>
+        </div>
+        <p v-if="lastPlayed" class="last">
+          Ultima volta <b>{{ lastPlayed.day }}</b><template v-if="lastPlayed.length">, per <b>{{ lastPlayed.length }}</b></template>
+          <template v-if="stats.completionStatus"> · {{ stats.completionStatus }}</template>
+        </p>
+      </section>
+
       <p v-if="description" class="desc">{{ description }}</p>
     </template>
   </BottomSheet>
@@ -68,6 +102,19 @@ const description = computed(() => (detail.value?.description ? stripHtml(detail
 .meta { font-size: 0.75rem; color: var(--ink-2); margin-top: 4px; }
 .actions.two { display: grid; grid-template-columns: 1fr 1fr; gap: var(--size-2); margin-top: var(--size-4); }
 .play { margin-top: var(--size-4); padding-block: 0.9rem; font-size: 0.9375rem; }
+.stats { margin-top: var(--size-4); display: grid; gap: var(--size-3); }
+.figures { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; border-radius: var(--r-field); background: var(--well); }
+.figures div { display: grid; gap: 1px; padding: 10px 6px; text-align: center; }
+.figures div + div { box-shadow: inset 1px 0 0 var(--line); }
+.figures .n { font-size: 1.0625rem; font-weight: 800; letter-spacing: -0.02em; }
+.figures .l { font-size: 0.625rem; font-weight: 650; color: var(--ink-2); }
+.weeks { display: grid; gap: 6px; }
+.weeks-head { display: flex; justify-content: space-between; font-size: 0.625rem; font-weight: 700; color: var(--ink-2); }
+.spark { display: grid; grid-template-columns: repeat(12, 1fr); gap: 3px; align-items: end; block-size: 2.5rem; }
+.spark i { display: block; min-block-size: 2px; border-radius: 3px 3px 1px 1px; background: var(--bar-dim); }
+.spark i.cur { background: var(--ink); }
+.last { font-size: 0.75rem; font-weight: 600; color: var(--ink-2); }
+.last b { color: var(--ink); font-weight: 750; }
 .uninstall {
   display: flex;
   align-items: center;
