@@ -12,7 +12,7 @@ CouchPilot is a Playnite extension that serves a small web app on your local net
 - **Audio**: pick the PC's output and input device, set the overall volume and each app's volume, like Windows' volume mixer. The running game sits at the top of the mixer, highlighted, with a live level meter on every app.
 - **Vibepollo-aware**: while Vibepollo streams, its virtual display owns the screens, so presets are locked and the automatic rollback stands down.
 - **Home Assistant (optional)**: publishes the running game, the active display preset and whether a Vibepollo stream is on to an MQTT broker, with discovery, so the PC shows up as a device; optionally also takes commands (switch preset, close, focus or start a game).
-- **Touchpad and keyboard (optional)**: drive the PC's mouse and keyboard from the phone. One finger moves, a tap clicks, two fingers scroll or right-click, tap and hold drags. The phone's own keyboard types on the PC, with a Termux-style bar of extra keys above it (Esc, Tab, Ctrl/Alt/Win/Shift, arrows, F1–F12), plus shortcuts and volume keys.
+- **Touchpad and keyboard (optional)**: drive the PC's mouse and keyboard from the phone. One finger moves, a tap clicks, two fingers scroll or right-click, tap and hold drags. The phone's own keyboard types on the PC, with a Termux-style bar of extra keys above it (Esc, Tab, Ctrl/Alt/Win/Shift, arrows, F1–F12), plus shortcuts.
 
 ## Install
 
