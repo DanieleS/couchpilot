@@ -17,11 +17,36 @@ namespace CouchPilot
 
             Heading("Telefono");
             Field("Porta del server", nameof(CouchPilotSettings.Port), 120);
-            Hint("Apri uno di questi indirizzi dal telefono (stessa rete):");
+            Hint(settings.Addresses.Count > 0
+                ? "Apri uno di questi indirizzi dal telefono (stessa rete):"
+                : "Il server non è attivo: il motivo è nelle notifiche di Playnite.");
             foreach (var url in settings.Addresses)
             {
                 panel.Children.Add(new TextBox { Text = url, IsReadOnly = true, BorderThickness = new Thickness(0), Background = null });
             }
+
+            panel.Children.Add(new TextBlock { Text = "Certificato HTTPS (.pfx)", Margin = new Thickness(0, 14, 0, 4) });
+            var certificate = new DockPanel { Width = 420, HorizontalAlignment = HorizontalAlignment.Left, LastChildFill = true };
+            var browse = new Button { Content = "Sfoglia…", Padding = new Thickness(10, 2, 10, 2), Margin = new Thickness(6, 0, 0, 0) };
+            browse.Click += (s, e) => settings.PickCertificate();
+            DockPanel.SetDock(browse, Dock.Right);
+            certificate.Children.Add(browse);
+            var certificatePath = new TextBox();
+            certificatePath.SetBinding(TextBox.TextProperty, Bind(nameof(CouchPilotSettings.CertificatePath)));
+            certificate.Children.Add(certificatePath);
+            panel.Children.Add(certificate);
+
+            panel.Children.Add(new TextBlock { Text = "Password del certificato", Margin = new Thickness(0, 8, 0, 4) });
+            var certificatePassword = new PasswordBox { Width = 260, HorizontalAlignment = HorizontalAlignment.Left, Password = settings.CertificatePassword ?? "" };
+            certificatePassword.PasswordChanged += (s, e) => settings.CertificatePassword = certificatePassword.Password;
+            panel.Children.Add(certificatePassword);
+            panel.Children.Add(new TextBlock
+            {
+                Text = "Vuoto: il server parla HTTP. Con un certificato parla solo HTTPS, sulla stessa porta, e il telefono può installare l'app. Come crearne uno con una tua CA è spiegato nel README.",
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 6, 0, 0),
+                Opacity = 0.7,
+            });
 
             Heading("Touchpad e tastiera");
             var input = new CheckBox { Content = "Permetti al telefono di usare mouse e tastiera del PC" };

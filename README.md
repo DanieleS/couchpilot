@@ -18,10 +18,55 @@ CouchPilot is a Playnite extension that serves a small web app on your local net
 
 1. Download the latest `CouchPilot_x.y.z.pext` from [Releases](../../releases) (or from the artifacts of the latest [build](../../actions)).
 2. Double-click it, or drag it onto Playnite, and restart Playnite.
-3. Open **Add-ons → Extension settings → CouchPilot**: it lists the address to open on the phone (for example `http://192.168.1.20:8642/`).
+3. Open **Add-ons → Extension settings → CouchPilot**: it lists the address to open on the phone (for example `http://192.168.1.20:8642/`, or `https://couch.internal:8642/` once [HTTPS](#https-and-installing-the-app) is set up).
 4. The first time, Windows Firewall asks whether Playnite may accept connections: allow it on private networks.
 
 The PC and the phone must be on the same network. There is no authentication: don't expose the port to the internet (use a VPN to reach it from outside).
+
+Over plain HTTP the page works, but the phone's browser won't install it as an app: that takes HTTPS, below.
+
+## HTTPS and installing the app
+
+Chrome installs a site as an app (icon on the home screen, no address bar) only over HTTPS. Give CouchPilot a certificate and the same port speaks HTTPS instead of HTTP; nothing to install on the PC.
+
+The certificate comes from a CA of your own: a key pair you create once and tell the phone to trust. This one is limited, through name constraints, to the PC's name and address, so even if its key leaked it couldn't vouch for any other site.
+
+**1. Pick a name and point it at the PC.** `couch.internal` works well: `.internal` is reserved for private networks and will never exist on the internet. Add a DNS rewrite `couch.internal → <PC address>` on the resolver the phone uses (AdGuard Home, Pi-hole, the router). If the phone comes in through a VPN, that's the resolver the VPN hands out. Give the PC a DHCP reservation, since the address goes into the certificate.
+
+**2. Create the CA and the certificate** (any machine with OpenSSL; Git Bash on Windows has it):
+
+```sh
+NAME=couch.internal
+IP=192.168.1.20        # the PC's address
+export MSYS_NO_PATHCONV=1   # Git Bash only: otherwise it mangles "/CN=..." into a Windows path
+
+# The CA: ten years, and it can only sign for $NAME and $IP.
+openssl req -x509 -newkey rsa:2048 -nodes -keyout ca.key -out ca.crt -days 3650 \
+  -subj "/CN=CouchPilot CA" \
+  -addext "basicConstraints=critical,CA:TRUE,pathlen:0" \
+  -addext "keyUsage=critical,keyCertSign,cRLSign" \
+  -addext "nameConstraints=critical,permitted;DNS:$NAME,permitted;IP:$IP/255.255.255.255"
+
+# CouchPilot's certificate: five years, valid for the name and for the bare address.
+openssl req -newkey rsa:2048 -nodes -keyout couch.key -out couch.csr -subj "/CN=$NAME"
+printf "subjectAltName=DNS:$NAME,IP:$IP\nextendedKeyUsage=serverAuth\nbasicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature,keyEncipherment\n" > couch.ext
+openssl x509 -req -in couch.csr -CA ca.crt -CAkey ca.key -CAcreateserial -days 1825 -extfile couch.ext -out couch.crt
+
+# The .pfx for CouchPilot. 3DES rather than OpenSSL 3's default AES, which older
+# Windows builds can't open.
+openssl pkcs12 -export -in couch.crt -inkey couch.key -certfile ca.crt -out couch.pfx \
+  -certpbe PBE-SHA1-3DES -keypbe PBE-SHA1-3DES -macalg sha1
+```
+
+RSA rather than an elliptic curve key on purpose: .NET Framework, which Playnite runs on, handles it everywhere.
+
+**3. Trust the CA on the phone.** Copy `ca.crt` (only that one) to the phone and install it from *Settings → Security → Encryption & credentials → Install a certificate → CA certificate* (the path varies a little by brand). Android will keep reminding you that the network "may be monitored": that's how it labels every CA you add yourself.
+
+**4. Give CouchPilot the certificate.** In the extension settings pick `couch.pfx` next to **Certificato HTTPS (.pfx)** and type its password. The server restarts and the settings list `https://couch.internal:8642/` first. Open it on the phone and choose *Install app* from Chrome's menu.
+
+Keep `ca.key` somewhere safe and off the PC (a password manager will do): it's only needed again to sign a new certificate, in five years or if the PC's address changes. `couch.key`, `couch.csr` and `couch.ext` can go once the `.pfx` exists.
+
+With a certificate set, plain `http://` on that port stops answering, and the installed app lives at the `https://` address. If the certificate can't be loaded (moved, wrong password) the server doesn't start at all and Playnite shows why, rather than quietly going back to HTTP.
 
 ## Audio
 
@@ -101,7 +146,7 @@ cd web && pnpm install && pnpm dev:mock
 Against a running CouchPilot:
 
 ```
-COUCHPILOT_HOST=http://<pc-address>:8642 pnpm dev
+COUCHPILOT_HOST=http://<pc-address>:8642 pnpm dev     # or https:// if the PC has a certificate
 ```
 
 The extension builds on Windows (`pnpm build` in `web/` first, then `dotnet build src/CouchPilot`); CI does both and packages the `.pext` on every push. Tag `vX.Y.Z` to publish a release.
