@@ -9,6 +9,7 @@ CouchPilot is a Playnite extension that serves a small web app on your local net
 - **Library**: your Playnite games with covers, search, and filters (installed, recent, favourites).
 - **Launch and close**: start a game; close it gracefully (every window is asked to close first, forced only after 10 s); bring it back to the foreground.
 - **Display presets**: save the current monitor layout under a name, apply any saved layout with one tap. If you don't confirm within 15 s the previous layout comes back by itself, so a preset that leaves you with a black screen can't strand you.
+- **Audio**: pick the PC's output and input device, set the overall volume and each app's volume, like Windows' volume mixer. The running game sits at the top of the mixer, highlighted, with a live level meter on every app.
 - **Vibepollo-aware**: while Vibepollo streams, its virtual display owns the screens, so presets are locked and the automatic rollback stands down.
 - **Home Assistant (optional)**: publishes the running game, the active display preset and whether a Vibepollo stream is on to an MQTT broker, with discovery, so the PC shows up as a device; optionally also takes commands (switch preset, close, focus or start a game).
 - **Touchpad and keyboard (optional)**: drive the PC's mouse and keyboard from the phone. One finger moves, a tap clicks, two fingers scroll or right-click, tap and hold drags. The phone's own keyboard types on the PC, with a Termux-style bar of extra keys above it (Esc, Tab, Ctrl/Alt/Win/Shift, arrows, F1–F12), plus shortcuts and volume keys.
@@ -21,6 +22,14 @@ CouchPilot is a Playnite extension that serves a small web app on your local net
 4. The first time, Windows Firewall asks whether Playnite may accept connections: allow it on private networks.
 
 The PC and the phone must be on the same network. There is no authentication: don't expose the port to the internet (use a VPN to reach it from outside).
+
+## Audio
+
+The **Audio** tab shows the default output (tap **Cambia** to switch: speakers, headphones, the TV over HDMI…), its volume, and below it one slider per app that has sound open on that output, as in Windows' mixer. Apps are grouped by executable, so a browser's many tabs are one slider; the game Playnite launched comes first, in yellow. At the bottom, the default microphone with its volume and mute.
+
+- Switching device sets the Windows default for every role, the way the taskbar's sound flyout does: apps that follow the default move over by themselves, apps pinned to a device in Windows' settings stay where they are.
+- Nothing to turn on: changing the volume is no riskier than starting a game.
+- Choosing a different output per app isn't supported: Windows only exposes that through internal interfaces that change between versions.
 
 ## Touchpad and keyboard
 

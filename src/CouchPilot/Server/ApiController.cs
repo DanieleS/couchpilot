@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Net;
 using System.Threading.Tasks;
+using CouchPilot.Audio;
 using CouchPilot.Displays;
 using CouchPilot.Games;
 using CouchPilot.Input;
@@ -19,13 +20,15 @@ namespace CouchPilot.Server
         private readonly GameControl games;
         private readonly DisplayService displays;
         private readonly RemoteInput input;
+        private readonly AudioService audio;
 
-        public ApiController(LibraryService library, GameControl games, DisplayService displays, RemoteInput input)
+        public ApiController(LibraryService library, GameControl games, DisplayService displays, RemoteInput input, AudioService audio)
         {
             this.library = library;
             this.games = games;
             this.displays = displays;
             this.input = input;
+            this.audio = audio;
         }
 
         // One call the phone polls: what's running and what the screens look like.
@@ -106,9 +109,51 @@ namespace CouchPilot.Server
         [Route(HttpVerbs.Post, "/displays/revert")]
         public void Revert() => displays.Revert();
 
+        // Polled on its own, and faster than /status, only while the Audio tab is open.
+        [Route(HttpVerbs.Get, "/audio")]
+        public object Audio() => audio.Snapshot();
+
+        // Device ids are long and full of braces: they travel in the body, not the URL.
+        [Route(HttpVerbs.Post, "/audio/default")]
+        public async Task SetDefaultAudio()
+        {
+            var body = await ReadBody<AudioBody>();
+            if (!audio.SetDefault(body?.Id)) throw HttpException.NotFound("Dispositivo audio non trovato.");
+        }
+
+        [Route(HttpVerbs.Post, "/audio/device")]
+        public async Task SetAudioDevice()
+        {
+            var body = await ReadBody<AudioBody>();
+            if (!audio.SetDevice(body?.Id, body?.Volume, body?.Muted)) throw HttpException.NotFound("Dispositivo audio non trovato.");
+        }
+
+        [Route(HttpVerbs.Post, "/audio/app")]
+        public async Task SetAudioApp()
+        {
+            var body = await ReadBody<AudioBody>();
+            if (!audio.SetApp(body?.Id, body?.Volume, body?.Muted)) throw HttpException.NotFound("L'app non sta più usando l'audio.");
+        }
+
+        [Route(HttpVerbs.Get, "/audio/apps/{id}/icon")]
+        public async Task AudioAppIcon(string id)
+        {
+            var png = audio.AppIcon(id) ?? throw HttpException.NotFound();
+            Response.ContentType = "image/png";
+            Response.Headers.Set("Cache-Control", "public, max-age=86400");
+            await Response.OutputStream.WriteAsync(png, 0, png.Length);
+        }
+
         public class NameBody
         {
             public string Name { get; set; }
+        }
+
+        public class AudioBody
+        {
+            public string Id { get; set; }
+            public double? Volume { get; set; }
+            public bool? Muted { get; set; }
         }
 
         private async Task<T> ReadBody<T>() where T : class

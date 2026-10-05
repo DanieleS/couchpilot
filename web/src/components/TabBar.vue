@@ -1,10 +1,11 @@
 <script setup lang="ts">
-export type Tab = 'games' | 'displays' | 'control'
+export type Tab = 'games' | 'displays' | 'audio' | 'control'
 
 const tab = defineModel<Tab>({ required: true })
-const tabs: { key: Tab; label: string; shape: 'circle' | 'square' | 'triangle' }[] = [
+const tabs: { key: Tab; label: string; shape: 'circle' | 'square' | 'half' | 'triangle' }[] = [
   { key: 'games', label: 'Giochi', shape: 'circle' },
   { key: 'displays', label: 'Schermi', shape: 'square' },
+  { key: 'audio', label: 'Audio', shape: 'half' },
   { key: 'control', label: 'Controllo', shape: 'triangle' },
 ]
 </script>
@@ -30,7 +31,7 @@ const tabs: { key: Tab; label: string; shape: 'circle' | 'square' | 'triangle' }
   inset: auto 0 0;
   z-index: 30;
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   padding: var(--size-2) 0 var(--safe-bottom);
   background: var(--nav-bg);
   box-shadow: var(--nav-edge);
@@ -52,4 +53,6 @@ button.on { color: var(--ink); }
 .circle { border-radius: var(--radius-round); }
 .square { border-radius: 4px; }
 .triangle { clip-path: polygon(50% 0, 100% 100%, 0 100%); }
+/* A half disc, the fourth Bauhaus shape. */
+.half { block-size: 8px; margin-block: 4px; border-radius: 8px 8px 0 0; }
 </style>

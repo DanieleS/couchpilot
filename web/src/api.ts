@@ -1,4 +1,4 @@
-import type { Game, GameDetail, Preset, Status } from './types'
+import type { AudioApp, AudioState, Game, GameDetail, Preset, Status, VolumeChange } from './types'
 import { mockRequest } from './mock'
 
 const useMock = import.meta.env.VITE_MOCK === '1'
@@ -34,7 +34,17 @@ export const api = {
   applyPreset: (id: string) => request<void>('POST', `/displays/presets/${id}/apply`),
   confirmDisplays: () => request<void>('POST', '/displays/confirm'),
   revertDisplays: () => request<void>('POST', '/displays/revert'),
+  audio: () => request<AudioState>('GET', '/audio'),
+  setDefaultAudio: (id: string) => request<void>('POST', '/audio/default', { id }),
+  setAudioDevice: (id: string, change: VolumeChange) => request<void>('POST', '/audio/device', { id, ...change }),
+  setAudioApp: (id: string, change: VolumeChange) => request<void>('POST', '/audio/app', { id, ...change }),
 }
 
 export const imageUrl = (id: string, kind: 'cover' | 'background') =>
   useMock ? null : `/api/games/${id}/${kind}`
+
+// A game shows its Playnite icon, any other app (or a game without one) its executable's.
+export const audioAppIconUrls = (app: AudioApp) =>
+  useMock
+    ? []
+    : [app.gameId && `/api/games/${app.gameId}/icon`, app.hasIcon && `/api/audio/apps/${app.id}/icon`].filter((u): u is string => !!u)

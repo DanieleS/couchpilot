@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Windows.Controls;
+using CouchPilot.Audio;
 using CouchPilot.Displays;
 using CouchPilot.Games;
 using CouchPilot.HomeAssistant;
@@ -21,6 +22,7 @@ namespace CouchPilot
         private readonly LibraryService library;
         private readonly GameControl gameControl;
         private readonly DisplayService displays;
+        private readonly AudioService audio;
         private readonly RemoteInput input = new RemoteInput();
         private RemoteServer server;
         private HomeAssistantBridge homeAssistant;
@@ -36,6 +38,7 @@ namespace CouchPilot
             sessions = new GameSessions();
             library = new LibraryService(api, sessions);
             gameControl = new GameControl(api, sessions);
+            audio = new AudioService(gameControl);
             displays = new DisplayService(Path.Combine(GetPluginUserDataPath(), "display-presets.json"));
             ApplyInputSetting();
         }
@@ -102,7 +105,7 @@ namespace CouchPilot
             var webRoot = Path.Combine(Path.GetDirectoryName(typeof(CouchPilotPlugin).Assembly.Location), "wwwroot");
             try
             {
-                server = new RemoteServer(Settings.Port, webRoot, library, gameControl, displays, input);
+                server = new RemoteServer(Settings.Port, webRoot, library, gameControl, displays, input, audio);
                 server.Start();
                 logger.Info($"CouchPilot listening on port {Settings.Port}");
             }

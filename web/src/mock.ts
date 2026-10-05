@@ -1,5 +1,5 @@
 // In-memory stand-in for the plugin's API, for `pnpm dev:mock` on a machine without Playnite.
-import type { Game, Monitor, Preset, RunningGame, Status } from './types'
+import type { AudioApp, AudioDevice, AudioState, Game, Monitor, Preset, RunningGame, Status, VolumeChange } from './types'
 
 const names: [string, string, number][] = [
   ['Elden Ring', 'Steam', 142], ['Warhammer 40,000: Space Marine 2', 'Steam', 31], ['Hades II', 'Epic', 54],
@@ -66,6 +66,50 @@ function status(): Status {
   }
 }
 
+const outputs: AudioDevice[] = [
+  { id: 'out-tv', name: 'LG OLED C3', detail: 'NVIDIA High Definition Audio', kind: 'display' },
+  { id: 'out-hp', name: 'Arctis Nova Pro', detail: 'SteelSeries Arctis Nova Pro', kind: 'headphones' },
+  { id: 'out-mon', name: 'ASUS PG27AQN', detail: 'NVIDIA High Definition Audio', kind: 'display' },
+  { id: 'out-spk', name: 'Altoparlanti', detail: 'Realtek(R) Audio', kind: 'speakers' },
+]
+const inputs: AudioDevice[] = [
+  { id: 'in-yeti', name: 'Blue Yeti', detail: 'Yeti Stereo Microphone', kind: 'mic' },
+  { id: 'in-hp', name: 'Arctis Nova Pro Mic', detail: 'SteelSeries Arctis Nova Pro', kind: 'headphones' },
+]
+const endpoints: Record<string, { volume: number; muted: boolean }> = Object.fromEntries(
+  [...outputs, ...inputs].map((d) => [d.id, { volume: 62, muted: false }]),
+)
+// Volume and mute of running games, which come and go.
+const gameAudio: Record<string, VolumeChange> = {}
+let defaultOutput = 'out-tv'
+let defaultInput = 'in-yeti'
+const apps: AudioApp[] = [
+  { id: 'app-spotify', name: 'Spotify', volume: 35, muted: false, peak: 0, system: false, gameId: null, hasIcon: false },
+  { id: 'app-discord', name: 'Discord', volume: 100, muted: true, peak: 0, system: false, gameId: null, hasIcon: false },
+  { id: 'app-chrome', name: 'Google Chrome', volume: 80, muted: false, peak: 0, system: false, gameId: null, hasIcon: false },
+  { id: 'system', name: 'Suoni di sistema', volume: 50, muted: false, peak: 0, system: true, gameId: null, hasIcon: false },
+]
+
+// Whatever is running plays something; the levels wobble so the meters have something to show.
+function audio(): AudioState {
+  const wobble = (base: number) => Math.max(0, Math.min(1, base + (Math.random() - 0.5) * 0.3))
+  const game: AudioApp[] = running.map((r) => ({
+    id: `app-${r.id}`, name: r.name, volume: 100, muted: false, ...gameAudio[`app-${r.id}`],
+    peak: wobble(0.6), system: false, gameId: r.id, hasIcon: false,
+  }))
+  const endpoint = (id: string, peak: number) => {
+    const d = [...outputs, ...inputs].find((x) => x.id === id)!
+    return { ...d, ...endpoints[id], peak }
+  }
+  return {
+    output: endpoint(defaultOutput, wobble(0.5)),
+    input: endpoint(defaultInput, 0),
+    outputs,
+    inputs,
+    apps: [...game, ...apps.map((a) => ({ ...a, peak: a.id === 'app-spotify' ? wobble(0.4) : a.id === 'system' ? 0 : wobble(0.1) }))],
+  }
+}
+
 // Hand out copies, like a real JSON response: shared references would hide changes from Vue.
 export async function mockRequest(method: string, path: string, body?: any): Promise<unknown> {
   await new Promise((r) => setTimeout(r, 150))
@@ -115,5 +159,20 @@ async function handle(method: string, path: string, body?: any): Promise<unknown
       return
     }
   }
+  if (method === 'GET' && a === 'audio') return audio()
+  if (method === 'POST' && a === 'audio' && b === 'default') {
+    if (outputs.some((d) => d.id === body.id)) defaultOutput = body.id
+    else defaultInput = body.id
+    return
+  }
+  if (method === 'POST' && a === 'audio' && b === 'device') return void Object.assign(endpoints[body.id], strip(body))
+  if (method === 'POST' && a === 'audio' && b === 'app') {
+    const app = apps.find((x) => x.id === body.id)
+    if (app) return void Object.assign(app, strip(body))
+    if (!running.some((r) => `app-${r.id}` === body.id)) throw new Error("L'app non sta più usando l'audio.")
+    return void (gameAudio[body.id] = { ...gameAudio[body.id], ...strip(body) })
+  }
   throw new Error(`Mock: ${method} ${path} non gestito`)
 }
+
+const strip = ({ id, ...change }: { id: string; volume?: number; muted?: boolean }) => change
