@@ -2,9 +2,9 @@ using System;
 using System.IO;
 using System.Net;
 using System.Threading.Tasks;
+using CouchPilot.Audio;
 using CouchPilot.Displays;
 using CouchPilot.Games;
-using CouchPilot.Input;
 using CouchPilot.Library;
 using EmbedIO;
 using EmbedIO.Routing;
@@ -18,25 +18,23 @@ namespace CouchPilot.Server
         private readonly LibraryService library;
         private readonly GameControl games;
         private readonly DisplayService displays;
-        private readonly RemoteInput input;
+        private readonly AudioService audio;
+        private readonly StatusSource status;
+        private readonly LiveSocket live;
 
-        public ApiController(LibraryService library, GameControl games, DisplayService displays, RemoteInput input)
+        public ApiController(LibraryService library, GameControl games, DisplayService displays, AudioService audio, StatusSource status, LiveSocket live)
         {
             this.library = library;
             this.games = games;
             this.displays = displays;
-            this.input = input;
+            this.audio = audio;
+            this.status = status;
+            this.live = live;
         }
 
-        // One call the phone polls: what's running and what the screens look like.
+        // The phone fetches it again whenever the live socket says it changed.
         [Route(HttpVerbs.Get, "/status")]
-        public object Status() => new
-        {
-            pc = Environment.MachineName,
-            running = library.Running(),
-            displays = displays.Snapshot(),
-            input = input.Enabled,
-        };
+        public object Status() => status.Snapshot();
 
         [Route(HttpVerbs.Get, "/games")]
         public object Games() => library.All();
@@ -60,12 +58,14 @@ namespace CouchPilot.Server
             if (!game.Installed) throw new HttpException(HttpStatusCode.Conflict, "Il gioco non è installato.");
             if (game.Running) throw new HttpException(HttpStatusCode.Conflict, "Il gioco è già in esecuzione.");
             games.Start(ParseId(id));
+            live.Nudge();
         }
 
         [Route(HttpVerbs.Post, "/games/{id}/stop")]
         public void Stop(string id)
         {
             if (!games.Stop(ParseId(id))) throw new HttpException(HttpStatusCode.Conflict, "Non trovo processi di questo gioco.");
+            live.Nudge();
         }
 
         [Route(HttpVerbs.Post, "/games/{id}/focus")]
@@ -78,7 +78,9 @@ namespace CouchPilot.Server
         public async Task<object> SavePreset()
         {
             var body = await ReadBody<NameBody>();
-            return displays.SaveCurrent(body?.Name);
+            var preset = displays.SaveCurrent(body?.Name);
+            live.Nudge();
+            return preset;
         }
 
         [Route(HttpVerbs.Patch, "/displays/presets/{id}")]
@@ -86,25 +88,45 @@ namespace CouchPilot.Server
         {
             var body = await ReadBody<NameBody>();
             if (!displays.Rename(id, body?.Name)) throw HttpException.NotFound("Preset non trovato.");
+            live.Nudge();
         }
 
         [Route(HttpVerbs.Delete, "/displays/presets/{id}")]
         public void DeletePreset(string id)
         {
             if (!displays.Delete(id)) throw HttpException.NotFound("Preset non trovato.");
+            live.Nudge();
         }
 
         [Route(HttpVerbs.Post, "/displays/presets/{id}/apply")]
         public void ApplyPreset(string id)
         {
             if (!displays.Apply(id)) throw HttpException.NotFound("Preset non trovato.");
+            live.Nudge();
         }
 
         [Route(HttpVerbs.Post, "/displays/confirm")]
-        public void Confirm() => displays.Confirm();
+        public void Confirm()
+        {
+            displays.Confirm();
+            live.Nudge();
+        }
 
         [Route(HttpVerbs.Post, "/displays/revert")]
-        public void Revert() => displays.Revert();
+        public void Revert()
+        {
+            displays.Revert();
+            live.Nudge();
+        }
+
+        [Route(HttpVerbs.Get, "/audio/apps/{id}/icon")]
+        public async Task AudioAppIcon(string id)
+        {
+            var png = audio.AppIcon(id) ?? throw HttpException.NotFound();
+            Response.ContentType = "image/png";
+            Response.Headers.Set("Cache-Control", "public, max-age=86400");
+            await Response.OutputStream.WriteAsync(png, 0, png.Length);
+        }
 
         public class NameBody
         {

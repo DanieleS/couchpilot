@@ -31,6 +31,7 @@
   --selected-well: rgb(255 255 255 / 0.15);
   --selected-glow: 0 6px 16px -6px rgb(50 99 214 / 0.6);
   --monitor: #ddd6c8;
+  --slider-track: #ebe5da;
   --monitor-selected: rgb(255 255 255 / 0.45);
   --monitor-primary-selected: #ffffff;
   --button-dark: #1d1b18;
@@ -80,6 +81,7 @@
     --selected-well: #e3ddd1;
     --selected-glow: none;
     --monitor: #3a3a3f;
+    --slider-track: #2c2c30;
     --monitor-selected: #bdb6aa;
     --monitor-primary-selected: #e4002b;
     --button-dark: #141414;

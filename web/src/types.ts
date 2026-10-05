@@ -62,3 +62,5 @@ export type Status = {
   // Touchpad and keyboard are allowed in the extension settings.
   input: boolean
 }
+
+export type VolumeChange = { volume?: number; muted?: boolean }

@@ -20,12 +20,6 @@ const shortcuts: { label: string; vk: number; mods?: Mod[] }[] = [
   { label: 'Desktop', vk: Vk.d, mods: ['win'] },
   { label: 'Alt+F4', vk: Vk.f4, mods: ['alt'] },
 ]
-const media: { label: string; vk: number }[] = [
-  { label: 'Vol −', vk: Vk.volumeDown },
-  { label: 'Muto', vk: Vk.mute },
-  { label: 'Vol +', vk: Vk.volumeUp },
-  { label: 'Play/Pausa', vk: Vk.playPause },
-]
 
 // With the keyboard up, the touchpad shrinks into what's left between the header and the bar,
 // so you can point and type without switching screens.
@@ -86,11 +80,6 @@ watch(
       <button v-for="s in shortcuts" :key="s.label" class="key chip" :disabled="disabled" @click="input.key(s.vk, s.mods)">{{ s.label }}</button>
     </div>
 
-    <p class="eyebrow">Audio</p>
-    <div class="media">
-      <button v-for="m in media" :key="m.label" class="key" :disabled="disabled" @click="input.key(m.vk)">{{ m.label }}</button>
-    </div>
-
     <KeyboardBar
       ref="keyboard"
       v-model:open="keyboardOpen"
@@ -110,9 +99,8 @@ watch(
 .muted { font-size: 0.75rem; line-height: 1.45; margin-top: 4px; }
 .keyboard { margin-top: var(--size-3); }
 /* While typing only the touchpad stays: everything else would sit under the keyboard. */
-.typing .keyboard, .typing .eyebrow, .typing .scroll-row, .typing .media { display: none; }
+.typing .keyboard, .typing .eyebrow, .typing .scroll-row { display: none; }
 
-.media { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
 .key {
   block-size: 2.75rem;
   border-radius: var(--r-inner);

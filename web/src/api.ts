@@ -1,3 +1,4 @@
+import type { AudioChannel } from './protocol'
 import type { Game, GameDetail, Preset, Status } from './types'
 import { mockRequest } from './mock'
 
@@ -38,3 +39,9 @@ export const api = {
 
 export const imageUrl = (id: string, kind: 'cover' | 'background') =>
   useMock ? null : `/api/games/${id}/${kind}`
+
+// A game shows its Playnite icon, any other app (or a game without one) its executable's.
+export const audioAppIconUrls = (app: AudioChannel) =>
+  useMock
+    ? []
+    : [app.gameId && `/api/games/${app.gameId}/icon`, app.hasIcon && app.key && `/api/audio/apps/${app.key}/icon`].filter((u): u is string => !!u)

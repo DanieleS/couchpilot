@@ -6,8 +6,9 @@ using Button = CouchPilot.Native.Input.Button;
 
 namespace CouchPilot.Input
 {
-    // The phone's touchpad and keyboard: one binary WebSocket message per command, an opcode
-    // byte followed by its fields (integers little-endian):
+    // The phone's touchpad and keyboard: opcodes 0x01–0x0F of the live WebSocket, one message per
+    // command, an opcode byte followed by its fields (integers little-endian). docs/protocol.md is
+    // the full specification; in short:
     //   0x01 move    int16 dx, int16 dy       pixels
     //   0x02 wheel   int16 vertical, int16 h  120 is one notch, positive is up / right
     //   0x03 down    u8 button                0 left, 1 right, 2 middle

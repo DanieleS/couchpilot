@@ -1,6 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using Playnite.SDK;
+using Playnite.SDK.Models;
 
 namespace CouchPilot.Games
 {
@@ -45,6 +47,22 @@ namespace CouchPilot.Games
                 }
             });
             return true;
+        }
+
+        // Every process of every running game, so other features can tell the game apart.
+        public Dictionary<int, Game> RunningProcesses()
+        {
+            var result = new Dictionary<int, Game>();
+            foreach (var session in sessions.All)
+            {
+                var game = api.Database.Games.Get(session.GameId);
+                if (game == null) continue;
+                foreach (var pid in GameProcesses.Find(game.InstallDirectory, session.ProcessId))
+                {
+                    result[pid] = game;
+                }
+            }
+            return result;
         }
 
         public bool Focus(Guid gameId)

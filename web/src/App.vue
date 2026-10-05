@@ -5,6 +5,7 @@ import { api } from './api'
 import type { Game, Preset, RunningGame } from './types'
 import { useCouchPilot } from './store'
 import ConfirmDialog from './components/ConfirmDialog.vue'
+import AudioView from './components/AudioView.vue'
 import ControlView from './components/ControlView.vue'
 import DisplaysView from './components/DisplaysView.vue'
 import GameSheet from './components/GameSheet.vue'
@@ -104,6 +105,7 @@ const toastOpen = computed({
         @keep="keepDisplays"
         @revert="revertDisplays"
       />
+      <AudioView v-else-if="tab === 'audio'" />
       <ControlView v-else />
     </main>
 

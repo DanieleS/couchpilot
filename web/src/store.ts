@@ -1,46 +1,61 @@
 import { computed, onScopeDispose, ref, watch } from 'vue'
 import { api } from './api'
+import { onChanged, useLive } from './live'
+import { Topic } from './protocol'
 import type { Game, Status } from './types'
-
-const STATUS_POLL_MS = 2000
-const GAMES_POLL_MS = 60000
 
 const status = ref<Status | null>(null)
 const games = ref<Game[] | null>(null)
 const error = ref<string | null>(null)
-// When the pending display change expires, in phone time. The PC only reports whole seconds
-// every poll, so the phone counts down on its own between polls.
+// When the pending display change expires, in phone time. The PC only reports whole seconds,
+// so the phone counts down on its own between updates.
 const pendingDeadline = ref<number | null>(null)
 let started = false
 
-const refreshStatus = () =>
-  api
-    .status()
-    .then((s) => {
-      status.value = s
-      const left = s.displays.pending?.secondsLeft
-      pendingDeadline.value = left === undefined ? null : Date.now() + left * 1000
+// One fetch at a time: a CHANGED arriving mid-fetch queues exactly one more.
+function serialized(fetch: () => Promise<unknown>) {
+  let running: Promise<unknown> | null = null
+  let again = false
+  const run = (): void => {
+    if (running) return void (again = true)
+    running = fetch().finally(() => {
+      running = null
+      if (again) {
+        again = false
+        run()
+      }
     })
-    .catch(() => (status.value = null))
+  }
+  return run
+}
 
-const refreshGames = () =>
-  api.games().then((g) => (games.value = g)).catch(() => {})
+const refreshStatus = serialized(() =>
+  api.status().then((s) => {
+    status.value = s
+    const left = s.displays.pending?.secondsLeft
+    pendingDeadline.value = left === undefined ? null : Date.now() + left * 1000
+  }).catch(() => {}),
+)
+const refreshGames = serialized(() => api.games().then((g) => (games.value = g)).catch(() => {}))
 
-// One poll loop for the whole app: the phone asks the PC what's going on every 2 s.
+// Status and library are JSON over HTTP, fetched again whenever the live socket says they
+// changed (and on every reconnect). Nothing polls.
 export function useCouchPilot() {
+  const { online } = useLive()
   if (!started) {
     started = true
-    refreshStatus()
-    refreshGames()
-    setInterval(refreshStatus, STATUS_POLL_MS)
-    setInterval(refreshGames, GAMES_POLL_MS)
+    onChanged((topics) => {
+      if (topics & Topic.status) refreshStatus()
+      if (topics & Topic.library) refreshGames()
+    })
+    watch(online, (on) => !on && (status.value = null))
   }
 
   const running = computed(() => status.value?.running ?? [])
   const runningIds = computed(() => new Set(running.value.map((r) => r.id)))
   const displays = computed(() => status.value?.displays ?? null)
 
-  // Every action: call, surface the error if any, then refresh what's on screen.
+  // Every action: call, and surface the error if any. What it changed comes back over the socket.
   async function act(fn: () => Promise<unknown>) {
     try {
       await fn()
@@ -48,8 +63,6 @@ export function useCouchPilot() {
     } catch (e) {
       error.value = (e as Error).message
       return false
-    } finally {
-      refreshStatus()
     }
   }
 

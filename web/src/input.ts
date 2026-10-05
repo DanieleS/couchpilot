@@ -1,80 +1,18 @@
-import { onScopeDispose, ref, watch } from 'vue'
+import { computed } from 'vue'
+import { send, useLive } from './live'
 import { useCouchPilot } from './store'
-
-const useMock = import.meta.env.VITE_MOCK === '1'
+import { Op, pair, withText } from './protocol'
 
 export type Mod = 'ctrl' | 'alt' | 'shift' | 'win'
 export type MouseButton = 'l' | 'r' | 'm'
 export type LinkState = 'off' | 'connecting' | 'open'
 
-// The touchpad and keyboard talk to the PC over one WebSocket, a few bytes per command
-// (the format is at the bottom of this file and in RemoteInput.cs). Connected only while the Control tab
-// is on screen, the phone is awake and the PC allows it; it reconnects by itself.
+// The touchpad and keyboard ride the live socket, a few bytes per command (opcodes 0x01–0x0F in
+// docs/protocol.md). Usable while the socket is open and the PC allows it.
 export function useRemoteInput() {
+  const { link: live } = useLive()
   const { status } = useCouchPilot()
-  const link = ref<LinkState>('off')
-  let socket: WebSocket | null = null
-  let retries = 0
-  let timer = 0
-  let disposed = false
-  // The last answer from the PC: one missed status poll shouldn't drop the link mid-drag.
-  let allowed = false
-
-  const wanted = () => !disposed && allowed && document.visibilityState === 'visible'
-
-  function connect() {
-    if (socket || !wanted()) return
-    if (useMock) {
-      link.value = 'open'
-      return
-    }
-    link.value = 'connecting'
-    const ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws/input`)
-    socket = ws
-    ws.onopen = () => {
-      retries = 0
-      link.value = 'open'
-    }
-    ws.onclose = () => {
-      if (socket !== ws) return
-      socket = null
-      link.value = wanted() ? 'connecting' : 'off'
-      clearTimeout(timer)
-      timer = window.setTimeout(connect, Math.min(5000, 400 * 2 ** retries++))
-    }
-  }
-
-  function disconnect() {
-    clearTimeout(timer)
-    const ws = socket
-    socket = null
-    ws?.close()
-    link.value = 'off'
-  }
-
-  const sync = () => (wanted() ? connect() : disconnect())
-  watch(
-    () => status.value?.input,
-    (input) => {
-      if (input === undefined) return
-      allowed = input
-      sync()
-    },
-    { immediate: true },
-  )
-  document.addEventListener('visibilitychange', sync)
-  onScopeDispose(() => {
-    disposed = true
-    document.removeEventListener('visibilitychange', sync)
-    disconnect()
-  })
-
-  // Nothing is queued while the link is down: a burst of stale pointer moves or key presses
-  // landing seconds later would be worse than losing them.
-  function send(bytes: Uint8Array) {
-    if (useMock) return void console.debug('input:', [...bytes])
-    if (socket?.readyState === WebSocket.OPEN) socket.send(bytes)
-  }
+  const link = computed<LinkState>(() => (status.value?.input === false ? 'off' : live.value === 'open' && status.value ? 'open' : 'connecting'))
 
   return {
     link,
@@ -94,29 +32,9 @@ export function useRemoteInput() {
 
 export type RemoteInput = ReturnType<typeof useRemoteInput>
 
-// The wire format, described in full in RemoteInput.cs: an opcode byte, then fixed fields.
-const Op = { move: 1, wheel: 2, down: 3, up: 4, click: 5, key: 6, char: 7, text: 8 } as const
 const buttons: Record<MouseButton, number> = { l: 0, r: 1, m: 2 }
 const modMask: Record<Mod, number> = { ctrl: 1, alt: 2, shift: 4, win: 8 }
 const modBits = (mods: Mod[]) => mods.reduce((bits, m) => bits | modMask[m], 0)
-const encoder = new TextEncoder()
-
-const clamp16 = (n: number) => Math.max(-32768, Math.min(32767, Math.round(n)))
-function pair(op: number, a: number, b: number) {
-  const bytes = new Uint8Array(5)
-  const view = new DataView(bytes.buffer)
-  bytes[0] = op
-  view.setInt16(1, clamp16(a), true)
-  view.setInt16(3, clamp16(b), true)
-  return bytes
-}
-function withText(head: Uint8Array, text: string) {
-  const body = encoder.encode(text)
-  const bytes = new Uint8Array(head.length + body.length)
-  bytes.set(head)
-  bytes.set(body, head.length)
-  return bytes
-}
 
 // Windows virtual-key codes for the keys the phone's own keyboard doesn't have.
 export const Vk = {
