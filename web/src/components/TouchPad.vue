@@ -2,7 +2,9 @@
 import { onBeforeUnmount, reactive, ref } from 'vue'
 import type { MouseButton, RemoteInput } from '../input'
 
-const props = defineProps<{ input: RemoteInput; disabled: boolean }>()
+// `height` overrides the surface's own size, e.g. to fit above the phone's keyboard; `compact`
+// drops the buttons to make room.
+const props = defineProps<{ input: RemoteInput; disabled: boolean; height?: number | null; compact?: boolean }>()
 
 // Pointer speed: slow strokes stay precise, quick flicks cross the screen.
 const BASE_GAIN = 1.4
@@ -145,6 +147,7 @@ const dots = () => {
     <div
       ref="pad"
       class="surface"
+      :style="height ? { blockSize: `${height}px` } : undefined"
       @pointerdown="onDown"
       @pointermove="onMove"
       @pointerup="onUp"
@@ -162,7 +165,7 @@ const dots = () => {
       </template>
       <span v-for="d in dots()" :key="d.id" class="dot" :style="{ transform: `translate(${d.x}px, ${d.y}px)` }" />
     </div>
-    <div class="buttons">
+    <div v-if="!compact" class="buttons">
       <button
         :class="{ on: held.has('l') }"
         :disabled="disabled"
