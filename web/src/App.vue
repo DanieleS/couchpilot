@@ -17,7 +17,14 @@ import TabBar, { type Tab } from './components/TabBar.vue'
 
 const { error, games, running, runningIds, act } = useCouchPilot()
 
-const tab = ref<Tab>('games')
+// The manifest's shortcuts (long press on the app's icon) open a tab straight away: /?tab=audio.
+function initialTab(): Tab {
+  const asked = new URLSearchParams(location.search).get('tab')
+  if (asked) history.replaceState(null, '', '/')
+  return asked === 'displays' || asked === 'audio' || asked === 'control' ? asked : 'games'
+}
+
+const tab = ref<Tab>(initialTab())
 // Statistics live behind an icon in Giochi: a page of that tab, not a tab of their own.
 const statsOpen = ref(false)
 watch(tab, () => {

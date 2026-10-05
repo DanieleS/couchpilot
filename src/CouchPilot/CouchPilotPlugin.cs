@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Security.Cryptography.X509Certificates;
 using System.Windows.Controls;
 using CouchPilot.Audio;
 using CouchPilot.Displays;
@@ -33,6 +35,9 @@ namespace CouchPilot
         private HomeAssistantBridge homeAssistant;
 
         public CouchPilotSettings Settings { get; }
+
+        // Where the running server answers, for the settings page.
+        internal IReadOnlyList<string> Addresses { get; private set; } = new string[0];
 
         public override Guid Id { get; } = Guid.Parse("6de22bd5-1691-40df-9a93-4a319d8f2d3a");
 
@@ -121,17 +126,42 @@ namespace CouchPilot
             homeAssistant.Start();
         }
 
+        internal void PickCertificate()
+        {
+            var path = PlayniteApi.Dialogs.SelectFile("Certificato PKCS#12|*.pfx;*.p12");
+            if (!string.IsNullOrEmpty(path)) Settings.CertificatePath = path;
+        }
+
         private void StartServer()
         {
             var webRoot = Path.Combine(Path.GetDirectoryName(typeof(CouchPilotPlugin).Assembly.Location), "wwwroot");
+            Addresses = new string[0];
+            X509Certificate2 certificate = null;
             try
             {
-                server = new RemoteServer(Settings.Port, webRoot, library, gameControl, displays, input, audio, media, stats);
+                // A certificate that doesn't load stops the server rather than falling back to
+                // HTTP: a quiet downgrade would also move the app to an address it isn't installed at.
+                PlayniteApi.Notifications.Remove("couchpilot-certificate");
+                if (!string.IsNullOrWhiteSpace(Settings.CertificatePath))
+                {
+                    certificate = ServerCertificate.Load(Settings.CertificatePath.Trim(), Settings.CertificatePassword);
+                    if (ServerCertificate.IsExpired(certificate))
+                    {
+                        PlayniteApi.Notifications.Add(new NotificationMessage(
+                            "couchpilot-certificate",
+                            $"CouchPilot: il certificato HTTPS è scaduto il {certificate.NotAfter:d}, il telefono lo rifiuterà. Generane uno nuovo.",
+                            NotificationType.Error));
+                    }
+                }
+                server = new RemoteServer(Settings.Port, certificate, webRoot, library, gameControl, displays, input, audio, media, stats);
                 server.Start();
-                logger.Info($"CouchPilot listening on port {Settings.Port}");
+                PlayniteApi.Notifications.Remove("couchpilot-server");
+                Addresses = NetworkInfo.LanUrls(Settings.Port, certificate != null, certificate == null ? null : ServerCertificate.HostName(certificate));
+                logger.Info($"CouchPilot listening on port {Settings.Port} ({(certificate != null ? "HTTPS" : "HTTP")})");
             }
             catch (Exception e)
             {
+                if (server == null) certificate?.Dispose();
                 logger.Error(e, $"CouchPilot could not listen on port {Settings.Port}");
                 PlayniteApi.Notifications.Add(new NotificationMessage(
                     "couchpilot-server",

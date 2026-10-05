@@ -13,6 +13,14 @@ namespace CouchPilot
         private int port = 8642;
         public int Port { get => port; set => SetValue(ref port, value); }
 
+        // A .pfx turns the server to HTTPS on the same port; empty keeps plain HTTP.
+        private string certificatePath = "";
+        public string CertificatePath { get => certificatePath; set => SetValue(ref certificatePath, value); }
+
+        // Stored in plain text like the MQTT password.
+        private string certificatePassword = "";
+        public string CertificatePassword { get => certificatePassword; set => SetValue(ref certificatePassword, value); }
+
         // Touchpad and keyboard from the phone: off unless you turn it on.
         private bool remoteInput;
         public bool RemoteInput { get => remoteInput; set => SetValue(ref remoteInput, value); }
@@ -44,7 +52,7 @@ namespace CouchPilot
         public string MqttDiscoveryPrefix { get => mqttDiscoveryPrefix; set => SetValue(ref mqttDiscoveryPrefix, value); }
 
         [DontSerialize]
-        public IReadOnlyList<string> Addresses => Server.NetworkInfo.LanUrls(Port);
+        public IReadOnlyList<string> Addresses => plugin?.Addresses ?? Server.NetworkInfo.LanUrls(Port);
 
         [DontSerialize]
         public MqttConfig Mqtt => new MqttConfig
@@ -85,7 +93,7 @@ namespace CouchPilot
         public void EndEdit()
         {
             plugin.SavePluginSettings(this);
-            if (Port != editing.Port)
+            if (Port != editing.Port || CertificatePath != editing.CertificatePath || CertificatePassword != editing.CertificatePassword)
             {
                 plugin.RestartServer();
             }
@@ -96,12 +104,25 @@ namespace CouchPilot
             }
         }
 
+        internal void PickCertificate() => plugin?.PickCertificate();
+
         public bool VerifySettings(out List<string> errors)
         {
             errors = new List<string>();
             if (Port < 1024 || Port > 65535)
             {
                 errors.Add("La porta deve essere tra 1024 e 65535.");
+            }
+            if (!string.IsNullOrWhiteSpace(CertificatePath))
+            {
+                try
+                {
+                    Server.ServerCertificate.Load(CertificatePath.Trim(), CertificatePassword).Dispose();
+                }
+                catch (System.InvalidOperationException e)
+                {
+                    errors.Add(e.Message);
+                }
             }
             if (MqttEnabled && string.IsNullOrWhiteSpace(MqttHost))
             {
@@ -122,6 +143,8 @@ namespace CouchPilot
         private void CopyFrom(CouchPilotSettings other)
         {
             Port = other.Port;
+            CertificatePath = other.CertificatePath;
+            CertificatePassword = other.CertificatePassword;
             RemoteInput = other.RemoteInput;
             MqttEnabled = other.MqttEnabled;
             MqttHost = other.MqttHost;

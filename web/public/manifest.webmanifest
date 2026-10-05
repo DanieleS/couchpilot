@@ -1,9 +1,22 @@
 {
+  "id": "/",
   "name": "CouchPilot",
   "short_name": "CouchPilot",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#0b0d12",
   "theme_color": "#0b0d12",
-  "icons": [{ "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml" }]
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml" },
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/icon-maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Schermi", "url": "/?tab=displays", "icons": [{ "src": "/shortcut-displays.png", "sizes": "192x192", "type": "image/png" }] },
+    { "name": "Audio", "url": "/?tab=audio", "icons": [{ "src": "/shortcut-audio.png", "sizes": "192x192", "type": "image/png" }] },
+    { "name": "Controllo", "url": "/?tab=control", "icons": [{ "src": "/shortcut-control.png", "sizes": "192x192", "type": "image/png" }] }
+  ]
 }
