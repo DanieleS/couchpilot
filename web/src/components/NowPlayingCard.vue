@@ -3,11 +3,14 @@ import { computed } from 'vue'
 import type { RunningGame } from '../types'
 import { useNow } from '../useNow'
 import AppIcon from './AppIcon.vue'
+import ControllerChips from './ControllerChips.vue'
 import GameCover from './GameCover.vue'
+import { useCouchPilot } from '../store'
 
 const props = defineProps<{ game: RunningGame; screen?: string | null }>()
 const emit = defineEmits<{ focus: []; close: [] }>()
 
+const { status } = useCouchPilot()
 const now = useNow()
 const clock = computed(() => {
   if (!props.game.startedAt) return null
@@ -31,6 +34,7 @@ const label = computed(() => ['In gioco', props.game.source, props.screen && `su
         <h2 class="title line-clamp-2">{{ game.name }}</h2>
       </div>
     </div>
+    <ControllerChips v-if="status?.controllers?.length" :controllers="status.controllers" on-color class="pads" />
     <div class="actions">
       <button class="btn btn-dark" @click="emit('focus')"><AppIcon name="focus" :size="16" />Primo piano</button>
       <button class="btn btn-danger" @click="emit('close')"><AppIcon name="power" :size="16" />Chiudi</button>
@@ -54,5 +58,6 @@ const label = computed(() => ['In gioco', props.game.source, props.screen && `su
 .label { font-size: 0.65625rem; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; opacity: 0.8; }
 .clock { font-size: 2.75rem; font-weight: 800; font-stretch: 75%; letter-spacing: -0.02em; line-height: 0.9; margin-top: 6px; }
 .title { font-size: 1.0625rem; font-weight: 800; line-height: 1.05; margin-top: 6px; }
+.pads { position: relative; margin-top: var(--size-3); }
 .actions { position: relative; display: grid; grid-template-columns: 1fr 1fr; gap: var(--size-2); margin-top: var(--size-3); }
 </style>

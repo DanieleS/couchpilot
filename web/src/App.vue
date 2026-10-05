@@ -2,7 +2,7 @@
 import { ToastDescription, ToastProvider, ToastRoot, ToastViewport } from 'reka-ui'
 import { computed, ref, watch } from 'vue'
 import { api } from './api'
-import type { Game, Preset, RunningGame } from './types'
+import type { AudioOutput, Game, Preset, RunningGame } from './types'
 import { useCouchPilot } from './store'
 import ConfirmDialog from './components/ConfirmDialog.vue'
 import AudioView from './components/AudioView.vue'
@@ -11,9 +11,11 @@ import DisplaysView from './components/DisplaysView.vue'
 import GameSheet from './components/GameSheet.vue'
 import GamesView from './components/GamesView.vue'
 import NamePrompt from './components/NamePrompt.vue'
+import StatsView from './components/StatsView.vue'
+import PresetAudioSheet from './components/PresetAudioSheet.vue'
 import TabBar, { type Tab } from './components/TabBar.vue'
 
-const { error, running, runningIds, act } = useCouchPilot()
+const { error, games, running, runningIds, act } = useCouchPilot()
 
 // The manifest's shortcuts (long press on the app's icon) open a tab straight away: /?tab=audio.
 function initialTab(): Tab {
@@ -23,14 +25,35 @@ function initialTab(): Tab {
 }
 
 const tab = ref<Tab>(initialTab())
-watch(tab, () => window.scrollTo({ top: 0 }))
+// Statistics live behind an icon in Giochi: a page of that tab, not a tab of their own.
+const statsOpen = ref(false)
+watch(tab, () => {
+  statsOpen.value = false
+  window.scrollTo({ top: 0 })
+})
+watch(statsOpen, () => window.scrollTo({ top: 0 }))
 
-// Game sheet
-const sheetGame = ref<Game | null>(null)
+// Game sheet. It follows the library while open, so an install finishing shows up in it.
+const sheetGameId = ref<string | null>(null)
+const sheetSnapshot = ref<Game | null>(null)
+const sheetGame = computed(() => games.value?.find((g) => g.id === sheetGameId.value) ?? sheetSnapshot.value)
 const sheetOpen = ref(false)
 const openGame = (g: Game) => {
-  sheetGame.value = g
+  sheetGameId.value = g.id
+  sheetSnapshot.value = g
   sheetOpen.value = true
+}
+const installSheetGame = () => sheetGame.value && act(() => api.install(sheetGame.value!.id))
+
+// Uninstalling asks first: getting the game back means downloading it again.
+const uninstalling = ref<Game | null>(null)
+const uninstallOpen = computed({
+  get: () => uninstalling.value !== null,
+  set: (v) => !v && (uninstalling.value = null),
+})
+const confirmUninstall = () => {
+  const g = uninstalling.value
+  if (g) act(() => api.uninstall(g.id))
 }
 const start = async (g: Game) => {
   if (await act(() => api.start(g.id))) sheetOpen.value = false
@@ -68,6 +91,15 @@ const askRename = (p: Preset) => {
 const submitName = (name: string) =>
   renaming.value ? act(() => api.renamePreset(renaming.value!.id, name)) : act(() => api.savePreset(name))
 
+// A preset's audio output, optional.
+const audioPreset = ref<Preset | null>(null)
+const audioSheetOpen = ref(false)
+const askPresetAudio = (p: Preset) => {
+  audioPreset.value = p
+  audioSheetOpen.value = true
+}
+const setPresetAudio = (output: AudioOutput | null) => audioPreset.value && act(() => api.setPresetAudio(audioPreset.value!.id, output))
+
 const removing = ref<Preset | null>(null)
 const removeOpen = computed({
   get: () => removing.value !== null,
@@ -92,8 +124,9 @@ const toastOpen = computed({
 <template>
   <ToastProvider :duration="4000" swipe-direction="down">
     <main>
+      <StatsView v-if="tab === 'games' && statsOpen" @back="statsOpen = false" @open="openGame" />
       <GamesView
-        v-if="tab === 'games'"
+        v-else-if="tab === 'games'"
         @open="openGame"
         @focus="(g) => focusGame(g.id)"
         @close="askClose"
@@ -102,6 +135,7 @@ const toastOpen = computed({
         @keep-displays="keepDisplays"
         @revert-displays="revertDisplays"
         @manage-displays="tab = 'displays'"
+        @stats="statsOpen = true"
       />
       <DisplaysView
         v-else-if="tab === 'displays'"
@@ -109,6 +143,7 @@ const toastOpen = computed({
         @save="askSave"
         @rename="askRename"
         @remove="(p) => (removing = p)"
+        @audio="askPresetAudio"
         @keep="keepDisplays"
         @revert="revertDisplays"
       />
@@ -125,6 +160,17 @@ const toastOpen = computed({
       @start="startSheetGame"
       @focus="focusSheetGame"
       @stop="askCloseFromSheet"
+      @install="installSheetGame"
+      @uninstall="uninstalling = sheetGame"
+    />
+
+    <ConfirmDialog
+      v-model:open="uninstallOpen"
+      icon="trash"
+      :title="`Disinstallare ${uninstalling?.name ?? ''}?`"
+      description="Lo disinstalla Playnite, col client della sua libreria se serve: potrebbe chiederti una conferma anche sul PC. Per giocarci di nuovo andrà riscaricato."
+      confirm-label="Disinstalla"
+      @confirm="confirmUninstall"
     />
 
     <ConfirmDialog
@@ -144,6 +190,8 @@ const toastOpen = computed({
       confirm-label="Elimina"
       @confirm="confirmRemove"
     />
+
+    <PresetAudioSheet v-model:open="audioSheetOpen" :preset="audioPreset" @select="setPresetAudio" />
 
     <NamePrompt
       v-model:open="promptOpen"

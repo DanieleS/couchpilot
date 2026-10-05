@@ -13,6 +13,9 @@ namespace CouchPilot.Library
         public string Name { get; set; }
         public string Source { get; set; }
         public bool Installed { get; set; }
+        // Playnite is installing or uninstalling it right now.
+        public bool Installing { get; set; }
+        public bool Uninstalling { get; set; }
         public bool Favorite { get; set; }
         public bool Hidden { get; set; }
         public bool Running { get; set; }
@@ -122,6 +125,8 @@ namespace CouchPilot.Library
             dto.Name = g.Name;
             dto.Source = SourceName(g);
             dto.Installed = g.IsInstalled;
+            dto.Installing = g.IsInstalling;
+            dto.Uninstalling = g.IsUninstalling;
             dto.Favorite = g.Favorite;
             dto.Hidden = g.Hidden;
             dto.Running = sessions.IsRunning(g.Id);

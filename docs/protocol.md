@@ -151,19 +151,22 @@ Some structured data on the PC changed: the phone should fetch it again over HTT
 |---|---|---|
 | 1 | status | `GET /api/status` |
 | 2 | library | `GET /api/games` |
+| 4 | media | `GET /api/media` |
 
 ```
 81 01      the status changed
 81 03      the status and the library changed
 ```
 
-Right after HELLO the PC sends CHANGED with every topic set (`81 03`), so a phone that just connected, or reconnected after missing changes, refreshes everything.
+Right after HELLO the PC sends CHANGED with every topic set (`81 07`), so a phone that just connected, or reconnected after missing changes, refreshes everything.
 
 **Why not send the data itself.** Status and library are nested, vary in shape and change a few times a minute at most. As JSON on HTTP they keep one schema, readable with a browser or `curl`, and need no binary layout to keep in step with it. The socket only carries what has to be immediate or compact. One round trip after a CHANGED costs a few milliseconds on a home network.
 
-**Status.** The PC compares the status about twice a second, and on the next tick after anything it knows changes it: a game starting or stopping, a preset applied, kept, reverted, saved, renamed or deleted, the input setting toggled. CHANGED goes out only if the status differs from the last one announced, **ignoring `displays.pending.secondsLeft`**: the countdown alone isn't news, and the phone counts down by itself from the value it fetched.
+**Status.** The PC compares the status about twice a second, and on the next tick after anything it knows changes it: a game starting or stopping, a preset applied, kept, reverted, saved, renamed or deleted, the input setting toggled. A controller connecting, disconnecting or changing battery level shows up at the next twice-a-second check. CHANGED goes out only if the status differs from the last one announced, **ignoring `displays.pending.secondsLeft`**: the countdown alone isn't news, and the phone counts down by itself from the value it fetched.
 
-**Library.** Sent when Playnite adds, removes or updates a game: an import, an install, the playtime after a session, a cover downloaded. An import can update hundreds of games in a row, so the PC announces the library at most twice a second.
+**Library.** Sent when Playnite adds, removes or updates a game: an import, an install, the playtime after a session, a cover downloaded. The statistics (`GET /api/stats`, `GET /api/games/{id}/stats`) refresh on it too: a session ending updates the game's playtime. An import can update hundreds of games in a row, so the PC announces the library at most twice a second.
+
+**Media.** Sent on the next tick after Windows reports that what plays changed: another track, play or pause, another app taking over. Not for the position moving on: `/api/media` gives the position as of when it answered, and the phone moves the bar from there while playing.
 
 **The phone** keeps at most one fetch per topic in flight. A CHANGED arriving during a fetch queues exactly one more, so a burst of changes costs two requests at most.
 
@@ -196,9 +199,32 @@ Right after HELLO the PC sends CHANGED with every topic set (`81 03`), so a phon
     },
     "streamActive": false                 // a Vibepollo stream owns the displays
   },
-  "input": true                           // the phone may use mouse and keyboard
+  "input": true,                          // the phone may use mouse and keyboard
+  "controllers": [                        // Xbox-style pads (XInput), by slot
+    { "slot": 1, "wired": false, "battery": "medium" },  // empty, low, medium, full
+    { "slot": 2, "wired": true, "battery": null }        // null when wired or unknown
+  ]
 }
 ```
+
+`GET /api/media` returns what Windows' media controls show, or `null` when nothing plays:
+
+```jsonc
+{
+  "title": "Lumière",
+  "artist": "Lorien Testard",
+  "album": "Clair Obscur: Expedition 33",
+  "app": "Spotify.exe",                   // Windows' id for the app playing it
+  "playing": true,
+  "canPlayPause": true, "canNext": true, "canPrevious": true,
+  "positionSeconds": 42.6,                // as of readAt; null with durationSeconds when unknown
+  "durationSeconds": 264,
+  "readAt": "2026-10-05T18:30:02.1234567Z",
+  "artVersion": "7"                       // null without artwork
+}
+```
+
+The artwork is at `GET /api/media/art?v=<artVersion>`; the version changes with the art, so the image can be cached for good. Play/pause and skipping are `POST /api/media/play-pause`, `/api/media/next` and `/api/media/previous` (409 if the app refuses).
 
 `GET /api/games` returns the library: every game Playnite doesn't hide, with name, source, install state, playtime, genres, release year and whether it has cover and background art. The types are in `web/src/types.ts` (`Game`).
 
@@ -433,6 +459,7 @@ The PC serves every phone from one loop, which runs every **40 ms** while at lea
 |---|---|
 | CHANGED status | checked every ~0.5 s (12 ticks), and on the next tick after a change the PC knows about; sent only if the status differs |
 | CHANGED library | at most every ~0.5 s, if Playnite changed a game since the last one |
+| CHANGED media | on the next tick after Windows reports a change |
 | AUDIO STATE | to a phone that just subscribed; to every subscribed phone when the generation changes |
 | Device and session scan | every 1 s (25 ticks), on the next tick after a DEFAULT, after a subscription, after a failed read |
 | AUDIO VOLUMES | checked every tick; sent if any volume or mute differs from the last sent |

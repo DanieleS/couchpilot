@@ -9,6 +9,8 @@ using CouchPilot.Displays;
 using CouchPilot.Games;
 using CouchPilot.Input;
 using CouchPilot.Library;
+using CouchPilot.Media;
+using CouchPilot.Stats;
 using EmbedIO;
 using EmbedIO.WebApi;
 using Swan.Formatters;
@@ -24,7 +26,7 @@ namespace CouchPilot.Server
 
         // With a certificate the port speaks HTTPS only: one port can't carry both, and the
         // phone's browser needs HTTPS to install the app.
-        public RemoteServer(int port, X509Certificate2 certificate, string webRoot, LibraryService library, GameControl games, DisplayService displays, RemoteInput input, AudioService audio)
+        public RemoteServer(int port, X509Certificate2 certificate, string webRoot, LibraryService library, GameControl games, DisplayService displays, RemoteInput input, AudioService audio, MediaService media, StatsService stats)
         {
             this.certificate = certificate;
             Swan.Logging.Logger.NoLogging();
@@ -40,7 +42,7 @@ namespace CouchPilot.Server
                     if (certificate != null) o.WithCertificate(certificate);
                 })
                 .WithCors()
-                .WithWebApi("/api", SerializeJson, m => m.WithController(() => new ApiController(library, games, displays, audio, status, live)))
+                .WithWebApi("/api", SerializeJson, m => m.WithController(() => new ApiController(library, games, displays, audio, media, stats, status, live)))
                 .WithModule(live);
 
             if (Directory.Exists(webRoot))
@@ -73,6 +75,8 @@ namespace CouchPilot.Server
         public void Nudge() => live.Nudge();
 
         public void LibraryChanged() => live.LibraryChanged();
+
+        public void MediaChanged() => live.MediaChanged();
 
         public void Dispose()
         {

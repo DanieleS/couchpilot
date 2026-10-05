@@ -17,6 +17,17 @@ using static CouchPilot.Native.CoreAudio;
 
 namespace CouchPilot.Audio
 {
+    // An output device, for picking one outside the live mixer (a display preset's audio).
+    public class AudioOutputDto
+    {
+        public string Id { get; set; }
+        public string Name { get; set; }
+        public string Detail { get; set; }
+        // speakers, headphones, display
+        public string Kind { get; set; }
+        public bool Default { get; set; }
+    }
+
     // The PC's sound, the way Windows' volume mixer sees it: the default output and input, and
     // one channel per app playing on the default output. Apps are grouped by executable, so a
     // browser's many sessions are one slider, as in Windows.
@@ -130,6 +141,48 @@ namespace CouchPilot.Audio
                     default:
                         return false;
                 }
+            }
+        }
+
+        public List<AudioOutputDto> Outputs()
+        {
+            lock (gate)
+            {
+                var enumerator = CreateEnumerator();
+                return Devices(enumerator, EDataFlow.Render, DefaultDevice(enumerator, EDataFlow.Render))
+                    .Select(d => new AudioOutputDto
+                    {
+                        Id = d.Id,
+                        Name = d.Name,
+                        Detail = d.Detail,
+                        Kind = d.Kind == KindHeadphones ? "headphones" : d.Kind == KindDisplay ? "display" : "speakers",
+                        Default = d.Default,
+                    })
+                    .ToList();
+            }
+        }
+
+        public string DefaultOutputId()
+        {
+            lock (gate)
+            {
+                string id = null;
+                DefaultDevice(CreateEnumerator(), EDataFlow.Render)?.GetId(out id);
+                return id;
+            }
+        }
+
+        // Makes an active output the default; false if it isn't plugged in, or already is.
+        public bool SetDefaultOutput(string deviceId)
+        {
+            lock (gate)
+            {
+                var enumerator = CreateEnumerator();
+                var outputs = Devices(enumerator, EDataFlow.Render, DefaultDevice(enumerator, EDataFlow.Render));
+                var target = outputs.FirstOrDefault(d => d.Id == deviceId);
+                if (target == null || target.Default) return false;
+                SetDefaultEndpoint(deviceId);
+                return true;
             }
         }
 

@@ -16,6 +16,8 @@ const games: Game[] = names.map(([name, source, hours], i) => ({
   name,
   source,
   installed: i % 5 !== 4,
+  installing: false,
+  uninstalling: false,
   favorite: i % 4 === 0,
   hidden: false,
   running: false,
@@ -31,11 +33,12 @@ const games: Game[] = names.map(([name, source, hours], i) => ({
 const m = (name: string, x: number, y: number, width: number, height: number, refreshHz: number, virtual = false): Monitor => ({
   name, devicePath: name, x, y, width, height, refreshHz, primary: x === 0 && y === 0, virtual,
 })
+const presetAudio = { audioOutputId: null, audioOutputName: null }
 const presets: Preset[] = [
-  { id: 'p1', name: 'Scrivania', monitors: [m('DELL U2723QE', -2560, 0, 2560, 1440, 60), m('ASUS PG27AQN', 0, 0, 2560, 1440, 240), m('DELL U2723QE ', 2560, 0, 2560, 1440, 60)] },
-  { id: 'p2', name: 'Solo TV', monitors: [m('LG OLED C3', 0, 0, 3840, 2160, 120)] },
-  { id: 'p3', name: 'TV + monitor', monitors: [m('ASUS PG27AQN', -2560, 400, 2560, 1440, 240), m('LG OLED C3', 0, 0, 3840, 2160, 120)] },
-  { id: 'p4', name: 'Gaming 240 Hz', monitors: [m('ASUS PG27AQN', 0, 0, 2560, 1440, 240)] },
+  { ...presetAudio, id: 'p1', name: 'Scrivania', monitors: [m('DELL U2723QE', -2560, 0, 2560, 1440, 60), m('ASUS PG27AQN', 0, 0, 2560, 1440, 240), m('DELL U2723QE ', 2560, 0, 2560, 1440, 60)] },
+  { ...presetAudio, id: 'p2', name: 'Solo TV', monitors: [m('LG OLED C3', 0, 0, 3840, 2160, 120)] },
+  { ...presetAudio, id: 'p3', name: 'TV + monitor', monitors: [m('ASUS PG27AQN', -2560, 400, 2560, 1440, 240), m('LG OLED C3', 0, 0, 3840, 2160, 120)] },
+  { ...presetAudio, id: 'p4', name: 'Gaming 240 Hz', monitors: [m('ASUS PG27AQN', 0, 0, 2560, 1440, 240)] },
 ]
 
 // `?stream=1` pretends a Vibepollo stream is running: its virtual display is the primary.
@@ -58,6 +61,10 @@ function status(): Status {
     pc: 'PC-GAMING',
     running,
     input: inputEnabled,
+    // `?nopads=1` pretends no controller is connected.
+    controllers: new URLSearchParams(location.search).has('nopads')
+      ? []
+      : [{ slot: 1, wired: false, battery: 'medium' }, { slot: 2, wired: false, battery: 'low' }, { slot: 3, wired: true, battery: null }],
     displays: {
       monitors: current,
       presets,
@@ -66,6 +73,126 @@ function status(): Status {
       pending: pending && { presetId: pending.presetId, previousPresetId: pending.previousPresetId, secondsLeft: Math.ceil((pending.deadline - Date.now()) / 1000) },
     },
   }
+}
+
+// A track playing in Spotify, three songs to skip through. Bumped revision → CHANGED media.
+const tracks = [
+  { title: 'Lumière', artist: 'Lorien Testard', album: 'Clair Obscur: Expedition 33', duration: 264 },
+  { title: 'Gustave', artist: 'Lorien Testard', album: 'Clair Obscur: Expedition 33', duration: 198 },
+  { title: 'Nothing Is Lost', artist: 'Darren Korb', album: 'Hades II', duration: 231 },
+]
+const player = { track: 0, playing: true, position: 42, since: Date.now() }
+let mediaRevision = 0
+const playerPosition = () => Math.min(tracks[player.track].duration, player.position + (player.playing ? (Date.now() - player.since) / 1000 : 0))
+function mediaCommand(command: string) {
+  player.position = playerPosition()
+  player.since = Date.now()
+  if (command === 'play-pause') player.playing = !player.playing
+  if (command === 'next') player.track = (player.track + 1) % tracks.length
+  if (command === 'previous') player.track = (player.track + tracks.length - 1) % tracks.length
+  if (command !== 'play-pause') player.position = 0
+  mediaRevision++
+}
+
+// Statistics: invented but stable sessions over the last 60 days, a game or two a day,
+// days off included. Days of play run 5:00 to 5:00, like StatsService.cs.
+const DAY = 86400000
+const dayKey = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+const playDay = (t = Date.now()) => {
+  const d = new Date(t - 5 * 3600000)
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate())
+}
+const seed = (text: string) => [...text].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 17)
+const trackingSince = new Date(playDay().getTime() - 60 * DAY)
+// [gameIndex, seconds] played on a day.
+function playedOn(day: Date): [number, number][] {
+  if (day < trackingSince || day > playDay()) return []
+  const h = seed(dayKey(day))
+  if (h % 10 < 3) return []
+  const main = [0, 7, 2, 13][h % 4]
+  const out: [number, number][] = [[main, 1800 + (h % 9) * 1200]]
+  if (h % 3 === 0) out.push([[5, 9, 11][h % 3 === 0 ? (h >> 3) % 3 : 0], 900 + (h % 5) * 600])
+  return out
+}
+function mockStats(range: string, offset: number) {
+  const today = playDay()
+  let from: Date, to: Date, prev: Date
+  if (range === 'month') {
+    from = new Date(today.getFullYear(), today.getMonth() + offset, 1)
+    to = new Date(from.getFullYear(), from.getMonth() + 1, 1)
+    prev = new Date(from.getFullYear(), from.getMonth() - 1, 1)
+  } else if (range === 'year') {
+    from = new Date(today.getFullYear() + offset, 0, 1)
+    to = new Date(from.getFullYear() + 1, 0, 1)
+    prev = new Date(from.getFullYear() - 1, 0, 1)
+  } else {
+    range = 'week'
+    from = new Date(today.getTime() - ((today.getDay() + 6) % 7) * DAY + offset * 7 * DAY)
+    to = new Date(from.getTime() + 7 * DAY)
+    prev = new Date(from.getTime() - 7 * DAY)
+  }
+  const buckets = new Map<string, number>()
+  if (range === 'year') for (let m = 0; m < 12; m++) buckets.set(dayKey(new Date(from.getFullYear(), m, 1)), 0)
+  else for (let d = new Date(from); d < to; d = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1)) buckets.set(dayKey(d), 0)
+  const perGame = new Map<number, number>()
+  let total = 0, previous = 0, sessions = 0
+  // Like StatsService.cs: the period under way against the previous one up to the same point.
+  const previousTo = today >= from && today < to ? new Date(Math.min(from.getTime(), prev.getTime() + (today.getTime() - from.getTime()) + DAY)) : from
+  for (let d = new Date(prev); d < to; d = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1)) {
+    for (const [g, s] of playedOn(d)) {
+      if (d < from) { if (d < previousTo) previous += s; continue }
+      total += s
+      sessions++
+      const key = range === 'year' ? dayKey(new Date(d.getFullYear(), d.getMonth(), 1)) : dayKey(d)
+      buckets.set(key, (buckets.get(key) ?? 0) + s)
+      perGame.set(g, (perGame.get(g) ?? 0) + s)
+    }
+  }
+  return {
+    range, offset, from: dayKey(from), to: dayKey(to), today: dayKey(today), trackingSince: dayKey(trackingSince),
+    totalSeconds: total, previousTotalSeconds: previous, previousFrom: dayKey(prev), sessions,
+    buckets: [...buckets].map(([date, seconds]) => ({ date, seconds })),
+    top: [...perGame].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([g, seconds]) => ({ id: games[g].id, name: games[g].name, seconds, hasCover: false })),
+    library: {
+      playtimeSeconds: games.reduce((t, g) => t + g.playtimeMinutes * 60, 0), games: games.length,
+      installed: games.filter((g) => g.installed).length, installedNeverPlayed: 1, playedThisYear: 9,
+    },
+    resume: [10, 12, 9].map((i) => ({ id: games[i].id, name: games[i].name, playtimeSeconds: games[i].playtimeMinutes * 60, lastActivity: new Date(Date.now() - (120 + i * 9) * DAY).toISOString(), hasCover: false })),
+  }
+}
+function mockGameStats(index: number) {
+  const g = games[index]
+  const weeks = new Array(12).fill(0)
+  let sessions = 0, seconds = 0
+  let last: { start: string; seconds: number } | null = null
+  const monday = new Date(playDay().getTime() - ((playDay().getDay() + 6) % 7) * DAY)
+  for (let d = new Date(trackingSince); d <= playDay(); d = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1)) {
+    for (const [gi, s] of playedOn(d)) {
+      if (gi !== index) continue
+      sessions++
+      seconds += s
+      last = { start: new Date(d.getTime() + 21 * 3600000).toISOString(), seconds: s }
+      const w = 11 - Math.floor((monday.getTime() - (d.getTime() - ((d.getDay() + 6) % 7) * DAY)) / (7 * DAY))
+      if (w >= 0) weeks[w] += s
+    }
+  }
+  return {
+    playtimeSeconds: g.playtimeMinutes * 60, playCount: 20 + index, lastActivity: g.lastActivity, completionStatus: index % 3 ? 'In corso' : 'Completato',
+    sessions, averageSeconds: sessions ? Math.round(seconds / sessions) : 0, weeks, lastSession: last, trackingSince: dayKey(trackingSince),
+  }
+}
+
+// Bumped whenever a game changes, like Playnite's ItemUpdated: the link then sends CHANGED library.
+let libraryRevision = 0
+// Installing or uninstalling takes a few seconds, like a small game from a fast CDN.
+function libraryJob(game: Game, job: 'installing' | 'uninstalling') {
+  game[job] = true
+  libraryRevision++
+  setTimeout(() => {
+    game[job] = false
+    game.installed = job === 'installing'
+    libraryRevision++
+  }, 4000)
 }
 
 // A pretend PC on the other end of the live socket (docs/protocol.md). It speaks the real byte
@@ -154,6 +281,8 @@ export function createMockLink(receive: (m: ServerMessage) => void, onClose: () 
   let shape = ''
   let lastVolumes = ''
   let lastStatus = ''
+  let lastLibrary = libraryRevision
+  let lastMedia = mediaRevision
   const deliver = (bytes: Uint8Array) => setTimeout(() => !closed && receive(decode(bytes)))
   const shapeOf = (channels: MockChannel[]) =>
     JSON.stringify([defaultOutput, defaultInput, channels.map((c) => [c.role, c.key, c.name])])
@@ -192,9 +321,17 @@ export function createMockLink(receive: (m: ServerMessage) => void, onClose: () 
   deliver(Uint8Array.of(0x80, 1))
   // Everything counts as changed on a new connection.
   lastStatus = statusKey()
-  deliver(Uint8Array.of(0x81, 1 | 2))
+  deliver(Uint8Array.of(0x81, 1 | 2 | 4))
   let tick = 0
   const timer = setInterval(() => {
+    if (tick % 12 === 0 && libraryRevision !== lastLibrary) {
+      lastLibrary = libraryRevision
+      deliver(Uint8Array.of(0x81, 2))
+    }
+    if (mediaRevision !== lastMedia) {
+      lastMedia = mediaRevision
+      deliver(Uint8Array.of(0x81, 4))
+    }
     if (tick++ % 12 === 0) pushStatus()
     if (audio) pushAudio()
   }, 40)
@@ -240,6 +377,24 @@ export async function mockRequest(method: string, path: string, body?: any): Pro
 async function handle(method: string, path: string, body?: any): Promise<unknown> {
   const [, a, b, c] = path.split('/')
   if (method === 'GET' && a === 'status') return status()
+  if (method === 'GET' && a?.startsWith('stats')) {
+    const q = new URLSearchParams(path.split('?')[1] ?? '')
+    return mockStats(q.get('range') ?? 'week', Number(q.get('offset') ?? 0))
+  }
+  if (method === 'GET' && a === 'games' && c === 'stats') return mockGameStats(games.findIndex((g) => g.id === b))
+  if (method === 'GET' && a === 'media' && !b) {
+    const t = tracks[player.track]
+    return {
+      title: t.title, artist: t.artist, album: t.album, app: 'Spotify.exe', playing: player.playing,
+      canPlayPause: true, canNext: true, canPrevious: true,
+      positionSeconds: playerPosition(), durationSeconds: t.duration, readAt: new Date().toISOString(), artVersion: null,
+    }
+  }
+  if (method === 'POST' && a === 'media') return mediaCommand(b)
+  if (method === 'GET' && a === 'audio' && b === 'outputs') {
+    const kinds = ['speakers', 'headphones', 'display'] as const
+    return outputs.map((d, i) => ({ id: d.id, name: d.name, detail: d.detail, kind: kinds[d.kind] ?? 'speakers', default: i === defaultOutput }))
+  }
   if (method === 'GET' && a === 'games' && !b) return games.map((g) => ({ ...g, running: running.some((r) => r.id === g.id) }))
   const game = games.find((g) => g.id === b)
   if (method === 'GET' && a === 'games' && game) return { ...game, description: 'Descrizione finta del gioco, quella vera arriva da Playnite.', developers: ['Studio'] }
@@ -247,6 +402,14 @@ async function handle(method: string, path: string, body?: any): Promise<unknown
     if (!game.installed) throw new Error('Il gioco non è installato.')
     running.push({ id: game.id, name: game.name, source: game.source, startedAt: new Date().toISOString(), hasCover: false, hasBackground: false })
     return
+  }
+  if (method === 'POST' && a === 'games' && game && c === 'install') {
+    if (game.installed) throw new Error('Il gioco è già installato.')
+    return void libraryJob(game, 'installing')
+  }
+  if (method === 'POST' && a === 'games' && game && c === 'uninstall') {
+    if (running.some((r) => r.id === game.id)) throw new Error('Chiudi il gioco prima di disinstallarlo.')
+    return void libraryJob(game, 'uninstalling')
   }
   if (method === 'POST' && a === 'games' && c === 'stop') {
     setTimeout(() => running.splice(running.findIndex((r) => r.id === b), 1), 1500)
@@ -259,17 +422,25 @@ async function handle(method: string, path: string, body?: any): Promise<unknown
       throw new Error("C'è uno stream Vibepollo in corso: gli schermi li sta gestendo lui.")
     }
     if (method === 'POST' && b === 'presets' && !c) {
-      const p = { id: `p${Date.now()}`, name: body?.name || `Preset ${presets.length + 1}`, monitors: current }
+      const p = { ...presetAudio, id: `p${Date.now()}`, name: body?.name || `Preset ${presets.length + 1}`, monitors: current }
       presets.push(p)
       return p
     }
     if (method === 'PATCH' && preset) return void (preset.name = body.name)
+    if (method === 'PUT' && preset && path.endsWith('/audio')) {
+      preset.audioOutputId = body.outputId
+      preset.audioOutputName = body.outputId ? body.outputName : null
+      return
+    }
     if (method === 'DELETE' && preset) return void presets.splice(presets.indexOf(preset), 1)
     if (method === 'POST' && preset && path.endsWith('/apply')) {
       const previousPresetId = pending ? pending.previousPresetId : (presets.find((p) => p.monitors === current)?.id ?? null)
       if (!pending) previous = current
       current = preset.monitors
       pending = { presetId: preset.id, previousPresetId, deadline: Date.now() + 15000 }
+      // Like AudioFollowsDisplays.cs, minus the rollback of the audio.
+      const audioIndex = outputs.findIndex((o) => o.id === preset.audioOutputId)
+      if (audioIndex >= 0) defaultOutput = audioIndex
       return
     }
     if (b === 'confirm') return void (pending = null)

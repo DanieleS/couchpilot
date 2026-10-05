@@ -27,6 +27,14 @@ namespace CouchPilot.Games
             api.MainView.UIDispatcher.Invoke(() => api.StartGame(gameId));
         }
 
+        // Both hand over to the game's library plugin, which may open its own client (Steam,
+        // Epic…) or a confirmation on the PC to finish the job. They need Playnite's UI thread,
+        // but unlike StartGame they're not waited for: a dialog on the PC would hold the phone's
+        // request until someone answered it.
+        public void Install(Guid gameId) => api.MainView.UIDispatcher.BeginInvoke(new Action(() => api.InstallGame(gameId)));
+
+        public void Uninstall(Guid gameId) => api.MainView.UIDispatcher.BeginInvoke(new Action(() => api.UninstallGame(gameId)));
+
         public bool Stop(Guid gameId)
         {
             var game = api.Database.Games.Get(gameId);

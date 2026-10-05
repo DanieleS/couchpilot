@@ -9,7 +9,9 @@ using CouchPilot.Games;
 using CouchPilot.HomeAssistant;
 using CouchPilot.Input;
 using CouchPilot.Library;
+using CouchPilot.Media;
 using CouchPilot.Server;
+using CouchPilot.Stats;
 using Playnite.SDK;
 using Playnite.SDK.Events;
 using Playnite.SDK.Plugins;
@@ -25,6 +27,9 @@ namespace CouchPilot
         private readonly GameControl gameControl;
         private readonly DisplayService displays;
         private readonly AudioService audio;
+        private readonly MediaService media = new MediaService();
+        private readonly SessionLog sessionLog;
+        private readonly StatsService stats;
         private readonly RemoteInput input = new RemoteInput();
         private RemoteServer server;
         private HomeAssistantBridge homeAssistant;
@@ -44,7 +49,10 @@ namespace CouchPilot
             library = new LibraryService(api, sessions);
             gameControl = new GameControl(api, sessions);
             audio = new AudioService(gameControl);
+            sessionLog = new SessionLog(Path.Combine(GetPluginUserDataPath(), "sessions.jsonl"));
+            stats = new StatsService(api, sessionLog, sessions);
             displays = new DisplayService(Path.Combine(GetPluginUserDataPath(), "display-presets.json"));
+            new AudioFollowsDisplays(displays, audio);
             ApplyInputSetting();
         }
 
@@ -54,6 +62,8 @@ namespace CouchPilot
             // Installs, imports, playtime after a session: the phone refreshes its library.
             PlayniteApi.Database.Games.ItemUpdated += (_, __) => server?.LibraryChanged();
             PlayniteApi.Database.Games.ItemCollectionChanged += (_, __) => server?.LibraryChanged();
+            media.Changed += () => server?.MediaChanged();
+            media.Start();
             StartServer();
             StartHomeAssistant();
         }
@@ -65,6 +75,7 @@ namespace CouchPilot
             homeAssistant?.Dispose();
             homeAssistant = null;
             displays.Dispose();
+            media.Dispose();
         }
 
         public override void OnGameStarted(OnGameStartedEventArgs args)
@@ -77,6 +88,7 @@ namespace CouchPilot
         public override void OnGameStopped(OnGameStoppedEventArgs args)
         {
             sessions.Stopped(args.Game);
+            sessionLog.Add(args.Game.Id, DateTime.UtcNow, (long)args.ElapsedSeconds);
             server?.Nudge();
             homeAssistant?.Nudge();
         }
@@ -141,7 +153,7 @@ namespace CouchPilot
                             NotificationType.Error));
                     }
                 }
-                server = new RemoteServer(Settings.Port, certificate, webRoot, library, gameControl, displays, input, audio);
+                server = new RemoteServer(Settings.Port, certificate, webRoot, library, gameControl, displays, input, audio, media, stats);
                 server.Start();
                 PlayniteApi.Notifications.Remove("couchpilot-server");
                 Addresses = NetworkInfo.LanUrls(Settings.Port, certificate != null, certificate == null ? null : ServerCertificate.HostName(certificate));

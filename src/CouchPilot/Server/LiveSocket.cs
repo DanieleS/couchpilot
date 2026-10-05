@@ -38,6 +38,7 @@ namespace CouchPilot.Server
         private const byte OpChanged = 0x81;
         private const byte TopicStatus = 1;
         private const byte TopicLibrary = 2;
+        private const byte TopicMedia = 4;
 
         private static readonly ILogger logger = LogManager.GetLogger();
         private static readonly TimeSpan Tick = TimeSpan.FromMilliseconds(40);
@@ -52,6 +53,7 @@ namespace CouchPilot.Server
         private int looping;
         private volatile bool statusWanted;
         private volatile bool libraryChanged;
+        private volatile bool mediaChanged;
         private volatile bool rescanWanted;
         private string lastStatusShape;
         private byte[] lastVolumes;
@@ -79,6 +81,10 @@ namespace CouchPilot.Server
         // twice a second.
         public void LibraryChanged() => libraryChanged = true;
 
+        // The track, play/pause or the playing app changed. Announced on the next tick: you
+        // just pressed play, the button should follow.
+        public void MediaChanged() => mediaChanged = true;
+
         protected override Task OnClientConnectedAsync(IWebSocketContext context)
         {
             // WebSockets skip the browser's same-origin checks: without this, any page open on a
@@ -89,7 +95,7 @@ namespace CouchPilot.Server
             clients[context] = client;
             Enqueue(context, client, new[] { OpHello, ProtocolVersion });
             // Whatever the phone had may be stale after a disconnect: everything counts as changed.
-            Enqueue(context, client, new[] { OpChanged, (byte)(TopicStatus | TopicLibrary) });
+            Enqueue(context, client, new[] { OpChanged, (byte)(TopicStatus | TopicLibrary | TopicMedia) });
             if (Interlocked.Exchange(ref looping, 1) == 0) Task.Run(LoopAsync);
             return Task.CompletedTask;
         }
@@ -181,6 +187,11 @@ namespace CouchPilot.Server
             {
                 libraryChanged = false;
                 topics |= TopicLibrary;
+            }
+            if (mediaChanged)
+            {
+                mediaChanged = false;
+                topics |= TopicMedia;
             }
             if (topics == 0) return;
             var message = new[] { OpChanged, topics };

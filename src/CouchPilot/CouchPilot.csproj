@@ -16,6 +16,8 @@
     <PackageReference Include="PlayniteSDK" Version="6.18.0" ExcludeAssets="runtime" />
     <PackageReference Include="EmbedIO" Version="3.5.2" />
     <PackageReference Include="MQTTnet" Version="4.3.7.1207" />
+    <!-- WinRT from .NET Framework: the media controls Windows shows on its volume flyout. -->
+    <PackageReference Include="Microsoft.Windows.SDK.Contracts" Version="10.0.22621.2428" />
     <!-- Lets the project build on machines without the .NET Framework targeting pack. -->
     <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
   </ItemGroup>
@@ -24,6 +26,8 @@
     <Reference Include="PresentationCore" />
     <Reference Include="PresentationFramework" />
     <Reference Include="System.Drawing" />
+    <!-- Lets C# await WinRT async operations. -->
+    <Reference Include="System.Runtime.WindowsRuntime" />
     <Reference Include="System.Xaml" />
     <Reference Include="WindowsBase" />
   </ItemGroup>

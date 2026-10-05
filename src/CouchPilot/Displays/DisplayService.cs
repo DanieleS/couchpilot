@@ -40,6 +40,10 @@ namespace CouchPilot.Displays
         public List<PresetTarget> Targets { get; set; }
         public string Paths { get; set; }
         public string Modes { get; set; }
+        // Optional: the audio output to switch to with this preset. The name is kept for showing
+        // it while the device is unplugged.
+        public string AudioOutputId { get; set; }
+        public string AudioOutputName { get; set; }
     }
 
     public class PendingChange
@@ -65,6 +69,8 @@ namespace CouchPilot.Displays
         public string Id { get; set; }
         public string Name { get; set; }
         public List<MonitorInfo> Monitors { get; set; }
+        public string AudioOutputId { get; set; }
+        public string AudioOutputName { get; set; }
     }
 
     public class DisplayException : Exception
@@ -88,6 +94,13 @@ namespace CouchPilot.Displays
         private (DISPLAYCONFIG_PATH_INFO[] paths, DISPLAYCONFIG_MODE_INFO[] modes) rollback;
         private Timer rollbackTimer;
 
+        // For whoever acts along with presets (the audio output that follows them). Raised with
+        // the lock held: handlers must be quick and must not call back into this service.
+        // Applied's flag is true when the change is on trial and may still be rolled back.
+        public event Action<DisplayPreset, bool> Applied;
+        public event Action Confirmed;
+        public event Action RolledBack;
+
         public DisplayService(string storePath)
         {
             this.storePath = storePath;
@@ -103,7 +116,14 @@ namespace CouchPilot.Displays
                 {
                     StreamActive = monitors.Any(m => m.Virtual),
                     Monitors = monitors,
-                    Presets = presets.Select(p => new PresetDto { Id = p.Id, Name = p.Name, Monitors = p.Monitors }).ToList(),
+                    Presets = presets.Select(p => new PresetDto
+                    {
+                        Id = p.Id,
+                        Name = p.Name,
+                        Monitors = p.Monitors,
+                        AudioOutputId = p.AudioOutputId,
+                        AudioOutputName = p.AudioOutputName,
+                    }).ToList(),
                     ActivePresetId = presets.FirstOrDefault(p => SameLayout(p.Monitors, monitors))?.Id,
                     Pending = pendingPresetId == null ? null : new PendingChange
                     {
@@ -155,6 +175,20 @@ namespace CouchPilot.Displays
             }
         }
 
+        // null outputId: the preset leaves the audio alone.
+        public bool SetAudioOutput(string id, string outputId, string outputName)
+        {
+            lock (sync)
+            {
+                var preset = presets.FirstOrDefault(p => p.Id == id);
+                if (preset == null) return false;
+                preset.AudioOutputId = string.IsNullOrEmpty(outputId) ? null : outputId;
+                preset.AudioOutputName = preset.AudioOutputId == null ? null : outputName?.Trim();
+                Save();
+                return true;
+            }
+        }
+
         public bool Delete(string id)
         {
             lock (sync)
@@ -186,6 +220,7 @@ namespace CouchPilot.Displays
                 {
                     ClearPending();
                     Ccd.Apply(paths, modes);
+                    Raise(() => Applied?.Invoke(preset, false));
                     return true;
                 }
 
@@ -199,6 +234,7 @@ namespace CouchPilot.Displays
                 }
 
                 Ccd.Apply(paths, modes);
+                Raise(() => Applied?.Invoke(preset, true));
 
                 pendingPresetId = preset.Id;
                 pendingDeadline = DateTime.UtcNow + ConfirmWindow;
@@ -220,6 +256,7 @@ namespace CouchPilot.Displays
         {
             lock (sync)
             {
+                if (pendingPresetId != null) Raise(() => Confirmed?.Invoke());
                 ClearPending();
             }
         }
@@ -237,6 +274,7 @@ namespace CouchPilot.Displays
                 {
                     logger.Error(e, "Rolling back the display configuration failed");
                 }
+                Raise(() => RolledBack?.Invoke());
                 ClearPending();
             }
         }
@@ -249,11 +287,19 @@ namespace CouchPilot.Displays
             {
                 if (StreamActive())
                 {
+                    // Vibepollo took over: what we applied stays, as if kept.
+                    Raise(() => Confirmed?.Invoke());
                     ClearPending();
                     return;
                 }
                 Revert();
             }
+        }
+
+        // A failing listener must not undo a display change that already happened.
+        private static void Raise(Action raise)
+        {
+            try { raise(); } catch (Exception e) { logger.Error(e, "A display preset listener failed"); }
         }
 
         private static bool StreamActive() => CurrentMonitors().Any(m => m.Virtual);
