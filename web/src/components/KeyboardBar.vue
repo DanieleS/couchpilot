@@ -273,8 +273,8 @@ onBeforeUnmount(() => {
   inset: auto var(--size-2) calc(100% + 6px) auto;
   padding: 6px 12px;
   border-radius: var(--radius-round);
-  background: var(--button-dark);
-  color: var(--button-dark-ink);
+  background: var(--ink);
+  color: var(--bg);
   font-size: 0.6875rem;
   font-weight: 750;
   box-shadow: 0 4px 12px -4px rgb(0 0 0 / 0.4);
