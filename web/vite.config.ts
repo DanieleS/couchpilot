@@ -10,9 +10,10 @@ export default defineConfig({
   },
   server: {
     host: true,
+    // secure: false so an https:// COUCHPILOT_HOST signed by your own CA works without telling Node about the CA.
     proxy: {
-      '/api': process.env.COUCHPILOT_HOST ?? 'http://localhost:8642',
-      '/ws': { target: process.env.COUCHPILOT_HOST ?? 'http://localhost:8642', ws: true },
+      '/api': { target: process.env.COUCHPILOT_HOST ?? 'http://localhost:8642', secure: false },
+      '/ws': { target: process.env.COUCHPILOT_HOST ?? 'http://localhost:8642', ws: true, secure: false },
     },
   },
 })
