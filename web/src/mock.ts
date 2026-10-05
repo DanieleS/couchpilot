@@ -26,8 +26,8 @@ const games: Game[] = names.map(([name, source, hours], i) => ({
   hasBackground: false,
 }))
 
-const m = (name: string, x: number, y: number, width: number, height: number, refreshHz: number): Monitor => ({
-  name, devicePath: name, x, y, width, height, refreshHz, primary: x === 0 && y === 0,
+const m = (name: string, x: number, y: number, width: number, height: number, refreshHz: number, virtual = false): Monitor => ({
+  name, devicePath: name, x, y, width, height, refreshHz, primary: x === 0 && y === 0, virtual,
 })
 const presets: Preset[] = [
   { id: 'p1', name: 'Scrivania', monitors: [m('DELL U2723QE', -2560, 0, 2560, 1440, 60), m('ASUS PG27AQN', 0, 0, 2560, 1440, 240), m('DELL U2723QE ', 2560, 0, 2560, 1440, 60)] },
@@ -36,7 +36,11 @@ const presets: Preset[] = [
   { id: 'p4', name: 'Gaming 240 Hz', monitors: [m('ASUS PG27AQN', 0, 0, 2560, 1440, 240)] },
 ]
 
-let current = presets[0].monitors
+// `?stream=1` pretends a Vibepollo stream is running: its virtual display is the primary.
+const streaming = new URLSearchParams(location.search).has('stream')
+let current = streaming
+  ? [m('Sunshine Virtual Display', 0, 0, 2532, 1170, 120, true), m('ASUS PG27AQN', 2532, 0, 2560, 1440, 240)]
+  : presets[0].monitors
 let previous: Monitor[] | null = null
 let pending: { presetId: string; previousPresetId: string | null; deadline: number } | null = null
 const running: RunningGame[] = []
@@ -53,6 +57,7 @@ function status(): Status {
       monitors: current,
       presets,
       activePresetId: presets.find((p) => p.monitors === current)?.id ?? null,
+      streamActive: current.some((x) => x.virtual),
       pending: pending && { presetId: pending.presetId, previousPresetId: pending.previousPresetId, secondsLeft: Math.ceil((pending.deadline - Date.now()) / 1000) },
     },
   }
@@ -83,6 +88,9 @@ async function handle(method: string, path: string, body?: any): Promise<unknown
   if (method === 'POST' && a === 'games' && c === 'focus') return
   if (a === 'displays') {
     const preset = presets.find((p) => p.id === c)
+    if (streaming && method === 'POST' && (path.endsWith('/apply') || (b === 'presets' && !c))) {
+      throw new Error("C'è uno stream Vibepollo in corso: gli schermi li sta gestendo lui.")
+    }
     if (method === 'POST' && b === 'presets' && !c) {
       const p = { id: `p${Date.now()}`, name: body?.name || `Preset ${presets.length + 1}`, monitors: current }
       presets.push(p)

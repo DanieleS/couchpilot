@@ -38,6 +38,7 @@ export type Monitor = {
   height: number
   refreshHz: number
   primary: boolean
+  virtual: boolean
 }
 
 export type Preset = {
@@ -51,6 +52,7 @@ export type Displays = {
   presets: Preset[]
   activePresetId: string | null
   pending: { presetId: string; previousPresetId: string | null; secondsLeft: number } | null
+  streamActive: boolean
 }
 
 export type Status = {

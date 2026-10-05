@@ -37,7 +37,10 @@ const fill = (m: Monitor) =>
         :width="m.width - box.gap"
         :height="m.height - box.gap"
         :rx="box.radius"
-        :fill="fill(m)"
+        :fill="m.virtual ? 'none' : fill(m)"
+        :stroke="m.virtual ? 'var(--wait)' : undefined"
+        :stroke-width="m.virtual ? box.gap * 0.6 : undefined"
+        :stroke-dasharray="m.virtual ? `${box.gap * 2} ${box.gap * 1.2}` : undefined"
       />
       <text
         v-if="labels"
@@ -47,7 +50,7 @@ const fill = (m: Monitor) =>
         text-anchor="middle"
         dominant-baseline="middle"
         font-weight="700"
-        :fill="m.primary ? '#fff' : 'var(--ink-2)'"
+        :fill="m.virtual ? 'var(--wait)' : m.primary ? '#fff' : 'var(--ink-2)'"
       >
         {{ m.name }}
       </text>

@@ -40,7 +40,7 @@ const describe = (id: string) => {
       <span class="name truncate">{{ p.name }}</span>
       <span class="sub truncate tabular">{{ describe(p.id) }}</span>
     </button>
-    <button class="add" aria-label="Salva la configurazione attuale" @click="emit('add')">
+    <button class="add" aria-label="Salva la configurazione attuale" :disabled="locked" @click="emit('add')">
       <AppIcon name="plus" :size="20" />
     </button>
   </div>
@@ -58,6 +58,7 @@ const describe = (id: string) => {
 }
 .preset:active:not(:disabled) { transform: scale(0.97); }
 .preset:disabled { cursor: default; }
+.preset:disabled:not(.active, .pending), .add:disabled { opacity: 0.45; }
 .art {
   display: grid;
   place-items: center;

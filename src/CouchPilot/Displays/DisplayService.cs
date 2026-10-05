@@ -20,6 +20,8 @@ namespace CouchPilot.Displays
         public int Height { get; set; }
         public int RefreshHz { get; set; }
         public bool Primary { get; set; }
+        // Vibepollo's virtual display: it exists only while a stream is running.
+        public bool Virtual { get; set; }
     }
 
     // One saved path's monitor, so the preset can be re-pointed at the right adapter after a
@@ -54,6 +56,8 @@ namespace CouchPilot.Displays
         public List<PresetDto> Presets { get; set; }
         public string ActivePresetId { get; set; }
         public PendingChange Pending { get; set; }
+        // A Vibepollo stream owns the displays right now: presets are off limits until it ends.
+        public bool StreamActive { get; set; }
     }
 
     public class PresetDto
@@ -97,6 +101,7 @@ namespace CouchPilot.Displays
                 var monitors = CurrentMonitors();
                 return new DisplaysDto
                 {
+                    StreamActive = monitors.Any(m => m.Virtual),
                     Monitors = monitors,
                     Presets = presets.Select(p => new PresetDto { Id = p.Id, Name = p.Name, Monitors = p.Monitors }).ToList(),
                     ActivePresetId = presets.FirstOrDefault(p => SameLayout(p.Monitors, monitors))?.Id,
@@ -115,6 +120,10 @@ namespace CouchPilot.Displays
             lock (sync)
             {
                 var (paths, modes) = Query(QDC_ONLY_ACTIVE_PATHS);
+                if (Describe(paths, modes).Any(m => m.Virtual))
+                {
+                    throw new DisplayException("C'è uno stream Vibepollo in corso: salva il preset quando è finito, senza lo schermo virtuale.");
+                }
                 var preset = new DisplayPreset
                 {
                     Id = Guid.NewGuid().ToString("N"),
@@ -162,6 +171,10 @@ namespace CouchPilot.Displays
             {
                 var preset = presets.FirstOrDefault(p => p.Id == id);
                 if (preset == null) return false;
+                if (StreamActive())
+                {
+                    throw new DisplayException("C'è uno stream Vibepollo in corso: gli schermi li sta gestendo lui.");
+                }
 
                 var paths = FromBytes<DISPLAYCONFIG_PATH_INFO>(Convert.FromBase64String(preset.Paths));
                 var modes = FromBytes<DISPLAYCONFIG_MODE_INFO>(Convert.FromBase64String(preset.Modes));
@@ -181,7 +194,7 @@ namespace CouchPilot.Displays
                 pendingPresetId = preset.Id;
                 pendingDeadline = DateTime.UtcNow + ConfirmWindow;
                 rollbackTimer?.Dispose();
-                rollbackTimer = new Timer(_ => Revert(), null, ConfirmWindow, Timeout.InfiniteTimeSpan);
+                rollbackTimer = new Timer(_ => RevertUnlessStreaming(), null, ConfirmWindow, Timeout.InfiniteTimeSpan);
                 return true;
             }
         }
@@ -210,6 +223,23 @@ namespace CouchPilot.Displays
                 ClearPending();
             }
         }
+
+        // The automatic rollback must not fight Vibepollo: if a stream started while we were
+        // waiting, the displays are its business now, and it restores them when it ends.
+        private void RevertUnlessStreaming()
+        {
+            lock (sync)
+            {
+                if (StreamActive())
+                {
+                    ClearPending();
+                    return;
+                }
+                Revert();
+            }
+        }
+
+        private static bool StreamActive() => CurrentMonitors().Any(m => m.Virtual);
 
         public void Dispose()
         {
@@ -296,6 +326,7 @@ namespace CouchPilot.Displays
                     Height = (int)mode.sourceMode.height,
                     RefreshHz = rate.Denominator == 0 ? 0 : (int)Math.Round((double)rate.Numerator / rate.Denominator),
                     Primary = mode.sourceMode.position.x == 0 && mode.sourceMode.position.y == 0,
+                    Virtual = VirtualDisplay.IsVibepollo(name.monitorDevicePath, name.monitorFriendlyDeviceName),
                 });
             }
             return result;

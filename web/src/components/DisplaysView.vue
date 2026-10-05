@@ -5,6 +5,7 @@ import AppIcon from './AppIcon.vue'
 import DisplayConfirm from './DisplayConfirm.vue'
 import MonitorLayout from './MonitorLayout.vue'
 import PcChip from './PcChip.vue'
+import StreamNotice from './StreamNotice.vue'
 
 const emit = defineEmits<{
   apply: [id: string]
@@ -28,14 +29,15 @@ const state = (p: Preset) =>
     </header>
 
     <template v-if="displays">
+      <StreamNotice v-if="displays.streamActive" class="stream" />
       <section class="current card">
         <p class="eyebrow first">Configurazione attuale</p>
         <div class="well">
           <MonitorLayout :monitors="displays.monitors" labels />
         </div>
         <ul class="monitors">
-          <li v-for="m in displays.monitors" :key="m.devicePath + m.x" :class="{ primary: m.primary }">
-            <span class="truncate">{{ m.name }}<template v-if="m.primary"> · principale</template></span>
+          <li v-for="m in displays.monitors" :key="m.devicePath + m.x" :class="{ primary: m.primary && !m.virtual, virtual: m.virtual }">
+            <span class="truncate">{{ m.name }}<template v-if="m.virtual"> · virtuale</template><template v-else-if="m.primary"> · principale</template></span>
             <span class="muted tabular">{{ m.width }}×{{ m.height }} · {{ m.refreshHz }} Hz</span>
           </li>
         </ul>
@@ -55,7 +57,7 @@ const state = (p: Preset) =>
       </p>
       <ul class="presets">
         <li v-for="p in displays.presets" :key="p.id" class="preset card" :class="state(p)">
-          <button class="main" :disabled="state(p) !== 'idle'" @click="emit('apply', p.id)">
+          <button class="main" :disabled="state(p) !== 'idle' || displays.streamActive" @click="emit('apply', p.id)">
             <span class="thumb"><MonitorLayout :monitors="p.monitors" /></span>
             <span class="text">
               <span class="name truncate">{{ p.name }}</span>
@@ -64,19 +66,20 @@ const state = (p: Preset) =>
             <span class="status">
               <template v-if="state(p) === 'active'"><AppIcon name="check" :size="16" /></template>
               <template v-else-if="state(p) === 'pending'">In prova</template>
-              <template v-else>Applica</template>
+              <template v-else-if="!displays.streamActive">Applica</template>
             </span>
           </button>
           <button class="icon-btn tool" aria-label="Rinomina" @click="emit('rename', p)"><AppIcon name="pencil" :size="15" /></button>
           <button class="icon-btn tool" aria-label="Elimina" @click="emit('remove', p)"><AppIcon name="trash" :size="15" /></button>
         </li>
       </ul>
-      <button class="save" @click="emit('save')"><AppIcon name="plus" :size="16" />Salva la configurazione attuale</button>
+      <button class="save" :disabled="displays.streamActive" @click="emit('save')"><AppIcon name="plus" :size="16" />Salva la configurazione attuale</button>
     </template>
   </div>
 </template>
 
 <style scoped>
+.stream { margin-top: var(--size-4); }
 .current { margin-top: var(--size-4); padding: var(--size-3); }
 .eyebrow.first { margin-top: 0; }
 .well { display: grid; place-items: center; padding: var(--size-4) var(--size-2); border-radius: var(--r-inner); background: var(--well); }
@@ -84,6 +87,7 @@ const state = (p: Preset) =>
 .monitors { margin-top: var(--size-3); display: grid; gap: 4px; }
 .monitors li { display: flex; justify-content: space-between; gap: var(--size-2); font-size: 0.71875rem; font-weight: 650; }
 .monitors li.primary > span:first-child { color: var(--accent); }
+.monitors li.virtual > span:first-child { color: var(--wait); }
 .confirm { margin-top: var(--size-3); }
 .hint { font-size: 0.8125rem; line-height: 1.45; margin-bottom: var(--size-3); }
 
@@ -115,4 +119,5 @@ const state = (p: Preset) =>
   font-weight: 700;
   color: var(--ink-2);
 }
+.save:disabled { opacity: 0.45; }
 </style>

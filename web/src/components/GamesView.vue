@@ -10,6 +10,7 @@ import NowPlayingBar from './NowPlayingBar.vue'
 import NowPlayingCard from './NowPlayingCard.vue'
 import PcChip from './PcChip.vue'
 import PresetCards from './PresetCards.vue'
+import StreamNotice from './StreamNotice.vue'
 
 type Filter = 'installed' | 'recent' | 'favorite' | 'all'
 
@@ -90,7 +91,13 @@ const setFilter = (v: unknown) => v && (filter.value = v as Filter)
         <span>Schermo</span>
         <button class="link" @click="emit('manageDisplays')">Gestisci</button>
       </div>
-      <PresetCards :displays="displays" @apply="emit('applyPreset', $event)" @add="emit('savePreset')" />
+      <StreamNotice v-if="displays.streamActive" class="stream" />
+      <PresetCards
+        :displays="displays"
+        :locked="displays.streamActive"
+        @apply="emit('applyPreset', $event)"
+        @add="emit('savePreset')"
+      />
       <DisplayConfirm
         v-if="displays.pending"
         class="confirm"
@@ -149,6 +156,7 @@ const setFilter = (v: unknown) => v && (filter.value = v as Filter)
 .hero-slot { margin-top: var(--size-3); }
 .link { font-size: 0.75rem; font-weight: 600; letter-spacing: 0.02em; text-transform: none; color: var(--ink-2); }
 .confirm { margin-top: var(--size-2); }
+.stream { margin-bottom: var(--size-2); }
 
 .search {
   display: flex;
