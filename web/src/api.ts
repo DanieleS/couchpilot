@@ -1,5 +1,5 @@
 import type { AudioChannel } from './protocol'
-import type { Game, GameDetail, Preset, Status } from './types'
+import type { AudioOutput, Game, GameDetail, Preset, Status } from './types'
 import { mockRequest } from './mock'
 
 const useMock = import.meta.env.VITE_MOCK === '1'
@@ -35,6 +35,9 @@ export const api = {
   renamePreset: (id: string, name: string) => request<void>('PATCH', `/displays/presets/${id}`, { name }),
   deletePreset: (id: string) => request<void>('DELETE', `/displays/presets/${id}`),
   applyPreset: (id: string) => request<void>('POST', `/displays/presets/${id}/apply`),
+  setPresetAudio: (id: string, output: AudioOutput | null) =>
+    request<void>('PUT', `/displays/presets/${id}/audio`, { outputId: output?.id ?? null, outputName: output?.name ?? null }),
+  audioOutputs: () => request<AudioOutput[]>('GET', '/audio/outputs'),
   confirmDisplays: () => request<void>('POST', '/displays/confirm'),
   revertDisplays: () => request<void>('POST', '/displays/revert'),
 }

@@ -40,6 +40,7 @@ namespace CouchPilot
             gameControl = new GameControl(api, sessions);
             audio = new AudioService(gameControl);
             displays = new DisplayService(Path.Combine(GetPluginUserDataPath(), "display-presets.json"));
+            new AudioFollowsDisplays(displays, audio);
             ApplyInputSetting();
         }
 

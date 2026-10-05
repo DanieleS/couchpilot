@@ -48,6 +48,18 @@ export type Preset = {
   id: string
   name: string
   monitors: Monitor[]
+  // The audio output this preset switches to, or null to leave the audio alone. The name is
+  // there for when the device isn't plugged in.
+  audioOutputId: string | null
+  audioOutputName: string | null
+}
+
+export type AudioOutput = {
+  id: string
+  name: string
+  detail: string | null
+  kind: 'speakers' | 'headphones' | 'display'
+  default: boolean
 }
 
 export type Displays = {

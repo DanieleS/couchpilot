@@ -12,6 +12,7 @@ const emit = defineEmits<{
   save: []
   rename: [preset: Preset]
   remove: [preset: Preset]
+  audio: [preset: Preset]
   keep: []
   revert: []
 }>()
@@ -62,6 +63,7 @@ const state = (p: Preset) =>
             <span class="text">
               <span class="name truncate">{{ p.name }}</span>
               <span class="sub truncate">{{ p.monitors.map((m) => m.name).join(' + ') }}</span>
+              <span v-if="p.audioOutputId" class="sub audio truncate"><AppIcon name="speaker" :size="11" />{{ p.audioOutputName }}</span>
             </span>
             <span class="status">
               <template v-if="state(p) === 'active'"><AppIcon name="check" :size="16" /></template>
@@ -69,6 +71,7 @@ const state = (p: Preset) =>
               <template v-else-if="!displays.streamActive">Applica</template>
             </span>
           </button>
+          <button class="icon-btn tool" :class="{ set: p.audioOutputId }" aria-label="Audio con questo preset" @click="emit('audio', p)"><AppIcon name="speaker" :size="15" /></button>
           <button class="icon-btn tool" aria-label="Rinomina" @click="emit('rename', p)"><AppIcon name="pencil" :size="15" /></button>
           <button class="icon-btn tool" aria-label="Elimina" @click="emit('remove', p)"><AppIcon name="trash" :size="15" /></button>
         </li>
@@ -104,6 +107,8 @@ const state = (p: Preset) =>
 .status { margin-left: auto; font-size: 0.75rem; font-weight: 750; color: var(--accent); white-space: nowrap; }
 .pending .status { color: var(--wait); }
 .tool { color: var(--ink-2); }
+.tool.set { color: var(--wait); }
+.sub.audio { display: flex; align-items: center; gap: 4px; color: var(--wait); }
 
 .save {
   display: flex;

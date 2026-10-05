@@ -110,6 +110,16 @@ namespace CouchPilot.Server
             live.Nudge();
         }
 
+        // { "outputId": "…", "outputName": "…" } to switch audio with this preset, or
+        // { "outputId": null } to leave the audio alone.
+        [Route(HttpVerbs.Put, "/displays/presets/{id}/audio")]
+        public async Task SetPresetAudio(string id)
+        {
+            var body = await ReadBody<PresetAudioBody>();
+            if (!displays.SetAudioOutput(id, body?.OutputId, body?.OutputName)) throw HttpException.NotFound("Preset non trovato.");
+            live.Nudge();
+        }
+
         [Route(HttpVerbs.Delete, "/displays/presets/{id}")]
         public void DeletePreset(string id)
         {
@@ -138,6 +148,10 @@ namespace CouchPilot.Server
             live.Nudge();
         }
 
+        // For picking a display preset's audio output; the live mixer has its own list.
+        [Route(HttpVerbs.Get, "/audio/outputs")]
+        public object AudioOutputs() => audio.Outputs();
+
         [Route(HttpVerbs.Get, "/audio/apps/{id}/icon")]
         public async Task AudioAppIcon(string id)
         {
@@ -150,6 +164,12 @@ namespace CouchPilot.Server
         public class NameBody
         {
             public string Name { get; set; }
+        }
+
+        public class PresetAudioBody
+        {
+            public string OutputId { get; set; }
+            public string OutputName { get; set; }
         }
 
         private async Task<T> ReadBody<T>() where T : class

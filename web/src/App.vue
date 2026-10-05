@@ -2,7 +2,7 @@
 import { ToastDescription, ToastProvider, ToastRoot, ToastViewport } from 'reka-ui'
 import { computed, ref, watch } from 'vue'
 import { api } from './api'
-import type { Game, Preset, RunningGame } from './types'
+import type { AudioOutput, Game, Preset, RunningGame } from './types'
 import { useCouchPilot } from './store'
 import ConfirmDialog from './components/ConfirmDialog.vue'
 import AudioView from './components/AudioView.vue'
@@ -11,6 +11,7 @@ import DisplaysView from './components/DisplaysView.vue'
 import GameSheet from './components/GameSheet.vue'
 import GamesView from './components/GamesView.vue'
 import NamePrompt from './components/NamePrompt.vue'
+import PresetAudioSheet from './components/PresetAudioSheet.vue'
 import TabBar, { type Tab } from './components/TabBar.vue'
 
 const { error, games, running, runningIds, act } = useCouchPilot()
@@ -76,6 +77,15 @@ const askRename = (p: Preset) => {
 const submitName = (name: string) =>
   renaming.value ? act(() => api.renamePreset(renaming.value!.id, name)) : act(() => api.savePreset(name))
 
+// A preset's audio output, optional.
+const audioPreset = ref<Preset | null>(null)
+const audioSheetOpen = ref(false)
+const askPresetAudio = (p: Preset) => {
+  audioPreset.value = p
+  audioSheetOpen.value = true
+}
+const setPresetAudio = (output: AudioOutput | null) => audioPreset.value && act(() => api.setPresetAudio(audioPreset.value!.id, output))
+
 const removing = ref<Preset | null>(null)
 const removeOpen = computed({
   get: () => removing.value !== null,
@@ -117,6 +127,7 @@ const toastOpen = computed({
         @save="askSave"
         @rename="askRename"
         @remove="(p) => (removing = p)"
+        @audio="askPresetAudio"
         @keep="keepDisplays"
         @revert="revertDisplays"
       />
@@ -163,6 +174,8 @@ const toastOpen = computed({
       confirm-label="Elimina"
       @confirm="confirmRemove"
     />
+
+    <PresetAudioSheet v-model:open="audioSheetOpen" :preset="audioPreset" @select="setPresetAudio" />
 
     <NamePrompt
       v-model:open="promptOpen"

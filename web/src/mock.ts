@@ -33,11 +33,12 @@ const games: Game[] = names.map(([name, source, hours], i) => ({
 const m = (name: string, x: number, y: number, width: number, height: number, refreshHz: number, virtual = false): Monitor => ({
   name, devicePath: name, x, y, width, height, refreshHz, primary: x === 0 && y === 0, virtual,
 })
+const presetAudio = { audioOutputId: null, audioOutputName: null }
 const presets: Preset[] = [
-  { id: 'p1', name: 'Scrivania', monitors: [m('DELL U2723QE', -2560, 0, 2560, 1440, 60), m('ASUS PG27AQN', 0, 0, 2560, 1440, 240), m('DELL U2723QE ', 2560, 0, 2560, 1440, 60)] },
-  { id: 'p2', name: 'Solo TV', monitors: [m('LG OLED C3', 0, 0, 3840, 2160, 120)] },
-  { id: 'p3', name: 'TV + monitor', monitors: [m('ASUS PG27AQN', -2560, 400, 2560, 1440, 240), m('LG OLED C3', 0, 0, 3840, 2160, 120)] },
-  { id: 'p4', name: 'Gaming 240 Hz', monitors: [m('ASUS PG27AQN', 0, 0, 2560, 1440, 240)] },
+  { ...presetAudio, id: 'p1', name: 'Scrivania', monitors: [m('DELL U2723QE', -2560, 0, 2560, 1440, 60), m('ASUS PG27AQN', 0, 0, 2560, 1440, 240), m('DELL U2723QE ', 2560, 0, 2560, 1440, 60)] },
+  { ...presetAudio, id: 'p2', name: 'Solo TV', monitors: [m('LG OLED C3', 0, 0, 3840, 2160, 120)] },
+  { ...presetAudio, id: 'p3', name: 'TV + monitor', monitors: [m('ASUS PG27AQN', -2560, 400, 2560, 1440, 240), m('LG OLED C3', 0, 0, 3840, 2160, 120)] },
+  { ...presetAudio, id: 'p4', name: 'Gaming 240 Hz', monitors: [m('ASUS PG27AQN', 0, 0, 2560, 1440, 240)] },
 ]
 
 // `?stream=1` pretends a Vibepollo stream is running: its virtual display is the primary.
@@ -264,6 +265,10 @@ export async function mockRequest(method: string, path: string, body?: any): Pro
 async function handle(method: string, path: string, body?: any): Promise<unknown> {
   const [, a, b, c] = path.split('/')
   if (method === 'GET' && a === 'status') return status()
+  if (method === 'GET' && a === 'audio' && b === 'outputs') {
+    const kinds = ['speakers', 'headphones', 'display'] as const
+    return outputs.map((d, i) => ({ id: d.id, name: d.name, detail: d.detail, kind: kinds[d.kind] ?? 'speakers', default: i === defaultOutput }))
+  }
   if (method === 'GET' && a === 'games' && !b) return games.map((g) => ({ ...g, running: running.some((r) => r.id === g.id) }))
   const game = games.find((g) => g.id === b)
   if (method === 'GET' && a === 'games' && game) return { ...game, description: 'Descrizione finta del gioco, quella vera arriva da Playnite.', developers: ['Studio'] }
@@ -291,17 +296,25 @@ async function handle(method: string, path: string, body?: any): Promise<unknown
       throw new Error("C'è uno stream Vibepollo in corso: gli schermi li sta gestendo lui.")
     }
     if (method === 'POST' && b === 'presets' && !c) {
-      const p = { id: `p${Date.now()}`, name: body?.name || `Preset ${presets.length + 1}`, monitors: current }
+      const p = { ...presetAudio, id: `p${Date.now()}`, name: body?.name || `Preset ${presets.length + 1}`, monitors: current }
       presets.push(p)
       return p
     }
     if (method === 'PATCH' && preset) return void (preset.name = body.name)
+    if (method === 'PUT' && preset && path.endsWith('/audio')) {
+      preset.audioOutputId = body.outputId
+      preset.audioOutputName = body.outputId ? body.outputName : null
+      return
+    }
     if (method === 'DELETE' && preset) return void presets.splice(presets.indexOf(preset), 1)
     if (method === 'POST' && preset && path.endsWith('/apply')) {
       const previousPresetId = pending ? pending.previousPresetId : (presets.find((p) => p.monitors === current)?.id ?? null)
       if (!pending) previous = current
       current = preset.monitors
       pending = { presetId: preset.id, previousPresetId, deadline: Date.now() + 15000 }
+      // Like AudioFollowsDisplays.cs, minus the rollback of the audio.
+      const audioIndex = outputs.findIndex((o) => o.id === preset.audioOutputId)
+      if (audioIndex >= 0) defaultOutput = audioIndex
       return
     }
     if (b === 'confirm') return void (pending = null)
