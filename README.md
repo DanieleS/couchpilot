@@ -11,7 +11,7 @@ CouchPilot is a Playnite extension that serves a small web app on your local net
 - **Display presets**: save the current monitor layout under a name, apply any saved layout with one tap. If you don't confirm within 15 s the previous layout comes back by itself, so a preset that leaves you with a black screen can't strand you.
 - **Vibepollo-aware**: while Vibepollo streams, its virtual display owns the screens, so presets are locked and the automatic rollback stands down.
 - **Home Assistant (optional)**: publishes the running game, the active display preset and whether a Vibepollo stream is on to an MQTT broker, with discovery, so the PC shows up as a device; optionally also takes commands (switch preset, close, focus or start a game).
-- **Coming next**: touchpad and keyboard.
+- **Touchpad and keyboard (optional)**: drive the PC's mouse and keyboard from the phone. One finger moves, a tap clicks, two fingers scroll or right-click, tap and hold drags. The phone's own keyboard types on the PC, with a Termux-style bar of extra keys above it (Esc, Tab, Ctrl/Alt/Win/Shift, arrows, F1–F12), plus shortcuts and volume keys.
 
 ## Install
 
@@ -21,6 +21,16 @@ CouchPilot is a Playnite extension that serves a small web app on your local net
 4. The first time, Windows Firewall asks whether Playnite may accept connections: allow it on private networks.
 
 The PC and the phone must be on the same network. There is no authentication: don't expose the port to the internet (use a VPN to reach it from outside).
+
+## Touchpad and keyboard
+
+Off by default: whoever reaches the port could type on the PC. Turn it on in the extension settings with **Permetti al telefono di usare mouse e tastiera del PC**; the Control tab connects by itself.
+
+- Modifiers in the bar work like Termux: a tap holds them for the next key (or the next letter typed: Ctrl, then `c`), a double tap locks them until you tap again. **Fn** swaps in F1–F12.
+- Text arrives as Unicode, so accents and emoji come through whatever the PC's keyboard layout; keys from the bar are sent with their scan code too, for games that read raw input.
+- Windows ignores synthetic input aimed at windows running as administrator, and at the UAC prompt or the lock screen: those need a real mouse.
+
+Input travels over a WebSocket on `/ws/input`, a few bytes per command (the format is in `Input/RemoteInput.cs`). Connections from pages on other sites are refused, and a button held down is let go if the phone drops.
 
 ## Home Assistant
 

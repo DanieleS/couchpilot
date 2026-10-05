@@ -13,6 +13,10 @@ namespace CouchPilot
         private int port = 8642;
         public int Port { get => port; set => SetValue(ref port, value); }
 
+        // Touchpad and keyboard from the phone: off unless you turn it on.
+        private bool remoteInput;
+        public bool RemoteInput { get => remoteInput; set => SetValue(ref remoteInput, value); }
+
         // Home Assistant over MQTT: off unless you turn it on.
         private bool mqttEnabled;
         public bool MqttEnabled { get => mqttEnabled; set => SetValue(ref mqttEnabled, value); }
@@ -85,6 +89,7 @@ namespace CouchPilot
             {
                 plugin.RestartServer();
             }
+            plugin.ApplyInputSetting();
             if (MqttChanged(editing))
             {
                 plugin.RestartHomeAssistant();
@@ -117,6 +122,7 @@ namespace CouchPilot
         private void CopyFrom(CouchPilotSettings other)
         {
             Port = other.Port;
+            RemoteInput = other.RemoteInput;
             MqttEnabled = other.MqttEnabled;
             MqttHost = other.MqttHost;
             MqttPort = other.MqttPort;

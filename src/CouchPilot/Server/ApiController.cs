@@ -4,6 +4,7 @@ using System.Net;
 using System.Threading.Tasks;
 using CouchPilot.Displays;
 using CouchPilot.Games;
+using CouchPilot.Input;
 using CouchPilot.Library;
 using EmbedIO;
 using EmbedIO.Routing;
@@ -17,12 +18,14 @@ namespace CouchPilot.Server
         private readonly LibraryService library;
         private readonly GameControl games;
         private readonly DisplayService displays;
+        private readonly RemoteInput input;
 
-        public ApiController(LibraryService library, GameControl games, DisplayService displays)
+        public ApiController(LibraryService library, GameControl games, DisplayService displays, RemoteInput input)
         {
             this.library = library;
             this.games = games;
             this.displays = displays;
+            this.input = input;
         }
 
         // One call the phone polls: what's running and what the screens look like.
@@ -32,6 +35,7 @@ namespace CouchPilot.Server
             pc = Environment.MachineName,
             running = library.Running(),
             displays = displays.Snapshot(),
+            input = input.Enabled,
         };
 
         [Route(HttpVerbs.Get, "/games")]

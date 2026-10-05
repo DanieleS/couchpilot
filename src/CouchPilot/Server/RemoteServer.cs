@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using CouchPilot.Displays;
 using CouchPilot.Games;
+using CouchPilot.Input;
 using CouchPilot.Library;
 using EmbedIO;
 using EmbedIO.WebApi;
@@ -17,7 +18,7 @@ namespace CouchPilot.Server
         private readonly WebServer server;
         private readonly CancellationTokenSource cts = new CancellationTokenSource();
 
-        public RemoteServer(int port, string webRoot, LibraryService library, GameControl games, DisplayService displays)
+        public RemoteServer(int port, string webRoot, LibraryService library, GameControl games, DisplayService displays, RemoteInput input)
         {
             Swan.Logging.Logger.NoLogging();
 
@@ -27,7 +28,8 @@ namespace CouchPilot.Server
                     .WithUrlPrefix($"http://*:{port}/")
                     .WithMode(HttpListenerMode.EmbedIO))
                 .WithCors()
-                .WithWebApi("/api", SerializeJson, m => m.WithController(() => new ApiController(library, games, displays)));
+                .WithWebApi("/api", SerializeJson, m => m.WithController(() => new ApiController(library, games, displays, input)))
+                .WithModule(new InputSocket("/ws/input", input));
 
             if (Directory.Exists(webRoot))
             {

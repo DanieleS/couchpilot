@@ -59,4 +59,6 @@ export type Status = {
   pc: string
   running: RunningGame[]
   displays: Displays
+  // Touchpad and keyboard are allowed in the extension settings.
+  input: boolean
 }
