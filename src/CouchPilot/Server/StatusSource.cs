@@ -17,22 +17,33 @@ namespace CouchPilot.Server
         private readonly DisplayService displays;
         private readonly RemoteInput input;
         private readonly CaptureService captures;
+        private readonly Captures.ClipEditor clips;
+        private readonly PairingService pairing;
+        private readonly Achievements.AchievementsService achievements;
 
-        public StatusSource(LibraryService library, DisplayService displays, RemoteInput input, CaptureService captures)
+        public StatusSource(LibraryService library, DisplayService displays, RemoteInput input, CaptureService captures, Captures.ClipEditor clips, PairingService pairing, Achievements.AchievementsService achievements)
         {
             this.library = library;
             this.displays = displays;
             this.input = input;
             this.captures = captures;
+            this.clips = clips;
+            this.pairing = pairing;
+            this.achievements = achievements;
         }
 
-        public StatusDto Snapshot() => new StatusDto
+        // The status as this phone sees it: what the settings allow, narrowed to what this
+        // device is allowed. `device` is null while pairing is off.
+        public StatusDto Snapshot(PairedDevice device) => new StatusDto
         {
             Pc = Environment.MachineName,
             Running = library.Running(),
             Displays = displays.Snapshot(),
-            Input = input.Enabled,
-            Capture = captures.Status(),
+            Input = input.Enabled && (device == null || device.AllowInput),
+            Capture = device == null || device.AllowCaptures ? WithEditing(captures.Status()) : null,
+            Pairing = pairing.Required,
+            Device = PairingService.ToDto(device),
+            Achievements = achievements.Available,
             Controllers = Native.XInput.Pads().Select(p => new ControllerDto
             {
                 Slot = p.Slot + 1,
@@ -48,9 +59,16 @@ namespace CouchPilot.Server
         // counts down by itself.
         public string Shape()
         {
-            var status = Snapshot();
+            var status = Snapshot(null);
             if (status.Displays.Pending != null) status.Displays.Pending.SecondsLeft = 0;
-            return Serialize(status);
+            // A device's permissions changing is news to that device, whatever the status looks like from here.
+            return Serialize(status) + pairing.Version;
+        }
+
+        private CaptureStatusDto WithEditing(CaptureStatusDto status)
+        {
+            if (status != null) status.Editing = clips.Available;
+            return status;
         }
 
         private static string Serialize(StatusDto status) => Json.Serialize(status, JsonSerializerCase.CamelCase);
@@ -66,6 +84,12 @@ namespace CouchPilot.Server
         // Screenshots and clips from the phone, or null when they're off in the settings.
         public CaptureStatusDto Capture { get; set; }
         public List<ControllerDto> Controllers { get; set; }
+        // Phones have to type a PIN before they're let in.
+        public bool Pairing { get; set; }
+        // The paired phone this status is for, or null while pairing is off.
+        public PairedDeviceDto Device { get; set; }
+        // SuccessStory is installed and has data: games can show their achievements.
+        public bool Achievements { get; set; }
     }
 
     // An Xbox-style controller connected to the PC.

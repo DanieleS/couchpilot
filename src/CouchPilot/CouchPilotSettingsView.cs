@@ -1,7 +1,9 @@
+using System;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Data;
+using CouchPilot.Server;
 
 namespace CouchPilot
 {
@@ -10,6 +12,7 @@ namespace CouchPilot
     {
         private readonly CouchPilotSettings settings;
         private readonly StackPanel panel = new StackPanel { Margin = new Thickness(20) };
+        private readonly StackPanel devices = new StackPanel { Margin = new Thickness(0, 10, 0, 0) };
 
         public CouchPilotSettingsView(CouchPilotSettings settings)
         {
@@ -48,13 +51,34 @@ namespace CouchPilot
                 Opacity = 0.7,
             });
 
+            Heading("Telefoni");
+            var pairing = new CheckBox { Content = "Chiedi un PIN ai telefoni nuovi" };
+            pairing.SetBinding(ToggleButton.IsCheckedProperty, Bind(nameof(CouchPilotSettings.RequirePairing)));
+            panel.Children.Add(pairing);
+            panel.Children.Add(new TextBlock
+            {
+                Text = "Un telefono che apre CouchPilot per la prima volta deve scrivere un PIN di sei cifre che compare qui sullo schermo del PC: entra solo chi può leggerlo. "
+                    + "Spento, entra chiunque sia sulla rete, come prima. Qui sotto decidi cosa può fare ciascun telefono; le modifiche valgono subito.",
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 6, 0, 0),
+                Opacity = 0.7,
+            });
+            panel.Children.Add(devices);
+            RebuildDevices();
+            if (settings.Pairing != null)
+            {
+                Action onChanged = () => Dispatcher.BeginInvoke(new Action(RebuildDevices));
+                settings.Pairing.Changed += onChanged;
+                Unloaded += (s, e) => settings.Pairing.Changed -= onChanged;
+            }
+
             Heading("Touchpad e tastiera");
             var input = new CheckBox { Content = "Permetti al telefono di usare mouse e tastiera del PC" };
             input.SetBinding(ToggleButton.IsCheckedProperty, Bind(nameof(CouchPilotSettings.RemoteInput)));
             panel.Children.Add(input);
             panel.Children.Add(new TextBlock
             {
-                Text = "Chiunque raggiunga la porta del server può muovere il mouse e scrivere sul PC: attivalo solo su una rete di cui ti fidi.",
+                Text = "Chiunque raggiunga la porta del server può muovere il mouse e scrivere sul PC: attivalo solo su una rete di cui ti fidi, o chiedi il PIN ai telefoni e scegli sopra quali possono farlo.",
                 TextWrapping = TextWrapping.Wrap,
                 Margin = new Thickness(0, 6, 0, 0),
                 Opacity = 0.7,
@@ -94,7 +118,7 @@ namespace CouchPilot
             {
                 Text = "La galleria mostra già la cartella Acquisizioni di Game Bar e quella di NVIDIA. CouchPilot preme le scorciatoie predefinite del programma scelto: il gioco deve essere in primo piano. "
                     + "Per salvare gli ultimi secondi, Game Bar deve registrare in sottofondo (Impostazioni di Windows → Giochi → Acquisizioni) e NVIDIA deve avere il Replay istantaneo acceso. "
-                    + "Chiunque raggiunga la porta del server può vedere le catture e cestinarle.",
+                    + "Chiunque raggiunga la porta del server può vedere le catture e cestinarle, a meno di chiedere il PIN ai telefoni e scegliere sopra quali possono.",
                 TextWrapping = TextWrapping.Wrap,
                 Margin = new Thickness(0, 6, 0, 0),
                 Opacity = 0.7,
@@ -136,6 +160,57 @@ namespace CouchPilot
             });
 
             Content = new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+        }
+
+        // One row a paired phone: its name, when it was last here, what it may do, and a way out.
+        private void RebuildDevices()
+        {
+            devices.Children.Clear();
+            var pairing = settings.Pairing;
+            if (pairing == null) return;
+            var list = pairing.Devices;
+            if (list.Count == 0)
+            {
+                devices.Children.Add(new TextBlock { Text = "Nessun telefono abbinato finora.", Opacity = 0.7 });
+                return;
+            }
+            foreach (var device in list)
+            {
+                var id = device.Id;
+                var row = new Grid { Margin = new Thickness(0, 0, 0, 8) };
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star), MaxWidth = 260 });
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+                var who = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+                who.Children.Add(new TextBlock { Text = device.Name, FontWeight = FontWeights.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis });
+                var seen = device.LastSeenAt.ToLocalTime();
+                who.Children.Add(new TextBlock
+                {
+                    Text = seen.Date == DateTime.Today ? $"Visto oggi alle {seen:HH:mm}" : $"Visto il {seen:d}",
+                    FontSize = 11,
+                    Opacity = 0.6,
+                });
+                row.Children.Add(who);
+
+                var input = new CheckBox { Content = "Mouse e tastiera", IsChecked = device.AllowInput, Margin = new Thickness(16, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
+                input.Click += (s, e) => pairing.SetPermissions(id, input.IsChecked == true, null);
+                Grid.SetColumn(input, 1);
+                row.Children.Add(input);
+
+                var captures = new CheckBox { Content = "Catture", IsChecked = device.AllowCaptures, Margin = new Thickness(12, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
+                captures.Click += (s, e) => pairing.SetPermissions(id, null, captures.IsChecked == true);
+                Grid.SetColumn(captures, 2);
+                row.Children.Add(captures);
+
+                var remove = new Button { Content = "Rimuovi", Padding = new Thickness(10, 2, 10, 2), Margin = new Thickness(16, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
+                remove.Click += (s, e) => pairing.Forget(id);
+                Grid.SetColumn(remove, 3);
+                row.Children.Add(remove);
+
+                devices.Children.Add(row);
+            }
         }
 
         private Binding Bind(string path) => new Binding(path) { Source = settings, UpdateSourceTrigger = UpdateSourceTrigger.PropertyChanged };

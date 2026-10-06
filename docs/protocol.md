@@ -40,7 +40,17 @@ Change one, change this document and the others in the same commit.
 - **Size:** at most 16 KiB per message from the phone. Messages from the PC have no limit, but in practice the largest is an AUDIO STATE of a few hundred bytes.
 - **Lifetime:** the phone opens the socket while the page is on screen and closes it when the page goes to the background (`visibilitychange`). After an unexpected close it reconnects after 0.4 s, 0.8 s, 1.6 s, 3.2 s, then every 5 s.
 - **Offline:** the phone shows the PC as offline only after 3 s without a connection, so a brief drop doesn't flash.
-- **Authentication:** none. The port must not be exposed beyond the local network (see the README).
+- **Authentication:** none by default: the port must not be exposed beyond the local network (see the README). With **Chiedi un PIN ai telefoni nuovi** on in the extension settings, the upgrade must carry the `couchpilot_device` cookie of a paired phone, like every request under `/api` (see [1.1](#11-pairing)); without it the PC closes the socket with status 1008 and the reason `unpaired`, and the phone shows its pairing screen instead of reconnecting.
+
+### 1.1 Pairing
+
+Optional. While it's on, `/api` answers only phones that have typed a PIN once: a request without a known cookie gets `401 {"error": …, "code": "unpaired"}`, whatever the path, except the three pairing routes and the app's own files. The phone then:
+
+1. `POST /api/pair/request` with `{"name": "Pixel 8 · Chrome"}`. The PC puts a six-digit PIN on its screen (and in Playnite's notifications) for two minutes and answers `{"expiresAt": "…", "seconds": 120}`. At most one request every 5 s (`409`, code `too-soon`).
+2. `POST /api/pair` with `{"pin": "482913", "name": "…"}`. Right: `200` with the device (`{"id", "name", "input", "captures"}`) and a `Set-Cookie` for `couchpilot_device`, HttpOnly, SameSite=Lax, Secure over HTTPS, good for 400 days and renewed daily while the phone comes back. Wrong: `403`, code `wrong-pin`, with `attemptsLeft`; after five wrong tries, or two minutes, `409` with code `expired` and the phone has to ask again.
+3. `GET /api/pair` says whether pairing is required and which device the cookie stands for; `DELETE /api/pair` forgets this phone.
+
+The token is 32 random bytes; the PC keeps only its SHA-256 (`devices.json` in the extension's data folder). Each paired phone can separately be allowed, or not, to use mouse and keyboard and to see the captures: `input` and `capture` in `/api/status` are already narrowed to the phone asking, and input messages from a phone that may not send them are dropped like when input is off.
 
 ## 2. Encoding
 
@@ -153,13 +163,14 @@ Some structured data on the PC changed: the phone should fetch it again over HTT
 | 2 | library | `GET /api/games` |
 | 4 | media | `GET /api/media` |
 | 8 | captures | `GET /api/captures` |
+| 16 | achievements | `GET /api/achievements/recent` |
 
 ```
 81 01      the status changed
 81 03      the status and the library changed
 ```
 
-Right after HELLO the PC sends CHANGED with every topic set (`81 0F`), so a phone that just connected, or reconnected after missing changes, refreshes everything.
+Right after HELLO the PC sends CHANGED with every topic set (`81 1F`), so a phone that just connected, or reconnected after missing changes, refreshes everything.
 
 **Why not send the data itself.** Status and library are nested, vary in shape and change a few times a minute at most. As JSON on HTTP they keep one schema, readable with a browser or `curl`, and need no binary layout to keep in step with it. The socket only carries what has to be immediate or compact. One round trip after a CHANGED costs a few milliseconds on a home network.
 
@@ -170,6 +181,8 @@ Right after HELLO the PC sends CHANGED with every topic set (`81 0F`), so a phon
 **Media.** Sent on the next tick after Windows reports that what plays changed: another track, play or pause, another app taking over. Not for the position moving on: `/api/media` gives the position as of when it answered, and the phone moves the bar from there while playing.
 
 **Captures.** Sent on the next tick after a screenshot or clip appears in, or leaves, the capture folders: made from the phone or with the PC's own keys, or deleted. A file being written (a clip being encoded, a recording under way) counts once its writer lets go of it. The phone fetches the list only while captures are on (`capture` in the status isn't null).
+
+**Achievements.** Sent on the next tick after SuccessStory (if installed) writes a game's achievements file, which it does at the end of a session, or during one if it's set to refresh while you play. The phone fetches the latest unlocked and announces the ones it hadn't seen. The phone fetches them only while `achievements` in the status is true.
 
 **The phone** keeps at most one fetch per topic in flight. A CHANGED arriving during a fetch queues exactly one more, so a burst of changes costs two requests at most.
 
@@ -211,9 +224,14 @@ Right after HELLO the PC sends CHANGED with every topic set (`81 0F`), so a phon
   "controllers": [                        // Xbox-style pads (XInput), by slot
     { "slot": 1, "wired": false, "battery": "medium" },  // empty, low, medium, full
     { "slot": 2, "wired": true, "battery": null }        // null when wired or unknown
-  ]
+  ],
+  "pairing": true,                        // phones have to type a PIN (see 1.1)
+  "device": { "id": "a1b2c3d4e5f6", "name": "Pixel 8 · Chrome", "input": true, "captures": true },  // this phone; null while pairing is off
+  "achievements": true                    // SuccessStory is installed and has data
 }
 ```
+
+`input` and `capture` are what the settings allow **and** what this phone is allowed: with pairing on, a phone the settings don't let use mouse and keyboard sees `input: false`, one that may not see the captures sees `capture: null`. `capture.editing` says whether clips can be cut on the PC (the bundled ffmpeg is there).
 
 `GET /api/media` returns what Windows' media controls show, or `null` when nothing plays:
 
@@ -261,6 +279,16 @@ The artwork is at `GET /api/media/art?v=<artVersion>`; the version changes with 
 
 The thumbnail is at `GET /api/captures/{id}/thumb?v=<version>` (a JPEG up to 480 px, cacheable for good; 404 when the PC can't make one, a damaged clip say), the file at `GET /api/captures/{id}/file`, which honours `Range` so the player can seek. `DELETE /api/captures/{id}` moves it to the PC's Recycle Bin.
 
+Each item also carries `edited` (cut out of another clip on the phone) and `sourceId` (that clip's id, while it's still there). GIFs the editor made are listed as photos (`kind: "photo"`, a `.gif` file name).
+
+**Cutting a clip.** `GET /api/captures/{id}/strip?v=<version>` is a strip of 12 frames across the clip, side by side in one JPEG 160 px a frame, for the trimmer's handles (cacheable for good; 404 without ffmpeg or for a clip it can't read). `POST /api/captures/{id}/trim` with
+
+```jsonc
+{ "from": 12.4, "to": 41.0, "format": "mp4", "audio": true }   // or "format": "gif" (no audio, at most 20 s)
+```
+
+makes the PC write that piece next to the clip, dated like the moment it starts so the gallery lists the two together under the same game, and answers once ffmpeg is done, with the new capture as above. MP4s are re-encoded (H.264, AAC, at most 1080p, HDR tone-mapped) so the cut lands on the frame asked for; GIFs are 480 px wide at 15 fps with a palette of their own. One cut at a time. Errors are `409` with a `code`: `no-ffmpeg`, `not-video`, `too-short` (under 0.5 s), `too-long` (a GIF over 20 s), `busy`, `trim-failed`.
+
 `POST /api/captures/screenshot`, `/api/captures/replay` and `/api/captures/record/stop` press the tool's shortcut and answer once the new file is on disk, with it as above; `/api/captures/record/start` answers at once. When they can't, the answer is 409 with a `code` besides the `error`:
 
 | `code` | Meaning |
@@ -272,6 +300,30 @@ The thumbnail is at `GET /api/captures/{id}/thumb?v=<version>` (a JPEG up to 480
 | `off` | captures are off in the extension settings |
 
 `GET /api/games` returns the library: every game Playnite doesn't hide, with name, source, install state, playtime, genres, release year and whether it has cover and background art. The types are in `web/src/types.ts` (`Game`).
+
+`GET /api/games/{id}/achievements` returns the game's achievements from [SuccessStory](https://github.com/Lacro59/playnite-successstory-plugin)'s data (404 when it has none for the game, or isn't installed), unlocked first, newest first, then the locked ones, the most common first:
+
+```jsonc
+{
+  "gameId": "6de22bd5-…", "game": "Hades II",
+  "total": 49, "unlocked": 23,
+  "lastRefresh": "2026-10-05T20:01:00.0000000Z",   // when SuccessStory last fetched them, or null
+  "items": [
+    {
+      "id": "ACH_FIRST_BLOOD",                      // the source's own name, or the position when it has none
+      "name": "Prima vittoria", "description": "Vinci uno scontro.",
+      "unlocked": true, "unlockedAt": "2026-10-05T19:42:13.0000000Z",   // null while locked, or when the source doesn't say when
+      "hidden": false,                              // the game hides it until it's unlocked
+      "percent": 61.3,                              // players who have it; null when the source doesn't say
+      "gamerScore": null,
+      "icon": "https://…/achievement.jpg",          // on the web, or /api/games/{id}/achievements/{index}/icon when kept on the PC
+      "lockedIcon": null                            // the game's greyed-out icon, or null: the phone greys out `icon`
+    }
+  ]
+}
+```
+
+`GET /api/achievements/recent` returns the latest 40 unlocked across every game, newest first, each with `gameId`, `game` and `hasCover` besides the fields above. `GET /api/stats` carries `achievements: { unlocked, recent }` for its period (null without SuccessStory).
 
 ### 5.3 AUDIO STATE `0x82`
 

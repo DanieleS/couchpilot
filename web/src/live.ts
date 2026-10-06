@@ -1,4 +1,5 @@
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
+import { unpaired } from './api'
 import { createMockLink } from './mock'
 import { decode, encodeSubscribe, PROTOCOL_VERSION, Subscribe, type ServerMessage } from './protocol'
 
@@ -73,15 +74,18 @@ function opened() {
   if (audioListeners.size > 0) socket?.send(encodeSubscribe(Subscribe.audio))
 }
 
-function closed(which: Link) {
+// 1008 with «unpaired»: the PC wants a PIN from this phone (see PairingGate.cs). No point
+// retrying until it has typed one; the pairing screen then asks to connect again.
+function closed(which: Link, code = 0, reason = '') {
   if (socket !== which) return
   socket = null
   open = false
+  if (code === 1008 && reason === 'unpaired') unpaired.value = true
   link.value = wanted() ? 'connecting' : 'off'
   clearTimeout(offlineTimer)
   offlineTimer = window.setTimeout(giveUp, OFFLINE_AFTER_MS)
   clearTimeout(retryTimer)
-  if (wanted()) retryTimer = window.setTimeout(connect, Math.min(5000, 400 * 2 ** retries++))
+  if (wanted() && !unpaired.value) retryTimer = window.setTimeout(connect, Math.min(5000, 400 * 2 ** retries++))
 }
 
 function giveUp() {
@@ -92,7 +96,7 @@ function giveUp() {
 const wanted = () => document.visibilityState === 'visible'
 
 function connect() {
-  if (socket || !wanted()) return
+  if (socket || !wanted() || unpaired.value) return
   link.value = 'connecting'
   if (useMock) {
     const mock = createMockLink(receive, () => closed(mock))
@@ -105,7 +109,7 @@ function connect() {
   const wrapped: Link = { send: (b) => ws.send(b), close: () => ws.close() }
   socket = wrapped
   ws.onopen = opened
-  ws.onclose = () => closed(wrapped)
+  ws.onclose = (e) => closed(wrapped, e.code, e.reason)
   ws.onmessage = (e) => {
     if (!(e.data instanceof ArrayBuffer)) return
     try {
@@ -131,6 +135,14 @@ export function useLive() {
     started = true
     document.addEventListener('visibilitychange', sync)
     offlineTimer = window.setTimeout(giveUp, OFFLINE_AFTER_MS)
+    // Paired at last: connect now, and the CHANGED that follows HELLO refreshes everything. If
+    // the link somehow stayed up meanwhile, say so ourselves: everything fetched before was refused.
+    watch(unpaired, (u) => {
+      if (u) return
+      retries = 0
+      if (open) receive({ op: 'changed', topics: 0xff })
+      else connect()
+    })
     connect()
   }
   return { link, online, unreachable }

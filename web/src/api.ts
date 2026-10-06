@@ -1,18 +1,28 @@
+import { ref } from 'vue'
 import type { AudioChannel } from './protocol'
-import type { AudioOutput, Capture, Captures, Game, GameDetail, GameStats, NowPlaying, Preset, Stats, StatsRangeName, Status } from './types'
+import type { AudioOutput, Capture, Captures, Game, GameAchievements, GameDetail, GameStats, NowPlaying, PairedDevice, Preset, RecentAchievement, Stats, StatsRangeName, Status, TrimRequest } from './types'
 import { mockCaptureArt, mockRequest } from './mock'
 
 const useMock = import.meta.env.VITE_MOCK === '1'
 
+// The PC wants a PIN from this phone before it answers anything: the pairing screen takes over
+// until it has one. Set by a 401 here, or by the live socket closing with 1008.
+export const unpaired = ref(false)
+
 // What the PC answered when it refused; `code` says what's wrong when it can (see CaptureService.cs).
 export class ApiError extends Error {
-  constructor(message: string, readonly code: string | null) {
+  constructor(message: string, readonly code: string | null, readonly attemptsLeft = 0) {
     super(message)
   }
 }
 
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
-  if (useMock) return mockRequest(method, path, body) as Promise<T>
+  if (useMock) {
+    return (mockRequest(method, path, body) as Promise<T>).catch((e) => {
+      if ((e as ApiError).code === 'unpaired') unpaired.value = true
+      throw e
+    })
+  }
   const res = await fetch(`/api${path}`, {
     method,
     headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
@@ -21,12 +31,15 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   if (!res.ok) {
     let message = res.statusText
     let code: string | null = null
+    let attemptsLeft = 0
     try {
       const error = await res.json()
       message = error.error ?? message
       code = error.code ?? null
+      attemptsLeft = error.attemptsLeft ?? 0
     } catch {}
-    throw new ApiError(message, code)
+    if (res.status === 401 && code === 'unpaired') unpaired.value = true
+    throw new ApiError(message, code, attemptsLeft)
   }
   const text = await res.text()
   return (text ? JSON.parse(text) : undefined) as T
@@ -61,6 +74,16 @@ export const api = {
   startRecording: () => request<void>('POST', '/captures/record/start'),
   stopRecording: () => request<Capture>('POST', '/captures/record/stop'),
   deleteCapture: (id: string) => request<void>('DELETE', `/captures/${id}`),
+  // Answers once ffmpeg is done, with the new clip or GIF.
+  trimCapture: (id: string, body: TrimRequest) => request<Capture>('POST', `/captures/${id}/trim`, body),
+  // Pairing: these work before the phone is paired.
+  pairing: () => request<{ required: boolean; device: PairedDevice | null }>('GET', '/pair'),
+  requestPin: (name: string) => request<{ expiresAt: string; seconds: number }>('POST', '/pair/request', { name }),
+  pair: (pin: string, name: string) => request<PairedDevice>('POST', '/pair', { pin, name }),
+  unpair: () => request<void>('DELETE', '/pair'),
+  // Achievements, from SuccessStory; 404 for a game it has nothing on.
+  achievements: (id: string) => request<GameAchievements>('GET', `/games/${id}/achievements`),
+  recentAchievements: () => request<RecentAchievement[]>('GET', '/achievements/recent'),
   confirmDisplays: () => request<void>('POST', '/displays/confirm'),
   revertDisplays: () => request<void>('POST', '/displays/revert'),
 }
@@ -78,3 +101,5 @@ export const mediaArtUrl = (version: string) => (useMock ? null : `/api/media/ar
 
 export const captureThumbUrl = (c: Capture) => (useMock ? mockCaptureArt(c) : `/api/captures/${c.id}/thumb?v=${c.version}`)
 export const captureFileUrl = (c: Capture) => (useMock ? (c.kind === 'photo' ? mockCaptureArt(c) : null) : `/api/captures/${c.id}/file?v=${c.version}`)
+// The trimmer's strip of frames across a clip.
+export const captureStripUrl = (c: Capture) => (useMock ? mockCaptureArt(c) : `/api/captures/${c.id}/strip?v=${c.version}`)

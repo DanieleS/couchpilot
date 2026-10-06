@@ -76,9 +76,23 @@ export type Status = {
   displays: Displays
   // Touchpad and keyboard are allowed in the extension settings.
   input: boolean
-  // Screenshots and clips, or null when they're off in the extension settings.
+  // Screenshots and clips, or null when they're off in the extension settings, or not for this phone.
   capture: CaptureStatus | null
   controllers: Controller[]
+  // Phones have to type a PIN before they're let in.
+  pairing: boolean
+  // This phone, as the PC knows it; null while pairing is off.
+  device: PairedDevice | null
+  // SuccessStory is installed and has data: games can show their achievements.
+  achievements: boolean
+}
+
+// A phone the PC paired with, and what it may do.
+export type PairedDevice = {
+  id: string
+  name: string
+  input: boolean
+  captures: boolean
 }
 
 export type CaptureTool = 'gamebar' | 'nvidia'
@@ -89,6 +103,8 @@ export type CaptureStatus = {
   recordingSince: string | null
   // How much a replay keeps, when the tool says (Game Bar does).
   replaySeconds: number | null
+  // Clips can be trimmed on the PC (the bundled ffmpeg is there).
+  editing: boolean
 }
 
 // A screenshot or clip in the capture tools' folders.
@@ -110,6 +126,17 @@ export type Capture = {
   fileName: string
   // Changes with the file; the thumbnail's URL carries it.
   version: string
+  // Cut out of another clip from the phone; that clip's id while it's still there.
+  edited: boolean
+  sourceId: string | null
+}
+
+// POST /api/captures/{id}/trim.
+export type TrimRequest = {
+  from: number
+  to: number
+  format: 'mp4' | 'gif'
+  audio: boolean
 }
 
 // GET /api/captures, newest first.
@@ -168,6 +195,42 @@ export type Stats = {
   top: { id: string; name: string; seconds: number; hasCover: boolean }[]
   library: { playtimeSeconds: number; games: number; installed: number; installedNeverPlayed: number; playedThisYear: number }
   resume: { id: string; name: string; playtimeSeconds: number; lastActivity: string | null; hasCover: boolean }[]
+  // Unlocked in the period, by SuccessStory's dates; null without SuccessStory.
+  achievements: { unlocked: number; recent: RecentAchievement[] } | null
+}
+
+// An achievement, from SuccessStory's data.
+export type Achievement = {
+  id: string
+  name: string
+  description: string | null
+  unlocked: boolean
+  // When it was unlocked, or null: still locked, or the source doesn't say when.
+  unlockedAt: string | null
+  // The game hides it until it's unlocked.
+  hidden: boolean
+  // How many players have it, 0–100; null when the source doesn't say.
+  percent: number | null
+  gamerScore: number | null
+  icon: string | null
+  // The greyed-out icon the game shows while it's locked, or null to grey out the other.
+  lockedIcon: string | null
+}
+
+export type RecentAchievement = Achievement & {
+  gameId: string
+  game: string
+  hasCover: boolean
+}
+
+// GET /api/games/{id}/achievements: unlocked first, newest first; then the locked ones.
+export type GameAchievements = {
+  gameId: string
+  game: string
+  total: number
+  unlocked: number
+  lastRefresh: string | null
+  items: Achievement[]
 }
 
 // GET /api/games/{id}/stats.

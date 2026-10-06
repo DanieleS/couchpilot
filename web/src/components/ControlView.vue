@@ -58,7 +58,7 @@ watch(
             <p class="title">Touchpad e tastiera sono spenti</p>
             <p class="muted">
               Accendili in Playnite: Componenti aggiuntivi → Impostazioni estensioni → CouchPilot →
-              «Permetti al telefono di usare mouse e tastiera del PC».
+              «Permetti al telefono di usare mouse e tastiera del PC»<template v-if="status?.pairing">, e in Telefoni spunta «Mouse e tastiera» per questo telefono</template>.
             </p>
           </template>
           <template v-else>

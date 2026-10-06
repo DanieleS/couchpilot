@@ -35,8 +35,8 @@ export default defineConfig({
             },
           },
           {
-            // Capture thumbnails: their URL carries the file's version, so a kept one is never stale.
-            urlPattern: ({ url, sameOrigin }) => sameOrigin && /^\/api\/captures\/[^/]+\/thumb$/.test(url.pathname),
+            // Capture thumbnails and the trimmer's strips: their URL carries the file's version, so a kept one is never stale.
+            urlPattern: ({ url, sameOrigin }) => sameOrigin && /^\/api\/captures\/[^/]+\/(thumb|strip)$/.test(url.pathname),
             handler: 'CacheFirst',
             options: {
               cacheName: 'capture-thumbnails',

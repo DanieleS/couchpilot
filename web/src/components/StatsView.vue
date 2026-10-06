@@ -6,6 +6,8 @@ import { Topic } from '../protocol'
 import { useCouchPilot } from '../store'
 import type { Game, Stats, StatsRangeName } from '../types'
 import { capitalize, duration, parseDay } from '../utils'
+import { unlockedLabel } from '../achievements'
+import AchievementIcon from './AchievementIcon.vue'
 import AppIcon from './AppIcon.vue'
 import GameCover from './GameCover.vue'
 import PcChip from './PcChip.vue'
@@ -159,6 +161,23 @@ const open = (id: string) => {
         </ol>
       </template>
 
+      <template v-if="stats.achievements">
+        <p class="eyebrow"><span>Obiettivi</span><span class="aside">da SuccessStory</span></p>
+        <div class="ach card">
+          <p class="ach-count tabular"><b>{{ number(stats.achievements.unlocked) }}</b> {{ stats.achievements.unlocked === 1 ? 'sbloccato' : 'sbloccati' }}</p>
+          <div v-if="stats.achievements.recent.length" class="ach-list">
+            <button v-for="a in stats.achievements.recent" :key="a.gameId + a.id" class="ach-item" @click="open(a.gameId)">
+              <AchievementIcon :achievement="a" :size="40" />
+              <span class="ach-text">
+                <span class="name truncate">{{ a.name }}</span>
+                <span class="muted small truncate">{{ a.game }} · {{ unlockedLabel(a.unlockedAt) }}</span>
+              </span>
+            </button>
+          </div>
+          <p v-else class="muted small">Niente in questo periodo.</p>
+        </div>
+      </template>
+
       <p class="eyebrow"><span>Libreria</span><span class="aside">da Playnite</span></p>
       <div class="tiles">
         <div class="tile card"><span class="n tabular">{{ hoursTotal(stats.library.playtimeSeconds) }}</span><span class="l">giocate in tutto</span></div>
@@ -209,6 +228,13 @@ const open = (id: string) => {
 .meter-track { flex: 1; block-size: 6px; border-radius: 3px; background: var(--slider-track); overflow: hidden; }
 .meter-fill { display: block; block-size: 100%; border-radius: 3px; background: var(--ink); transform-origin: left; transition: transform 250ms var(--ease-out-3); }
 .meter-value { min-inline-size: 3.25rem; text-align: right; font-size: 0.6875rem; font-weight: 750; }
+
+.ach { display: grid; gap: var(--size-2); padding: var(--size-3); }
+.ach-count { font-size: 0.8125rem; font-weight: 650; color: var(--ink-2); }
+.ach-count b { font-size: 1.375rem; font-weight: 800; letter-spacing: -0.02em; color: var(--ink); }
+.ach-list { display: grid; gap: 4px; }
+.ach-item { display: flex; align-items: center; gap: 10px; inline-size: 100%; padding: 6px; border-radius: var(--r-inner); background: var(--well); text-align: left; }
+.ach-text { min-width: 0; display: grid; gap: 2px; }
 
 .tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .tile { display: grid; gap: 2px; padding: var(--size-3); }

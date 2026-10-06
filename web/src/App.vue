@@ -1,11 +1,16 @@
 <script setup lang="ts">
 import { ToastAction, ToastDescription, ToastProvider, ToastRoot, ToastTitle, ToastViewport } from 'reka-ui'
 import { computed, ref, watch } from 'vue'
-import { api } from './api'
-import type { AudioOutput, Capture, Game, Preset, RunningGame } from './types'
+import { api, unpaired } from './api'
+import type { AudioOutput, Capture, Game, Preset, RecentAchievement, RunningGame } from './types'
 import { useCouchPilot } from './store'
-import { clipLength, toolName, useCaptures, type CaptureAction } from './captures'
+import { useAchievements } from './achievements'
+import { clipLength, isGif, toolName, useCaptures, type CaptureAction } from './captures'
+import AchievementIcon from './components/AchievementIcon.vue'
+import AchievementsSheet from './components/AchievementsSheet.vue'
 import CaptureHelpSheet from './components/CaptureHelpSheet.vue'
+import ClipTrimmer from './components/ClipTrimmer.vue'
+import PairingView from './components/PairingView.vue'
 import CaptureThumb from './components/CaptureThumb.vue'
 import CaptureViewer from './components/CaptureViewer.vue'
 import GalleryView from './components/GalleryView.vue'
@@ -151,6 +156,49 @@ const viewCaptureFromSheet = (items: Capture[], index: number) => {
   viewCapture(items, index)
 }
 
+// Cutting a clip: the trimmer opens over the viewer; what it makes joins the viewer's list, right
+// after the clip it came from, and is shown.
+const trimming = ref<Capture | null>(null)
+const trimOpen = computed({
+  get: () => trimming.value !== null,
+  set: (v) => !v && (trimming.value = null),
+})
+function onTrimmed(made: Capture) {
+  const at = viewerItems.value.findIndex((x) => x.id === made.id)
+  if (at >= 0) {
+    viewerIndex.value = at
+  } else {
+    const after = Math.min(viewerIndex.value + 1, viewerItems.value.length)
+    viewerItems.value.splice(after, 0, made)
+    viewerIndex.value = after
+  }
+  captures.announce(made)
+}
+
+// Achievements: a game's full list, from its sheet or from the toast of a fresh unlock.
+const achievements = useAchievements()
+const achievementsGame = ref<Game | null>(null)
+const achievementsOpen = ref(false)
+const openAchievements = (g: Game | null) => {
+  if (!g) return
+  achievementsGame.value = g
+  sheetOpen.value = false
+  achievementsOpen.value = true
+}
+const freshAchievementsOpen = computed({
+  get: () => achievements.fresh.value !== null,
+  set: (v) => !v && (achievements.fresh.value = null),
+})
+const freshAchievement = computed<RecentAchievement | null>(() => achievements.fresh.value?.[0] ?? null)
+const freshAchievementsMore = computed(() => Math.max(0, (achievements.fresh.value?.length ?? 0) - 1))
+const openFreshAchievements = () => {
+  const a = freshAchievement.value
+  achievements.fresh.value = null
+  if (!a) return
+  const g = games.value?.find((x) => x.id === a.gameId)
+  if (g) openAchievements(g)
+}
+
 // Deleting asks first, though it only goes as far as the PC's Recycle Bin.
 const removingCapture = ref<Capture | null>(null)
 const removeCaptureOpen = computed({
@@ -181,13 +229,13 @@ const freshOpen = computed({
 const freshTitle = computed(() => {
   const c = captures.fresh.value
   if (!c) return ''
-  return c.kind === 'photo' ? 'Screenshot salvato' : c.replay ? 'Replay salvato' : 'Clip salvata'
+  return c.edited ? (isGif(c) ? 'GIF pronta' : 'Clip tagliata') : c.kind === 'photo' ? 'Screenshot salvato' : c.replay ? 'Replay salvato' : 'Clip salvata'
 })
 const freshDetail = computed(() => {
   const c = captures.fresh.value
   if (!c) return ''
   const size = c.kind === 'photo' ? c.width && c.height && `${c.width}×${c.height}` : clipLength(c.seconds)
-  return [c.game, size, toolName(c.tool)].filter(Boolean).join(' · ')
+  return [c.game, size, c.edited ? 'da una clip' : toolName(c.tool)].filter(Boolean).join(' · ')
 })
 const openFresh = () => {
   const c = captures.fresh.value
@@ -206,7 +254,8 @@ const toastOpen = computed({
 </script>
 
 <template>
-  <ToastProvider :duration="4000" swipe-direction="down">
+  <PairingView v-if="unpaired" />
+  <ToastProvider v-else :duration="4000" swipe-direction="down">
     <main>
       <StatsView v-if="tab === 'games' && statsOpen" @back="statsOpen = false" @open="openGame" />
       <GalleryView v-else-if="tab === 'games' && galleryOpen" :game="galleryGame" @back="galleryOpen = false" @view="viewCapture" />
@@ -251,9 +300,14 @@ const toastOpen = computed({
       @uninstall="uninstalling = sheetGame"
       @gallery="openGalleryFromSheet"
       @view-capture="viewCaptureFromSheet"
+      @achievements="openAchievements(sheetGame)"
     />
 
-    <CaptureViewer v-model:open="viewerOpen" v-model:index="viewerIndex" :items="viewerItems" @remove="(c) => (removingCapture = c)" />
+    <AchievementsSheet v-model:open="achievementsOpen" :game="achievementsGame" />
+
+    <CaptureViewer v-model:open="viewerOpen" v-model:index="viewerIndex" :items="viewerItems" @remove="(c) => (removingCapture = c)" @trim="(c) => (trimming = c)" />
+
+    <ClipTrimmer v-model:open="trimOpen" :capture="trimming" @made="onTrimmed" />
 
     <ConfirmDialog
       v-model:open="removeCaptureOpen"
@@ -317,6 +371,16 @@ const toastOpen = computed({
         <button class="fresh-open" @click="openFresh">Apri</button>
       </ToastAction>
     </ToastRoot>
+    <ToastRoot v-model:open="freshAchievementsOpen" :duration="8000" class="toast fresh">
+      <AchievementIcon v-if="freshAchievement" :achievement="freshAchievement" :size="44" class="fresh-ach" />
+      <div class="fresh-text">
+        <ToastTitle class="fresh-title">Obiettivo sbloccato<template v-if="freshAchievementsMore"> · +{{ freshAchievementsMore }}</template></ToastTitle>
+        <ToastDescription class="fresh-detail truncate">{{ freshAchievement?.name }} · {{ freshAchievement?.game }}</ToastDescription>
+      </div>
+      <ToastAction alt-text="Apri gli obiettivi del gioco" as-child>
+        <button class="fresh-open" @click="openFreshAchievements">Vedi</button>
+      </ToastAction>
+    </ToastRoot>
     <ToastViewport class="toast-viewport" />
   </ToastProvider>
 </template>
@@ -352,6 +416,7 @@ const toastOpen = computed({
   text-align: left;
 }
 .fresh-thumb { inline-size: 4.5rem; flex-shrink: 0; border-radius: 8px; }
+.fresh-ach { box-shadow: 0 0 0 2px var(--run); }
 .fresh-text { flex: 1; min-width: 0; }
 .fresh-title { font-size: 0.875rem; font-weight: 750; }
 .fresh-detail { font-size: 0.75rem; font-weight: 500; opacity: 0.65; }

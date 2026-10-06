@@ -18,6 +18,9 @@ CouchPilot is a Playnite extension that serves a small web app on your local net
 - **Vibepollo-aware**: while Vibepollo streams, its virtual display owns the screens, so presets are locked and the automatic rollback stands down.
 - **Home Assistant (optional)**: publishes the running game, the active display preset and whether a Vibepollo stream is on to an MQTT broker, with discovery, so the PC shows up as a device; optionally also takes commands (switch preset, close, focus or start a game).
 - **Screenshots and clips (optional)**: take a screenshot, start and stop a recording, or save the last 30 seconds from the running game's card; Game Bar or NVIDIA does the capturing. Everything they saved shows up in a gallery by day and by game, to watch on the phone, share to any app or send to the PC's Recycle Bin.
+- **Cut a clip**: from the viewer, pick a piece of a clip with two handles over its frames and the PC writes it as a shorter MP4, or as a GIF for the chats, next to the original. The piece shows up in the gallery with its game, ready to share.
+- **Achievements**: with [SuccessStory](https://github.com/Lacro59/playnite-successstory-plugin) installed, each game's sheet shows how many you have and the latest ones, with the full list a tap away (hidden ones stay hidden until you ask); the statistics count what you unlocked in the period; and the phone tells you what you've just unlocked when SuccessStory refreshes, typically at the end of a session.
+- **PIN pairing (optional)**: ask new phones for a six-digit PIN that CouchPilot shows on the PC's screen, so only who can read the TV gets in; then choose, phone by phone, which may use mouse and keyboard and which may see the captures.
 - **Touchpad and keyboard (optional)**: drive the PC's mouse and keyboard from the phone. One finger moves, a tap clicks, two fingers scroll or right-click, tap and hold drags. The phone's own keyboard types on the PC, with a Termux-style bar of extra keys above it (Esc, Tab, Ctrl/Alt/Win/Shift, arrows, F1–F12), plus shortcuts.
 
 ## Install
@@ -27,7 +30,7 @@ CouchPilot is a Playnite extension that serves a small web app on your local net
 3. Open **Add-ons → Extension settings → CouchPilot**: it lists the address to open on the phone (for example `http://192.168.1.20:8642/`, or `https://couch.internal:8642/` once [HTTPS](#https-and-installing-the-app) is set up).
 4. The first time, Windows Firewall asks whether Playnite may accept connections: allow it on private networks.
 
-The PC and the phone must be on the same network. There is no authentication: don't expose the port to the internet (use a VPN to reach it from outside).
+The PC and the phone must be on the same network. Out of the box there is no authentication: don't expose the port to the internet (use a VPN to reach it from outside). To keep other devices on the network out, turn on the [PIN](#pairing-phones-with-a-pin).
 
 Over plain HTTP the page works, but the phone's browser won't install it as an app: that takes HTTPS, below.
 
@@ -76,6 +79,14 @@ Once installed the app lives on the phone: it opens at once even with the PC off
 
 With a certificate set, plain `http://` on that port stops answering, and the installed app lives at the `https://` address. If the certificate can't be loaded (moved, wrong password) the server doesn't start at all and Playnite shows why, rather than quietly going back to HTTP.
 
+## Pairing phones with a PIN
+
+Off by default: every phone on the network is let in, as always. Turn on **Chiedi un PIN ai telefoni nuovi** in the extension settings and a phone opening CouchPilot for the first time sees a pairing screen instead of the app. It asks for a PIN; CouchPilot shows six digits on the PC's screen, on top of whatever is running (and in Playnite's notifications, for a game in full screen), for two minutes. Type them on the phone and it's in for good: it gets a token in a cookie, which the PC keeps hashed in `devices.json` in the extension's data folder. Five wrong tries and the PIN is gone; a new one can be asked every few seconds at most.
+
+The settings list the paired phones with when they were last seen. For each you can untick **Mouse e tastiera** or **Catture**: that phone then sees the Control tab off, or no gallery, while the others carry on. **Rimuovi** throws a phone out at once. Switching the PIN on disconnects phones that haven't paired yet; switching it off lets everyone back in and keeps the list for next time.
+
+The phone's name comes from its browser («Pixel 8 · Chrome») and can be changed before pairing. Home Assistant is not affected: it talks to the broker, not to the port.
+
 ## Audio
 
 The **Audio** tab shows the default output (tap **Cambia** to switch: speakers, headphones, the TV over HDMI…), its volume, and below it one slider per app that has sound open on that output, as in Windows' mixer. Apps are grouped by executable, so a browser's many tabs are one slider; the game Playnite launched comes first, on a card with its art, cover, developer, year, genre, how long you've been playing and a mixing-desk meter. At the bottom, the default microphone with its volume and mute.
@@ -117,7 +128,17 @@ CouchPilot presses the tool's own shortcut, as you would at the keyboard, and wa
 
 The gallery shows Game Bar's *Captures* folder (wherever you moved it), NVIDIA's folder (the one set in its settings, or *Videos\NVIDIA*) and one more of your choice. Screenshots and MP4 clips are listed with their game: the game whose session they fall in, from CouchPilot's own session log, or the game their file or folder is named after. A new file shows up on the phone a moment after the tool finishes writing it, with a notice; that includes captures made at the PC.
 
-Thumbnails are made once, on the PC, and kept with the extension's data (`thumbnails`); the newest are made as soon as a capture lands. Clips go through a small ffmpeg shipped with the extension (`ffmpeg.exe`, built by `scripts/build-ffmpeg.sh`): it decodes H.264, HEVC and AV1 whatever codecs Windows has, and tone-maps HDR clips so they don't come out grey. A clip it can't read shows its game's cover. Videos stream with seeking; **Condividi** hands the file to the phone's apps (it needs HTTPS, see above), **Salva** downloads it, **Elimina** moves it to the PC's Recycle Bin.
+**Cutting a clip.** In the viewer, **Taglia** opens a clip over a strip of its frames with two handles; the player loops what's between them. Drag them, or nudge them half a second at a time, choose **Clip** or **GIF** (MP4s can keep their sound), and the PC writes the piece next to the original: `Elden Ring 2026-10-05 21-42-13 (0.12-0.41).mp4`, dated like the moment it starts, so it sits with its clip in the gallery under the same game. MP4s are re-encoded with x264 so the cut lands on the frame you chose (a straight copy could only cut on keyframes, seconds apart), capped at 1080p and tone-mapped if the clip is HDR; GIFs are 480 px wide, 15 frames a second, at most 20 seconds, with a palette made for that clip. A 30-second piece takes the PC a few seconds to a minute, depending on the CPU; one cut at a time.
+
+Thumbnails are made once, on the PC, and kept with the extension's data (`thumbnails`); the newest are made as soon as a capture lands. Clips go through a small ffmpeg shipped with the extension (`ffmpeg.exe`, built by `scripts/build-ffmpeg.sh`): it decodes H.264, HEVC and AV1 whatever codecs Windows has, tone-maps HDR clips so they don't come out grey, and encodes the cut pieces (x264, AAC, GIF). A clip it can't read shows its game's cover. Videos stream with seeking; **Condividi** hands the file to the phone's apps (it needs HTTPS, see above), **Salva** downloads it, **Elimina** moves it to the PC's Recycle Bin.
+
+## Achievements
+
+Nothing to set up: if [SuccessStory](https://github.com/Lacro59/playnite-successstory-plugin) is installed, CouchPilot reads the files it keeps (one JSON per game in its data folder) and watches them. It never logs into Steam, Xbox or the rest itself: what SuccessStory knows, the phone shows; what it doesn't, it doesn't. So the list is as fresh as SuccessStory's last refresh, which by default happens when a game closes (it can refresh while you play too, in its own settings), and that's when the phone announces the achievements you've just unlocked.
+
+Each game's sheet shows unlocked and total with the latest icons; **Vedi tutti** opens the whole list, unlocked first, with when you got each one, how many players have it (and «Raro» under 10 %, «Rarissimo» under 2 %), and the locked ones left to do. Achievements the game hides stay hidden until you tap to see them. The statistics page counts what you unlocked in the week, month or year on screen, with the latest few.
+
+Icons come from where SuccessStory got them (Steam's CDN and the like), so the phone fetches them itself; the few sources that keep icons on the PC (RetroAchievements emulators) are served through CouchPilot.
 
 ## Home Assistant
 
@@ -164,7 +185,9 @@ src/CouchPilot/      Playnite generic extension (C#, .NET Framework 4.6.2)
   Library/           Game list and images from the Playnite database
   Games/             Running sessions, closing and focusing games
   Displays/          Display presets on top of the Windows CCD API
-  Captures/          Screenshots and clips through Game Bar or NVIDIA, the gallery's index and thumbnails
+  Captures/          Screenshots and clips through Game Bar or NVIDIA, the gallery's index and thumbnails, the clip editor
+  Achievements/      Achievements read from SuccessStory's data
+  Server/Pairing*    The PIN, the paired phones and the gate in front of /api
 ```
 
 Web app against fake data, no PC needed:
@@ -179,7 +202,9 @@ Against a running CouchPilot:
 COUCHPILOT_HOST=http://<pc-address>:8642 pnpm dev     # or https:// if the PC has a certificate
 ```
 
-The extension builds on Windows (`pnpm build` in `web/` first, then `dotnet build src/CouchPilot`); CI does both and packages the `.pext` on every push. The gallery's `ffmpeg.exe` is cross-built on Linux by `scripts/build-ffmpeg.sh` (mingw-w64, nasm, meson, autotools) into `src/CouchPilot/ffmpeg/`; without it the extension still builds, and clips get Windows' own thumbnails. Tag `vX.Y.Z` to publish a release.
+The extension builds with the .NET SDK on Windows or Linux (`pnpm build` in `web/` first, then `dotnet build src/CouchPilot`); CI does both and packages the `.pext` on every push. The gallery's `ffmpeg.exe` is cross-built on Linux by `scripts/build-ffmpeg.sh` (mingw-w64, nasm, meson, autotools) into `src/CouchPilot/ffmpeg/`; without it the extension still builds, clips get Windows' own thumbnails and can't be cut. Tag `vX.Y.Z` to publish a release.
+
+The mock PC (`pnpm dev:mock`) takes a few query strings to try things out: `?pair=1` wants a PIN (it's 123456), `?unlock=1` unlocks an achievement a few seconds in, `?noach=1` has no SuccessStory, `?nvidia=1`, `?noreplay=1`, `?nocapture=1`, `?noffmpeg=1`, `?stream=1`, `?noinput=1`, `?nopads=1`.
 
 ## Credits
 
