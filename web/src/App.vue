@@ -1,9 +1,14 @@
 <script setup lang="ts">
-import { ToastDescription, ToastProvider, ToastRoot, ToastViewport } from 'reka-ui'
+import { ToastAction, ToastDescription, ToastProvider, ToastRoot, ToastTitle, ToastViewport } from 'reka-ui'
 import { computed, ref, watch } from 'vue'
 import { api } from './api'
-import type { AudioOutput, Game, Preset, RunningGame } from './types'
+import type { AudioOutput, Capture, Game, Preset, RunningGame } from './types'
 import { useCouchPilot } from './store'
+import { clipLength, toolName, useCaptures, type CaptureAction } from './captures'
+import CaptureHelpSheet from './components/CaptureHelpSheet.vue'
+import CaptureThumb from './components/CaptureThumb.vue'
+import CaptureViewer from './components/CaptureViewer.vue'
+import GalleryView from './components/GalleryView.vue'
 import ConfirmDialog from './components/ConfirmDialog.vue'
 import AudioView from './components/AudioView.vue'
 import ControlView from './components/ControlView.vue'
@@ -25,13 +30,23 @@ function initialTab(): Tab {
 }
 
 const tab = ref<Tab>(initialTab())
-// Statistics live behind an icon in Giochi: a page of that tab, not a tab of their own.
+// Statistics and the gallery live behind icons in Giochi: pages of that tab, not tabs of their own.
 const statsOpen = ref(false)
+const galleryOpen = ref(false)
+// The gallery opened from a game's sheet shows that game.
+const galleryGame = ref<string | null>(null)
 watch(tab, () => {
   statsOpen.value = false
+  galleryOpen.value = false
   window.scrollTo({ top: 0 })
 })
-watch(statsOpen, () => window.scrollTo({ top: 0 }))
+watch([statsOpen, galleryOpen], () => window.scrollTo({ top: 0 }))
+const openGallery = (gameId: string | null) => {
+  galleryGame.value = gameId
+  statsOpen.value = false
+  galleryOpen.value = true
+  tab.value = 'games'
+}
 
 // Game sheet. It follows the library while open, so an install finishing shows up in it.
 const sheetGameId = ref<string | null>(null)
@@ -115,6 +130,75 @@ const applyPreset = (id: string) => act(() => api.applyPreset(id))
 const keepDisplays = () => act(api.confirmDisplays)
 const revertDisplays = () => act(api.revertDisplays)
 
+// Screenshots and clips: the viewer works on a copy of the list it was opened with, so a capture
+// arriving meanwhile doesn't shift what you're looking at.
+const captures = useCaptures()
+const viewerItems = ref<Capture[]>([])
+const viewerIndex = ref(0)
+const viewerOpen = ref(false)
+const viewCapture = (items: Capture[], index: number) => {
+  if (index < 0 || !items.length) return
+  viewerItems.value = [...items]
+  viewerIndex.value = index
+  viewerOpen.value = true
+}
+const openGalleryFromSheet = () => {
+  sheetOpen.value = false
+  openGallery(sheetGame.value?.id ?? null)
+}
+const viewCaptureFromSheet = (items: Capture[], index: number) => {
+  sheetOpen.value = false
+  viewCapture(items, index)
+}
+
+// Deleting asks first, though it only goes as far as the PC's Recycle Bin.
+const removingCapture = ref<Capture | null>(null)
+const removeCaptureOpen = computed({
+  get: () => removingCapture.value !== null,
+  set: (v) => !v && (removingCapture.value = null),
+})
+async function confirmRemoveCapture() {
+  const c = removingCapture.value
+  if (!c || !(await captures.remove(c))) return
+  const i = viewerItems.value.findIndex((x) => x.id === c.id)
+  if (i >= 0) viewerItems.value.splice(i, 1)
+  if (!viewerItems.value.length) viewerOpen.value = false
+  else viewerIndex.value = Math.min(viewerIndex.value, viewerItems.value.length - 1)
+}
+
+const helpOpen = computed({
+  get: () => captures.help.value !== null,
+  set: (v) => !v && (captures.help.value = null),
+})
+const retryCapture = (action: CaptureAction) =>
+  action === 'screenshot' ? captures.screenshot() : action === 'replay' ? captures.saveReplay() : captures.toggleRecording()
+
+// A capture just landed, made from the phone or with the PC's own keys.
+const freshOpen = computed({
+  get: () => captures.fresh.value !== null,
+  set: (v) => !v && (captures.fresh.value = null),
+})
+const freshTitle = computed(() => {
+  const c = captures.fresh.value
+  if (!c) return ''
+  return c.kind === 'photo' ? 'Screenshot salvato' : c.replay ? 'Replay salvato' : 'Clip salvata'
+})
+const freshDetail = computed(() => {
+  const c = captures.fresh.value
+  if (!c) return ''
+  const size = c.kind === 'photo' ? c.width && c.height && `${c.width}×${c.height}` : clipLength(c.seconds)
+  return [c.game, size, toolName(c.tool)].filter(Boolean).join(' · ')
+})
+const openFresh = () => {
+  const c = captures.fresh.value
+  if (!c) return
+  const list = captures.items.value
+  const i = list.findIndex((x) => x.id === c.id)
+  if (i >= 0) viewCapture(list, i)
+  else viewCapture([c], 0)
+  captures.fresh.value = null
+}
+
 const toastOpen = computed({
   get: () => error.value !== null,
   set: (v) => !v && (error.value = null),
@@ -125,6 +209,7 @@ const toastOpen = computed({
   <ToastProvider :duration="4000" swipe-direction="down">
     <main>
       <StatsView v-if="tab === 'games' && statsOpen" @back="statsOpen = false" @open="openGame" />
+      <GalleryView v-else-if="tab === 'games' && galleryOpen" :game="galleryGame" @back="galleryOpen = false" @view="viewCapture" />
       <GamesView
         v-else-if="tab === 'games'"
         @open="openGame"
@@ -136,6 +221,8 @@ const toastOpen = computed({
         @revert-displays="revertDisplays"
         @manage-displays="tab = 'displays'"
         @stats="statsOpen = true"
+        @gallery="openGallery(null)"
+        @view-capture="viewCapture"
       />
       <DisplaysView
         v-else-if="tab === 'displays'"
@@ -162,7 +249,22 @@ const toastOpen = computed({
       @stop="askCloseFromSheet"
       @install="installSheetGame"
       @uninstall="uninstalling = sheetGame"
+      @gallery="openGalleryFromSheet"
+      @view-capture="viewCaptureFromSheet"
     />
+
+    <CaptureViewer v-model:open="viewerOpen" v-model:index="viewerIndex" :items="viewerItems" @remove="(c) => (removingCapture = c)" />
+
+    <ConfirmDialog
+      v-model:open="removeCaptureOpen"
+      icon="trash"
+      :title="removingCapture?.kind === 'video' ? 'Eliminare questa clip?' : 'Eliminare questo screenshot?'"
+      description="Finisce nel Cestino del PC: da lì puoi ancora recuperarlo."
+      confirm-label="Elimina"
+      @confirm="confirmRemoveCapture"
+    />
+
+    <CaptureHelpSheet v-model:open="helpOpen" :help="captures.help.value" :tool="captures.capture.value?.tool ?? null" @retry="retryCapture" />
 
     <ConfirmDialog
       v-model:open="uninstallOpen"
@@ -205,6 +307,16 @@ const toastOpen = computed({
     <ToastRoot v-model:open="toastOpen" class="toast">
       <ToastDescription>{{ error }}</ToastDescription>
     </ToastRoot>
+    <ToastRoot v-model:open="freshOpen" :duration="6000" class="toast fresh">
+      <CaptureThumb v-if="captures.fresh.value" :capture="captures.fresh.value" class="fresh-thumb" />
+      <div class="fresh-text">
+        <ToastTitle class="fresh-title">{{ freshTitle }}</ToastTitle>
+        <ToastDescription class="fresh-detail truncate">{{ freshDetail }}</ToastDescription>
+      </div>
+      <ToastAction alt-text="Apri la cattura" as-child>
+        <button class="fresh-open" @click="openFresh">Apri</button>
+      </ToastAction>
+    </ToastRoot>
     <ToastViewport class="toast-viewport" />
   </ToastProvider>
 </template>
@@ -230,5 +342,19 @@ const toastOpen = computed({
   box-shadow: 0 8px 24px -8px rgb(0 0 0 / 0.4);
   animation: toast-in 200ms var(--ease-out-3);
 }
+.toast.fresh {
+  display: flex;
+  align-items: center;
+  gap: var(--size-3);
+  padding: 10px;
+  background: var(--button-dark);
+  color: var(--button-dark-ink);
+  text-align: left;
+}
+.fresh-thumb { inline-size: 4.5rem; flex-shrink: 0; border-radius: 8px; }
+.fresh-text { flex: 1; min-width: 0; }
+.fresh-title { font-size: 0.875rem; font-weight: 750; }
+.fresh-detail { font-size: 0.75rem; font-weight: 500; opacity: 0.65; }
+.fresh-open { padding: 10px 12px; border-radius: 10px; background: rgb(255 255 255 / 0.14); font-size: 0.8125rem; font-weight: 700; }
 @keyframes toast-in { from { transform: translateY(12px); opacity: 0; } }
 </style>

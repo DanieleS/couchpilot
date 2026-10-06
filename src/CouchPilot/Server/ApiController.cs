@@ -3,6 +3,7 @@ using System.IO;
 using System.Net;
 using System.Threading.Tasks;
 using CouchPilot.Audio;
+using CouchPilot.Captures;
 using CouchPilot.Displays;
 using CouchPilot.Games;
 using CouchPilot.Library;
@@ -25,9 +26,15 @@ namespace CouchPilot.Server
         private readonly StatsService stats;
         private readonly StatusSource status;
         private readonly LiveSocket live;
+        private readonly CaptureService captures;
+        private readonly CaptureLibrary captureLibrary;
+        private readonly Thumbnails thumbnails;
 
-        public ApiController(LibraryService library, GameControl games, DisplayService displays, AudioService audio, MediaService media, StatsService stats, StatusSource status, LiveSocket live)
+        public ApiController(LibraryService library, GameControl games, DisplayService displays, AudioService audio, MediaService media, StatsService stats, StatusSource status, LiveSocket live, CaptureService captures, CaptureLibrary captureLibrary, Thumbnails thumbnails)
         {
+            this.captures = captures;
+            this.captureLibrary = captureLibrary;
+            this.thumbnails = thumbnails;
             this.library = library;
             this.games = games;
             this.displays = displays;
@@ -207,6 +214,106 @@ namespace CouchPilot.Server
             Response.ContentType = "image/png";
             Response.Headers.Set("Cache-Control", "public, max-age=86400");
             await Response.OutputStream.WriteAsync(png, 0, png.Length);
+        }
+
+        // Every screenshot and clip, newest first. The live socket says when the list changed.
+        [Route(HttpVerbs.Get, "/captures")]
+        public object Captures()
+        {
+            RequireCaptures();
+            return captureLibrary.List();
+        }
+
+        // The next three answer once the file is there, with the new capture, or with an error
+        // whose code says what's wrong (see CaptureException).
+        [Route(HttpVerbs.Post, "/captures/screenshot")]
+        public Task<CaptureDto> Screenshot() => captures.Screenshot();
+
+        [Route(HttpVerbs.Post, "/captures/replay")]
+        public Task<CaptureDto> Replay() => captures.Replay();
+
+        [Route(HttpVerbs.Post, "/captures/record/stop")]
+        public Task<CaptureDto> StopRecording() => captures.StopRecording();
+
+        [Route(HttpVerbs.Post, "/captures/record/start")]
+        public Task StartRecording() => captures.StartRecording();
+
+        // To the PC's Recycle Bin.
+        [Route(HttpVerbs.Delete, "/captures/{id}")]
+        public void DeleteCapture(string id)
+        {
+            RequireCaptures();
+            if (!captureLibrary.Delete(id)) throw HttpException.NotFound("Cattura non trovata.");
+            thumbnails.Forget(id);
+        }
+
+        // ?v=<version>: the URL changes with the file, so the phone may keep it for good.
+        [Route(HttpVerbs.Get, "/captures/{id}/thumb")]
+        public async Task CaptureThumbnail(string id)
+        {
+            RequireCaptures();
+            var source = captureLibrary.ThumbnailOf(id) ?? throw HttpException.NotFound();
+            var jpeg = await thumbnails.Get(id, source.Version, source.Video, source.Seconds, source.Path) ?? throw HttpException.NotFound();
+            Response.ContentType = "image/jpeg";
+            Response.Headers.Set("Cache-Control", "public, max-age=31536000, immutable");
+            await Response.OutputStream.WriteAsync(jpeg, 0, jpeg.Length);
+        }
+
+        // The file itself. Videos are asked for in ranges: the player seeks by asking for the
+        // bytes it needs, so a 5-minute clip starts at once and jumps anywhere.
+        [Route(HttpVerbs.Get, "/captures/{id}/file")]
+        public async Task CaptureFile(string id)
+        {
+            RequireCaptures();
+            var path = captureLibrary.PathOf(id) ?? throw HttpException.NotFound("Cattura non trovata.");
+            using (var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 64 * 1024, true))
+            {
+                var length = file.Length;
+                long from = 0, to = length - 1;
+                var range = Request.Headers["Range"];
+                if (!string.IsNullOrEmpty(range))
+                {
+                    if (!ByteRange.TryParse(range, length, out from, out to))
+                    {
+                        Response.StatusCode = 416;
+                        Response.Headers.Set("Content-Range", $"bytes */{length}");
+                        return;
+                    }
+                    Response.StatusCode = 206;
+                    Response.Headers.Set("Content-Range", $"bytes {from}-{to}/{length}");
+                }
+                var ext = Path.GetExtension(path);
+                Response.ContentType = MimeType.Associations.TryGetValue(ext, out var mime) ? mime : "application/octet-stream";
+                Response.Headers.Set("Accept-Ranges", "bytes");
+                Response.Headers.Set("Cache-Control", "private, max-age=3600");
+                Response.Headers.Set("Content-Disposition", $"inline; filename*=UTF-8''{Uri.EscapeDataString(Path.GetFileName(path))}");
+                Response.SendChunked = false;
+                Response.ContentLength64 = to - from + 1;
+
+                file.Position = from;
+                var buffer = new byte[64 * 1024];
+                var left = to - from + 1;
+                try
+                {
+                    while (left > 0)
+                    {
+                        var read = await file.ReadAsync(buffer, 0, (int)Math.Min(buffer.Length, left));
+                        if (read <= 0) break;
+                        await Response.OutputStream.WriteAsync(buffer, 0, read);
+                        left -= read;
+                    }
+                }
+                catch (Exception e) when (e is IOException || e is ObjectDisposedException)
+                {
+                    // The phone stopped listening: the player seeked elsewhere, or the viewer closed.
+                }
+            }
+        }
+
+        // Screenshots may show more than the game: they stay private unless turned on.
+        private void RequireCaptures()
+        {
+            if (!captures.Enabled) throw new HttpException(HttpStatusCode.Forbidden, "Le catture sono spente nelle impostazioni di CouchPilot.");
         }
 
         public class NameBody

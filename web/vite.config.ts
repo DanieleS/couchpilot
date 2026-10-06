@@ -18,7 +18,7 @@ export default defineConfig({
         skipWaiting: true,
         clientsClaim: true,
         globPatterns: ['**/*.{js,css,html,svg,png,woff2,webmanifest}'],
-        // Everything under /api is the PC's, live; only the game art below is kept.
+        // Everything under /api is the PC's, live; only the game art and capture thumbnails below are kept.
         navigateFallbackDenylist: [/^\/api\//, /^\/ws/],
         cleanupOutdatedCaches: true,
         runtimeCaching: [
@@ -32,6 +32,16 @@ export default defineConfig({
               // which costs megabytes of quota apiece for nothing we can show offline.
               cacheableResponse: { statuses: [200] },
               expiration: { maxEntries: 600, purgeOnQuotaError: true },
+            },
+          },
+          {
+            // Capture thumbnails: their URL carries the file's version, so a kept one is never stale.
+            urlPattern: ({ url, sameOrigin }) => sameOrigin && /^\/api\/captures\/[^/]+\/thumb$/.test(url.pathname),
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'capture-thumbnails',
+              cacheableResponse: { statuses: [200] },
+              expiration: { maxEntries: 1500, purgeOnQuotaError: true },
             },
           },
         ],

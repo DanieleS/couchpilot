@@ -152,13 +152,14 @@ Some structured data on the PC changed: the phone should fetch it again over HTT
 | 1 | status | `GET /api/status` |
 | 2 | library | `GET /api/games` |
 | 4 | media | `GET /api/media` |
+| 8 | captures | `GET /api/captures` |
 
 ```
 81 01      the status changed
 81 03      the status and the library changed
 ```
 
-Right after HELLO the PC sends CHANGED with every topic set (`81 07`), so a phone that just connected, or reconnected after missing changes, refreshes everything.
+Right after HELLO the PC sends CHANGED with every topic set (`81 0F`), so a phone that just connected, or reconnected after missing changes, refreshes everything.
 
 **Why not send the data itself.** Status and library are nested, vary in shape and change a few times a minute at most. As JSON on HTTP they keep one schema, readable with a browser or `curl`, and need no binary layout to keep in step with it. The socket only carries what has to be immediate or compact. One round trip after a CHANGED costs a few milliseconds on a home network.
 
@@ -167,6 +168,8 @@ Right after HELLO the PC sends CHANGED with every topic set (`81 07`), so a phon
 **Library.** Sent when Playnite adds, removes or updates a game: an import, an install, the playtime after a session, a cover downloaded. The statistics (`GET /api/stats`, `GET /api/games/{id}/stats`) refresh on it too: a session ending updates the game's playtime. An import can update hundreds of games in a row, so the PC announces the library at most twice a second.
 
 **Media.** Sent on the next tick after Windows reports that what plays changed: another track, play or pause, another app taking over. Not for the position moving on: `/api/media` gives the position as of when it answered, and the phone moves the bar from there while playing.
+
+**Captures.** Sent on the next tick after a screenshot or clip appears in, or leaves, the capture folders: made from the phone or with the PC's own keys, or deleted. A file being written (a clip being encoded, a recording under way) counts once its writer lets go of it. The phone fetches the list only while captures are on (`capture` in the status isn't null).
 
 **The phone** keeps at most one fetch per topic in flight. A CHANGED arriving during a fetch queues exactly one more, so a burst of changes costs two requests at most.
 
@@ -200,6 +203,11 @@ Right after HELLO the PC sends CHANGED with every topic set (`81 07`), so a phon
     "streamActive": false                 // a Vibepollo stream owns the displays
   },
   "input": true,                          // the phone may use mouse and keyboard
+  "capture": {                            // screenshots and clips, or null when off in the settings
+    "tool": "gamebar",                    // or "nvidia": whose shortcuts the PC presses
+    "recordingSince": null,               // when the recording started from the phone began
+    "replaySeconds": 30                   // how much a replay keeps, when the tool says; null otherwise
+  },
   "controllers": [                        // Xbox-style pads (XInput), by slot
     { "slot": 1, "wired": false, "battery": "medium" },  // empty, low, medium, full
     { "slot": 2, "wired": true, "battery": null }        // null when wired or unknown
@@ -225,6 +233,43 @@ Right after HELLO the PC sends CHANGED with every topic set (`81 07`), so a phon
 ```
 
 The artwork is at `GET /api/media/art?v=<artVersion>`; the version changes with the art, so the image can be cached for good. Play/pause and skipping are `POST /api/media/play-pause`, `/api/media/next` and `/api/media/previous` (409 if the app refuses).
+
+`GET /api/captures` returns the screenshots and clips in Game Bar's and NVIDIA's folders (and the extra one from the settings), newest first; 403 while captures are off:
+
+```jsonc
+{
+  "items": [
+    {
+      "id": "3f2a…",                       // stable for the file's path
+      "kind": "video",                     // or "photo"
+      "replay": true,                      // a clip of what just happened
+      "takenAt": "2026-10-05T19:42:13.0000000Z",
+      "bytes": 48213004,
+      "width": 2560, "height": 1440,       // null when the file doesn't say
+      "seconds": 30.02,                    // clips only
+      "gameId": "6de22bd5-…",              // the session it falls in, else the game its name matches, else null
+      "game": "Elden Ring",                // that game's name, else what the tool called the window, else null
+      "tool": "gamebar",                   // "nvidia", or null for the extra folder
+      "fileName": "Elden Ring 2026-10-05 21-42-13.mp4",
+      "version": "8dce53a1f7c4b20"         // changes with the file
+    }
+  ],
+  "bytes": 18400000000,                    // all of them together
+  "folders": ["C:\\Users\\pc\\Videos\\Captures"]  // the folders that exist
+}
+```
+
+The thumbnail is at `GET /api/captures/{id}/thumb?v=<version>` (a JPEG up to 480 px, cacheable for good; 404 when the PC can't make one, a damaged clip say), the file at `GET /api/captures/{id}/file`, which honours `Range` so the player can seek. `DELETE /api/captures/{id}` moves it to the PC's Recycle Bin.
+
+`POST /api/captures/screenshot`, `/api/captures/replay` and `/api/captures/record/stop` press the tool's shortcut and answer once the new file is on disk, with it as above; `/api/captures/record/start` answers at once. When they can't, the answer is 409 with a `code` besides the `error`:
+
+| `code` | Meaning |
+|---|---|
+| `capture-off` | Game Bar's captures are turned off in Windows |
+| `replay-off` | no replay to save: Game Bar isn't recording in the background, or (NVIDIA) no clip came, so Instant Replay is probably off |
+| `nothing-saved` | the shortcut went out but no file came (the game not in the foreground, say) |
+| `busy` | another capture is still on its way, or a recording is under way (replay) |
+| `off` | captures are off in the extension settings |
 
 `GET /api/games` returns the library: every game Playnite doesn't hide, with name, source, install state, playtime, genres, release year and whether it has cover and background art. The types are in `web/src/types.ts` (`Game`).
 

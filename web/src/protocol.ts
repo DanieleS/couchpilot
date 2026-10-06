@@ -16,7 +16,7 @@ export const Op = {
 export const Subscribe = { audio: 1 } as const
 
 // What CHANGED says to fetch again over HTTP.
-export const Topic = { status: 1, library: 2, media: 4 } as const
+export const Topic = { status: 1, library: 2, media: 4, captures: 8 } as const
 
 export type AudioRole = 'output' | 'input' | 'app' | 'system' | 'game'
 export type AudioDeviceKind = 'speakers' | 'headphones' | 'display' | 'mic'

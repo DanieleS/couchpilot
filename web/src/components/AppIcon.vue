@@ -3,6 +3,7 @@ export type IconName =
   | 'play' | 'search' | 'focus' | 'power' | 'plus' | 'pencil' | 'trash' | 'check' | 'x'
   | 'speaker' | 'speaker-off' | 'mic' | 'mic-off' | 'headphones' | 'tv' | 'download'
   | 'pause' | 'next' | 'previous' | 'music' | 'chart' | 'chevron-left' | 'chevron-right'
+  | 'camera' | 'record' | 'stop' | 'replay' | 'image' | 'share'
 
 defineProps<{ name: IconName; size?: number }>()
 
@@ -44,5 +45,12 @@ const SPEAKER = 'M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5
     <template v-else-if="name === 'music'"><path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" /></template>
     <template v-else-if="name === 'download'"><path d="M12 15V3" /><path d="m7 10 5 5 5-5" /><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /></template>
     <template v-else-if="name === 'tv'"><rect x="2" y="7" width="20" height="15" rx="2" /><path d="m17 2-5 5-5-5" /></template>
+    <template v-else-if="name === 'camera'"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z" /><circle cx="12" cy="13" r="3" /></template>
+    <!-- The dot takes the danger colour: it's what says «this records». -->
+    <template v-else-if="name === 'record'"><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="4.5" fill="var(--danger)" stroke="none" /></template>
+    <rect v-else-if="name === 'stop'" x="6" y="6" width="12" height="12" rx="2" fill="currentColor" stroke="none" />
+    <template v-else-if="name === 'replay'"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><path d="M3 3v5h5" /><path d="M12 7v5l3 2" /></template>
+    <template v-else-if="name === 'image'"><rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="9" cy="9" r="2" /><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21" /></template>
+    <template v-else-if="name === 'share'"><circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><path d="m8.6 13.5 6.8 4" /><path d="m15.4 6.5-6.8 4" /></template>
   </svg>
 </template>

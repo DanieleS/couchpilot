@@ -13,6 +13,7 @@ namespace CouchPilot.Native
         public const ushort VK_RETURN = 0x0D;
         public const ushort VK_ESCAPE = 0x1B;
         public const ushort VK_SPACE = 0x20;
+        public const ushort VK_SNAPSHOT = 0x2C;
         public const ushort VK_PRIOR = 0x21;
         public const ushort VK_NEXT = 0x22;
         public const ushort VK_END = 0x23;
@@ -73,6 +74,20 @@ namespace CouchPilot.Native
             Send(inputs.ToArray());
         }
 
+        // A shortcut held for a moment, as a person would press it: overlays that watch the
+        // keyboard with a hook (NVIDIA's) can miss a combination that comes and goes at once.
+        public static void Chord(ushort vk, IList<ushort> modifiers, int holdMs = 60)
+        {
+            var down = new List<INPUT>(modifiers.Count + 1);
+            foreach (var m in modifiers) down.Add(Key(m, false));
+            down.Add(Key(vk, false));
+            Send(down.ToArray());
+            System.Threading.Thread.Sleep(holdMs);
+            var up = new List<INPUT>(modifiers.Count + 1) { Key(vk, true) };
+            for (var i = modifiers.Count - 1; i >= 0; i--) up.Add(Key(modifiers[i], true));
+            Send(up.ToArray());
+        }
+
         // Text as Unicode characters, independent of the PC's keyboard layout.
         public static void Type(string text)
         {
@@ -130,7 +145,7 @@ namespace CouchPilot.Native
 
         private static bool IsExtended(ushort vk) =>
             (vk >= VK_PRIOR && vk <= VK_DOWN) || vk == VK_INSERT || vk == VK_DELETE
-            || vk == VK_LWIN || vk == VK_APPS || (vk >= VK_VOLUME_MUTE && vk <= VK_MEDIA_PLAY_PAUSE);
+            || vk == VK_LWIN || vk == VK_APPS || vk == VK_SNAPSHOT || (vk >= VK_VOLUME_MUTE && vk <= VK_MEDIA_PLAY_PAUSE);
 
         private static void Send(params INPUT[] inputs)
         {

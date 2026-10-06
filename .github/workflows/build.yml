@@ -11,10 +11,41 @@ permissions:
   contents: write
 
 jobs:
+  # The gallery's ffmpeg.exe, cross-built on Linux. Slow (a few minutes), so cached until the
+  # script changes.
+  ffmpeg:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: cache
+        uses: actions/cache@v4
+        with:
+          path: build/ffmpeg-out
+          key: ffmpeg-${{ hashFiles('scripts/build-ffmpeg.sh') }}
+
+      - name: Build ffmpeg
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y mingw-w64 nasm meson ninja-build autoconf automake libtool pkg-config
+          scripts/build-ffmpeg.sh build/ffmpeg build/ffmpeg-out
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ffmpeg
+          path: build/ffmpeg-out
+
   build:
+    needs: ffmpeg
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: ffmpeg
+          path: src/CouchPilot/ffmpeg
 
       - uses: pnpm/action-setup@v4
         with:

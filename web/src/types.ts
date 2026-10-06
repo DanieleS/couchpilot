@@ -76,7 +76,47 @@ export type Status = {
   displays: Displays
   // Touchpad and keyboard are allowed in the extension settings.
   input: boolean
+  // Screenshots and clips, or null when they're off in the extension settings.
+  capture: CaptureStatus | null
   controllers: Controller[]
+}
+
+export type CaptureTool = 'gamebar' | 'nvidia'
+
+export type CaptureStatus = {
+  tool: CaptureTool
+  // When the recording started from the phone began, or null.
+  recordingSince: string | null
+  // How much a replay keeps, when the tool says (Game Bar does).
+  replaySeconds: number | null
+}
+
+// A screenshot or clip in the capture tools' folders.
+export type Capture = {
+  id: string
+  kind: 'photo' | 'video'
+  // A clip of what just happened (Game Bar's «Record that», NVIDIA's Instant Replay).
+  replay: boolean
+  takenAt: string
+  bytes: number
+  width: number | null
+  height: number | null
+  seconds: number | null
+  // The Playnite game it belongs to, when the PC can tell.
+  gameId: string | null
+  // The game's name, or what the tool called the window ("Desktop"), or null.
+  game: string | null
+  tool: CaptureTool | null
+  fileName: string
+  // Changes with the file; the thumbnail's URL carries it.
+  version: string
+}
+
+// GET /api/captures, newest first.
+export type Captures = {
+  items: Capture[]
+  bytes: number
+  folders: string[]
 }
 
 // An Xbox-style controller connected to the PC.

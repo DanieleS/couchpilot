@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using CouchPilot.Captures;
 using CouchPilot.Displays;
 using CouchPilot.Input;
 using CouchPilot.Library;
@@ -15,12 +16,14 @@ namespace CouchPilot.Server
         private readonly LibraryService library;
         private readonly DisplayService displays;
         private readonly RemoteInput input;
+        private readonly CaptureService captures;
 
-        public StatusSource(LibraryService library, DisplayService displays, RemoteInput input)
+        public StatusSource(LibraryService library, DisplayService displays, RemoteInput input, CaptureService captures)
         {
             this.library = library;
             this.displays = displays;
             this.input = input;
+            this.captures = captures;
         }
 
         public StatusDto Snapshot() => new StatusDto
@@ -29,6 +32,7 @@ namespace CouchPilot.Server
             Running = library.Running(),
             Displays = displays.Snapshot(),
             Input = input.Enabled,
+            Capture = captures.Status(),
             Controllers = Native.XInput.Pads().Select(p => new ControllerDto
             {
                 Slot = p.Slot + 1,
@@ -59,6 +63,8 @@ namespace CouchPilot.Server
         public DisplaysDto Displays { get; set; }
         // Touchpad and keyboard are allowed in the extension settings.
         public bool Input { get; set; }
+        // Screenshots and clips from the phone, or null when they're off in the settings.
+        public CaptureStatusDto Capture { get; set; }
         public List<ControllerDto> Controllers { get; set; }
     }
 

@@ -5,6 +5,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using CouchPilot.Audio;
+using CouchPilot.Captures;
 using CouchPilot.Displays;
 using CouchPilot.Games;
 using CouchPilot.Input;
@@ -26,11 +27,11 @@ namespace CouchPilot.Server
 
         // With a certificate the port speaks HTTPS only: one port can't carry both, and the
         // phone's browser needs HTTPS to install the app.
-        public RemoteServer(int port, X509Certificate2 certificate, string webRoot, LibraryService library, GameControl games, DisplayService displays, RemoteInput input, AudioService audio, MediaService media, StatsService stats)
+        public RemoteServer(int port, X509Certificate2 certificate, string webRoot, LibraryService library, GameControl games, DisplayService displays, RemoteInput input, AudioService audio, MediaService media, StatsService stats, CaptureService captures, CaptureLibrary captureLibrary, Thumbnails thumbnails)
         {
             this.certificate = certificate;
             Swan.Logging.Logger.NoLogging();
-            var status = new StatusSource(library, displays, input);
+            var status = new StatusSource(library, displays, input, captures);
             live = new LiveSocket("/ws", input, audio, status);
 
             // EmbedIO's own listener: unlike HttpListener it can bind every interface
@@ -42,7 +43,7 @@ namespace CouchPilot.Server
                     if (certificate != null) o.WithCertificate(certificate);
                 })
                 .WithCors()
-                .WithWebApi("/api", SerializeJson, m => m.WithController(() => new ApiController(library, games, displays, audio, media, stats, status, live)))
+                .WithWebApi("/api", SerializeJson, m => m.WithController(() => new ApiController(library, games, displays, audio, media, stats, status, live, captures, captureLibrary, thumbnails)))
                 .WithModule(live);
 
             if (Directory.Exists(webRoot))
@@ -58,6 +59,13 @@ namespace CouchPilot.Server
             });
             server.HandleUnhandledException(async (ctx, ex) =>
             {
+                if (ex is CaptureException capture)
+                {
+                    // The code tells the phone what to show: how to turn the replay on, say.
+                    ctx.Response.StatusCode = 409;
+                    await SerializeJson(ctx, new { error = ex.Message, code = capture.Code });
+                    return;
+                }
                 ctx.Response.StatusCode = ex is DisplayException ? 409 : 500;
                 await SerializeJson(ctx, new { error = ex.Message });
             });
@@ -77,6 +85,8 @@ namespace CouchPilot.Server
         public void LibraryChanged() => live.LibraryChanged();
 
         public void MediaChanged() => live.MediaChanged();
+
+        public void CapturesChanged() => live.CapturesChanged();
 
         public void Dispose()
         {

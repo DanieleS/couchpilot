@@ -39,6 +39,7 @@ namespace CouchPilot.Server
         private const byte TopicStatus = 1;
         private const byte TopicLibrary = 2;
         private const byte TopicMedia = 4;
+        private const byte TopicCaptures = 8;
 
         private static readonly ILogger logger = LogManager.GetLogger();
         private static readonly TimeSpan Tick = TimeSpan.FromMilliseconds(40);
@@ -54,6 +55,7 @@ namespace CouchPilot.Server
         private volatile bool statusWanted;
         private volatile bool libraryChanged;
         private volatile bool mediaChanged;
+        private volatile bool capturesChanged;
         private volatile bool rescanWanted;
         private string lastStatusShape;
         private byte[] lastVolumes;
@@ -85,6 +87,9 @@ namespace CouchPilot.Server
         // just pressed play, the button should follow.
         public void MediaChanged() => mediaChanged = true;
 
+        // A screenshot or clip was added or removed. Announced on the next tick: you just took it.
+        public void CapturesChanged() => capturesChanged = true;
+
         protected override Task OnClientConnectedAsync(IWebSocketContext context)
         {
             // WebSockets skip the browser's same-origin checks: without this, any page open on a
@@ -95,7 +100,7 @@ namespace CouchPilot.Server
             clients[context] = client;
             Enqueue(context, client, new[] { OpHello, ProtocolVersion });
             // Whatever the phone had may be stale after a disconnect: everything counts as changed.
-            Enqueue(context, client, new[] { OpChanged, (byte)(TopicStatus | TopicLibrary | TopicMedia) });
+            Enqueue(context, client, new[] { OpChanged, (byte)(TopicStatus | TopicLibrary | TopicMedia | TopicCaptures) });
             if (Interlocked.Exchange(ref looping, 1) == 0) Task.Run(LoopAsync);
             return Task.CompletedTask;
         }
@@ -192,6 +197,11 @@ namespace CouchPilot.Server
             {
                 mediaChanged = false;
                 topics |= TopicMedia;
+            }
+            if (capturesChanged)
+            {
+                capturesChanged = false;
+                topics |= TopicCaptures;
             }
             if (topics == 0) return;
             var message = new[] { OpChanged, topics };

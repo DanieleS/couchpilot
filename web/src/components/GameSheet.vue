@@ -1,15 +1,25 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { api } from '../api'
-import type { Game, GameDetail, GameStats } from '../types'
+import { useCaptures } from '../captures'
+import type { Capture, Game, GameDetail, GameStats } from '../types'
 import { duration, stripHtml } from '../utils'
 import AppIcon from './AppIcon.vue'
 import BottomSheet from './BottomSheet.vue'
+import CaptureThumb from './CaptureThumb.vue'
 import GameCover from './GameCover.vue'
 
 const props = defineProps<{ game: Game | null; running: boolean }>()
 const open = defineModel<boolean>('open', { required: true })
-const emit = defineEmits<{ start: []; focus: []; stop: []; install: []; uninstall: [] }>()
+const emit = defineEmits<{ start: []; focus: []; stop: []; install: []; uninstall: []; gallery: []; viewCapture: [items: Capture[], index: number] }>()
+
+const { capture, items: allCaptures } = useCaptures()
+const captures = computed(() => (props.game ? allCaptures.value.filter((c) => c.gameId === props.game!.id) : []))
+const captureCounts = computed(() => {
+  const clips = captures.value.filter((c) => c.kind === 'video').length
+  const photos = captures.value.length - clips
+  return [photos && `${photos} foto`, clips && `${clips} clip`].filter(Boolean).join(', ')
+})
 
 const detail = ref<GameDetail | null>(null)
 const stats = ref<GameStats | null>(null)
@@ -89,6 +99,19 @@ const description = computed(() => (detail.value?.description ? stripHtml(detail
         </p>
       </section>
 
+      <section v-if="capture && captures.length" class="captures" aria-label="Catture">
+        <div class="eyebrow">
+          <span>Catture · {{ captures.length }}</span>
+          <button class="link" @click="emit('gallery')">Vedi tutte<AppIcon name="chevron-right" :size="14" /></button>
+        </div>
+        <div class="shots" :class="`n${Math.min(3, captures.length)}`">
+          <button v-for="(c, i) in captures.slice(0, 3)" :key="c.id" class="shot" @click="emit('viewCapture', captures, i)">
+            <CaptureThumb :capture="c" />
+          </button>
+        </div>
+        <p class="shots-meta">{{ captureCounts }}</p>
+      </section>
+
       <p v-if="description" class="desc">{{ description }}</p>
     </template>
   </BottomSheet>
@@ -115,6 +138,16 @@ const description = computed(() => (detail.value?.description ? stripHtml(detail
 .spark i.cur { background: var(--ink); }
 .last { font-size: 0.75rem; font-weight: 600; color: var(--ink-2); }
 .last b { color: var(--ink); font-weight: 750; }
+.captures .eyebrow { margin-top: var(--size-4); }
+.link { display: inline-flex; align-items: center; gap: 2px; font-size: 0.75rem; font-weight: 600; letter-spacing: 0.02em; text-transform: none; color: var(--ink-2); }
+/* The latest one large, the next two stacked beside it. */
+.shots { display: grid; gap: 4px; }
+.shots.n2 { grid-template-columns: 1fr 1fr; }
+.shots.n3 { grid-template-columns: 2fr 1fr; grid-template-rows: 1fr 1fr; }
+.shot { display: block; min-width: 0; border-radius: var(--r-inner); overflow: hidden; }
+.n3 .shot:first-child { grid-row: span 2; }
+.n3 .shot:first-child :deep(.thumb) { aspect-ratio: auto; block-size: 100%; }
+.shots-meta { margin-top: 6px; font-size: 0.75rem; font-weight: 600; color: var(--ink-2); }
 .uninstall {
   display: flex;
   align-items: center;
@@ -127,15 +160,6 @@ const description = computed(() => (detail.value?.description ? stripHtml(detail
   font-weight: 700;
   color: var(--ink-2);
 }
-.spinner {
-  inline-size: 16px;
-  block-size: 16px;
-  border-radius: var(--radius-round);
-  border: 2px solid currentColor;
-  border-right-color: transparent;
-  animation: spin 800ms linear infinite;
-}
-@keyframes spin { to { transform: rotate(360deg); } }
 .desc {
   margin: var(--size-4) 0 var(--size-2);
   font-size: 0.8125rem;
