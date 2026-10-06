@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { locale, t } from '../i18n'
 import type { StatsRangeName } from '../types'
 import { capitalize, duration, parseDay } from '../utils'
 
@@ -7,8 +8,7 @@ import { capitalize, duration, parseDay } from '../utils'
 // focus (today, or the one you tapped) full strength, the others a quieter step of it.
 const props = defineProps<{ buckets: { date: string; seconds: number }[]; range: StatsRangeName; today: string }>()
 
-const weekdays = ['L', 'M', 'M', 'G', 'V', 'S', 'D']
-const months = ['G', 'F', 'M', 'A', 'M', 'G', 'L', 'A', 'S', 'O', 'N', 'D']
+const { weekdays, months } = t.stats.bars
 const label = (date: string, i: number) => {
   const d = parseDay(date)
   if (props.range === 'week') return weekdays[i]
@@ -20,8 +20,8 @@ const caption = (date: string) => {
   const d = parseDay(date)
   return capitalize(
     props.range === 'year'
-      ? d.toLocaleDateString('it-IT', { month: 'long', year: 'numeric' })
-      : d.toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long' }),
+      ? d.toLocaleDateString(locale, { month: 'long', year: 'numeric' })
+      : d.toLocaleDateString(locale, { weekday: 'long', day: 'numeric', month: 'long' }),
   )
 }
 
@@ -46,9 +46,9 @@ const focused = computed(() => (focus.value === null ? null : props.buckets[focu
   <div class="chart">
     <p class="caption" aria-live="polite">
       <template v-if="focused"><span class="when">{{ caption(focused.date) }}</span> · {{ duration(focused.seconds) }}</template>
-      <template v-else>Tocca una barra per il dettaglio</template>
+      <template v-else>{{ t.stats.bars.hint }}</template>
     </p>
-    <div class="bars" :class="range" role="group" aria-label="Tempo di gioco">
+    <div class="bars" :class="range" role="group" :aria-label="t.stats.bars.label">
       <button
         v-for="(b, i) in buckets"
         :key="b.date"

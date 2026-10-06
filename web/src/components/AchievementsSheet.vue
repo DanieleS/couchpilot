@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onScopeDispose, ref, watch } from 'vue'
 import { percentLabel, rarity, unlockedLabel, useGameAchievements } from '../achievements'
+import { t } from '../i18n'
 import type { Achievement, Game } from '../types'
 import AchievementIcon from './AchievementIcon.vue'
 import AppIcon from './AppIcon.vue'
@@ -41,36 +42,36 @@ const isHidden = (a: Achievement) => a.hidden && !a.unlocked && !revealed.value.
 </script>
 
 <template>
-  <BottomSheet v-model:open="open" :title="`Obiettivi di ${game?.name ?? ''}`">
+  <BottomSheet v-model:open="open" :title="t.achievements.sheetTitle(game?.name ?? '')">
     <template v-if="game">
       <div class="head">
         <GameCover :id="game.id" :name="game.name" :has-cover="game.hasCover" class="cover" />
         <div class="info">
           <h2 class="name">{{ game.name }}</h2>
           <template v-if="data">
-            <p class="count tabular"><b>{{ data.unlocked }}</b> di {{ data.total }} obiettivi<template v-if="score"> · {{ score }}</template></p>
+            <p class="count tabular"><b>{{ data.unlocked }}</b> {{ t.achievements.count(data.total) }}<template v-if="score"> · {{ score }}</template></p>
             <span class="meter"><span class="fill" :style="{ transform: `scaleX(${percent / 100})` }" /></span>
-            <p class="pct tabular">{{ percent }}%<template v-if="percent === 100"> · tutti!</template></p>
+            <p class="pct tabular">{{ percent }}%<template v-if="percent === 100"> · {{ t.achievements.all100 }}</template></p>
           </template>
         </div>
       </div>
 
-      <div v-if="data" class="seg" role="tablist" aria-label="Quali">
-        <button role="tab" :aria-selected="filter === 'all'" :class="{ on: filter === 'all' }" @click="filter = 'all'">Tutti</button>
-        <button role="tab" :aria-selected="filter === 'unlocked'" :class="{ on: filter === 'unlocked' }" @click="filter = 'unlocked'">Sbloccati <span class="n tabular">{{ data.unlocked }}</span></button>
-        <button role="tab" :aria-selected="filter === 'locked'" :class="{ on: filter === 'locked' }" @click="filter = 'locked'">Da fare <span class="n tabular">{{ data.total - data.unlocked }}</span></button>
+      <div v-if="data" class="seg" role="tablist" :aria-label="t.achievements.which">
+        <button role="tab" :aria-selected="filter === 'all'" :class="{ on: filter === 'all' }" @click="filter = 'all'">{{ t.achievements.filters.all }}</button>
+        <button role="tab" :aria-selected="filter === 'unlocked'" :class="{ on: filter === 'unlocked' }" @click="filter = 'unlocked'">{{ t.achievements.filters.unlocked }} <span class="n tabular">{{ data.unlocked }}</span></button>
+        <button role="tab" :aria-selected="filter === 'locked'" :class="{ on: filter === 'locked' }" @click="filter = 'locked'">{{ t.achievements.filters.locked }} <span class="n tabular">{{ data.total - data.unlocked }}</span></button>
       </div>
 
       <div v-if="loading && !data" class="skeleton" />
-      <p v-else-if="!data" class="empty muted">SuccessStory non ha ancora gli obiettivi di questo gioco.</p>
-      <p v-else-if="!items.length" class="empty muted">{{ filter === 'locked' ? 'Niente da fare: li hai tutti.' : 'Ancora nessuno: la prossima partita è quella buona.' }}</p>
+      <p v-else-if="!data" class="empty muted">{{ t.achievements.none }}</p>
+      <p v-else-if="!items.length" class="empty muted">{{ filter === 'locked' ? t.achievements.allDone : t.achievements.noneYet }}</p>
       <ul v-else class="list">
         <li v-for="a in items" :key="a.id" class="row" :class="{ locked: !a.unlocked }">
           <AchievementIcon :achievement="a" :size="48" />
           <div class="text">
             <template v-if="isHidden(a)">
-              <p class="title muted"><AppIcon name="lock" :size="12" />Obiettivo nascosto</p>
-              <button class="reveal" @click="reveal(a)"><AppIcon name="eye" :size="12" />Mostra lo stesso</button>
+              <p class="title muted"><AppIcon name="lock" :size="12" />{{ t.achievements.hidden }}</p>
+              <button class="reveal" @click="reveal(a)"><AppIcon name="eye" :size="12" />{{ t.achievements.reveal }}</button>
             </template>
             <template v-else>
               <p class="title">{{ a.name }}</p>
@@ -86,7 +87,7 @@ const isHidden = (a: Achievement) => a.hidden && !a.unlocked && !revealed.value.
         </li>
       </ul>
       <p v-if="data?.lastRefresh" class="foot muted">
-        Da SuccessStory, aggiornato {{ unlockedLabel(data.lastRefresh).toLowerCase() }}.
+        {{ t.achievements.refreshed(unlockedLabel(data.lastRefresh, true)) }}
       </p>
     </template>
   </BottomSheet>

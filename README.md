@@ -140,7 +140,7 @@ Thumbnails are made once, on the PC, and kept with the extension's data (`thumbn
 
 Nothing to set up: if [SuccessStory](https://github.com/Lacro59/playnite-successstory-plugin) is installed, CouchPilot reads the files it keeps (one JSON per game in its data folder) and watches them. It never logs into Steam, Xbox or the rest itself: what SuccessStory knows, the phone shows; what it doesn't, it doesn't. So the list is as fresh as SuccessStory's last refresh, which by default happens when a game closes (it can refresh while you play too, in its own settings), and that's when the phone announces the achievements you've just unlocked.
 
-Each game's sheet shows unlocked and total with the latest icons; **Vedi tutti** opens the whole list, unlocked first, with when you got each one, how many players have it (and «Raro» under 10 %, «Rarissimo» under 2 %), and the locked ones left to do. Achievements the game hides stay hidden until you tap to see them. The statistics page counts what you unlocked in the week, month or year on screen, with the latest few.
+Each game's sheet shows unlocked and total with the latest icons; **See all** opens the whole list, unlocked first, with when you got each one, how many players have it (and “Rare” under 10 %, “Ultra rare” under 2 %), and the locked ones left to do. Achievements the game hides stay hidden until you tap to see them. The statistics page counts what you unlocked in the week, month or year on screen, with the latest few.
 
 Icons come from where SuccessStory got them (Steam's CDN and the like), so the phone fetches them itself; the few sources that keep icons on the PC (RetroAchievements emulators) are served through CouchPilot.
 
