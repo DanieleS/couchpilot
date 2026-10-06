@@ -24,6 +24,7 @@ namespace CouchPilot.Captures
                         case ".png": return Png(reader);
                         case ".jpg":
                         case ".jpeg": return Jpeg(reader);
+                        case ".gif": return Gif(reader);
                     }
                 }
             }
@@ -39,6 +40,15 @@ namespace CouchPilot.Captures
         {
             r.BaseStream.Position = 16;
             return new MediaInfo { Width = BigInt32(r), Height = BigInt32(r) };
+        }
+
+        // The logical screen size follows the 6-byte header, little-endian.
+        private static MediaInfo Gif(BinaryReader r)
+        {
+            r.BaseStream.Position = 6;
+            var width = r.ReadByte() | (r.ReadByte() << 8);
+            var height = r.ReadByte() | (r.ReadByte() << 8);
+            return new MediaInfo { Width = width, Height = height };
         }
 
         // Walk the markers to the first start-of-frame, which carries height then width.

@@ -31,9 +31,14 @@ namespace CouchPilot.Captures
             public string Source;
             public string Target;
             public bool Video;
+            // A strip of frames for the trimmer rather than one thumbnail.
+            public bool Strip;
             public double? Seconds;
             public TaskCompletionSource<byte[]> Done;
         }
+
+        public const int StripFrames = 12;
+        public const int StripFrameWidth = 160;
 
         public Thumbnails(string folder)
         {
@@ -53,6 +58,25 @@ namespace CouchPilot.Captures
             return making.GetOrAdd(target, _ =>
             {
                 var job = new Job { Source = source, Target = target, Video = video, Seconds = seconds, Done = new TaskCompletionSource<byte[]>() };
+                queue.Add(job);
+                return job.Done.Task.ContinueWith(t =>
+                {
+                    making.TryRemove(target, out var __);
+                    return t.Result;
+                }, TaskScheduler.Default);
+            });
+        }
+
+        // The trimmer's strip of frames, made once like a thumbnail; null without ffmpeg or for a clip it can't read.
+        public Task<byte[]> Strip(string id, string version, double? seconds, string source)
+        {
+            if (!VideoFrame.Available) return Task.FromResult<byte[]>(null);
+            var target = Path.Combine(folder, $"{id}-{version}-strip.jpg");
+            if (File.Exists(target)) return Task.FromResult(File.ReadAllBytes(target));
+            if (File.Exists(Path.ChangeExtension(target, ".none"))) return Task.FromResult<byte[]>(null);
+            return making.GetOrAdd(target, _ =>
+            {
+                var job = new Job { Source = source, Target = target, Video = true, Strip = true, Seconds = seconds, Done = new TaskCompletionSource<byte[]>() };
                 queue.Add(job);
                 return job.Done.Task.ContinueWith(t =>
                 {
@@ -116,6 +140,11 @@ namespace CouchPilot.Captures
 
         private byte[] Make(Job job)
         {
+            if (job.Strip)
+            {
+                var strip = VideoFrame.Strip(job.Source, job.Seconds, StripFrames, StripFrameWidth);
+                return strip == null ? null : Save(job.Target, strip);
+            }
             if (job.Video && VideoFrame.Available)
             {
                 var frame = VideoFrame.Grab(job.Source, job.Seconds, LongSide);
@@ -150,16 +179,23 @@ namespace CouchPilot.Captures
         private byte[] Save(string target, byte[] jpeg)
         {
             Directory.CreateDirectory(folder);
-            ClearOld(Path.GetFileName(target).Split('-')[0]);
+            // Older versions of this capture's files go; this version's thumbnail and strip stay together.
+            var parts = Path.GetFileName(target).Split('-');
+            ClearOld(parts[0], parts[0] + "-" + Path.GetFileNameWithoutExtension(parts[1]));
             File.WriteAllBytes(target, jpeg);
             return jpeg;
         }
 
-        // Every thumbnail of this capture, and the marks of failed attempts.
-        private void ClearOld(string id)
+        // Every file of this capture (thumbnail, strip, marks of failed attempts), except those
+        // whose name starts with `keep`.
+        private void ClearOld(string id, string keep = null)
         {
             if (!Directory.Exists(folder)) return;
-            foreach (var file in Directory.EnumerateFiles(folder, id + "-*.*").ToList()) File.Delete(file);
+            foreach (var file in Directory.EnumerateFiles(folder, id + "-*.*").ToList())
+            {
+                if (keep != null && Path.GetFileNameWithoutExtension(file).StartsWith(keep, StringComparison.Ordinal)) continue;
+                File.Delete(file);
+            }
         }
 
         // Read fully into memory, so the file isn't held open while the gallery browses.

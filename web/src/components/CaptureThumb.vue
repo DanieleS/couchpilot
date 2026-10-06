@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { captureThumbUrl, imageUrl } from '../api'
-import { clipLength } from '../captures'
+import { clipLength, isGif } from '../captures'
 import { useCouchPilot } from '../store'
 import type { Capture } from '../types'
 import { placeholderGradient } from '../utils'
@@ -34,6 +34,7 @@ const clock = computed(() => new Date(props.capture.takenAt).toLocaleTimeString(
     <span v-if="capture.kind === 'video'" class="badge start tabular">
       <AppIcon :name="capture.replay ? 'replay' : 'play'" :size="9" />{{ clipLength(capture.seconds) }}
     </span>
+    <span v-else-if="isGif(capture)" class="badge start">GIF</span>
     <span v-if="time" class="badge end tabular">{{ clock }}</span>
   </span>
 </template>

@@ -8,6 +8,7 @@ using CouchPilot.Audio;
 using CouchPilot.Input;
 using EmbedIO.WebSockets;
 using Playnite.SDK;
+using CloseStatusCode = EmbedIO.WebSockets.CloseStatusCode;
 
 namespace CouchPilot.Server
 {
@@ -40,6 +41,7 @@ namespace CouchPilot.Server
         private const byte TopicLibrary = 2;
         private const byte TopicMedia = 4;
         private const byte TopicCaptures = 8;
+        private const byte TopicAchievements = 16;
 
         private static readonly ILogger logger = LogManager.GetLogger();
         private static readonly TimeSpan Tick = TimeSpan.FromMilliseconds(40);
@@ -49,6 +51,7 @@ namespace CouchPilot.Server
         private readonly RemoteInput input;
         private readonly AudioService audio;
         private readonly StatusSource status;
+        private readonly PairingService pairing;
         private readonly ConcurrentDictionary<IWebSocketContext, Client> clients = new ConcurrentDictionary<IWebSocketContext, Client>();
         private readonly CancellationTokenSource stop = new CancellationTokenSource();
         private int looping;
@@ -56,6 +59,7 @@ namespace CouchPilot.Server
         private volatile bool libraryChanged;
         private volatile bool mediaChanged;
         private volatile bool capturesChanged;
+        private volatile bool achievementsChanged;
         private volatile bool rescanWanted;
         private string lastStatusShape;
         private byte[] lastVolumes;
@@ -63,16 +67,19 @@ namespace CouchPilot.Server
 
         private class Client
         {
+            // The paired phone, or null while pairing was off when it connected.
+            public PairedDevice Device;
             public volatile bool Audio;
             public volatile bool NeedsAudioState;
             public Task Queue = Task.CompletedTask;
         }
 
-        public LiveSocket(string path, RemoteInput input, AudioService audio, StatusSource status) : base(path, true)
+        public LiveSocket(string path, RemoteInput input, AudioService audio, StatusSource status, PairingService pairing) : base(path, true)
         {
             this.input = input;
             this.audio = audio;
             this.status = status;
+            this.pairing = pairing;
             MaxMessageSize = 16 * 1024;
         }
 
@@ -90,19 +97,49 @@ namespace CouchPilot.Server
         // A screenshot or clip was added or removed. Announced on the next tick: you just took it.
         public void CapturesChanged() => capturesChanged = true;
 
-        protected override Task OnClientConnectedAsync(IWebSocketContext context)
+        // SuccessStory wrote a game's achievements. Announced on the next tick.
+        public void AchievementsChanged() => achievementsChanged = true;
+
+        // Pairing was switched on: phones that connected without a token are closed, and come
+        // back through the pairing screen.
+        public void DropUnpaired()
+        {
+            foreach (var pair in clients.Where(c => c.Value.Device == null).ToList())
+            {
+                var context = pair.Key;
+                Task.Run(() => context.WebSocket.CloseAsync(CloseStatusCode.PolicyViolation, "unpaired"));
+            }
+        }
+
+        protected override async Task OnClientConnectedAsync(IWebSocketContext context)
         {
             // WebSockets skip the browser's same-origin checks: without this, any page open on a
             // phone or PC on the network could type on this one.
-            if (!SameOrigin(context)) return CloseAsync(context);
+            if (!SameOrigin(context))
+            {
+                await CloseAsync(context);
+                return;
+            }
 
-            var client = new Client();
+            // While pairing is on, the phone's cookie comes with the upgrade like with any request.
+            PairedDevice device = null;
+            if (pairing.Required)
+            {
+                device = pairing.Authenticate(context.Cookies[PairingService.CookieName]?.Value);
+                if (device == null)
+                {
+                    // 1008: the phone reads the code and shows the pairing screen instead of retrying.
+                    await context.WebSocket.CloseAsync(CloseStatusCode.PolicyViolation, "unpaired");
+                    return;
+                }
+            }
+
+            var client = new Client { Device = device };
             clients[context] = client;
             Enqueue(context, client, new[] { OpHello, ProtocolVersion });
             // Whatever the phone had may be stale after a disconnect: everything counts as changed.
-            Enqueue(context, client, new[] { OpChanged, (byte)(TopicStatus | TopicLibrary | TopicMedia | TopicCaptures) });
-            if (Interlocked.Exchange(ref looping, 1) == 0) Task.Run(LoopAsync);
-            return Task.CompletedTask;
+            Enqueue(context, client, new[] { OpChanged, (byte)(TopicStatus | TopicLibrary | TopicMedia | TopicCaptures | TopicAchievements) });
+            if (Interlocked.Exchange(ref looping, 1) == 0) _ = Task.Run(LoopAsync);
         }
 
         protected override Task OnMessageReceivedAsync(IWebSocketContext context, byte[] buffer, IWebSocketReceiveResult result)
@@ -116,8 +153,9 @@ namespace CouchPilot.Server
             {
                 if (op >= OpInputFirst && op <= OpInputLast)
                 {
-                    // Dropped, not refused, when mouse and keyboard are off: the socket is for audio too.
-                    input.Handle(buffer);
+                    // Dropped, not refused, when mouse and keyboard are off, or not for this phone:
+                    // the socket is for audio too.
+                    if (!pairing.Required || client.Device == null || client.Device.AllowInput) input.Handle(buffer);
                 }
                 else if (op >= OpAudioFirst && op <= OpAudioLast)
                 {
@@ -202,6 +240,11 @@ namespace CouchPilot.Server
             {
                 capturesChanged = false;
                 topics |= TopicCaptures;
+            }
+            if (achievementsChanged)
+            {
+                achievementsChanged = false;
+                topics |= TopicAchievements;
             }
             if (topics == 0) return;
             var message = new[] { OpChanged, topics };

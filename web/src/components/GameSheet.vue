@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onScopeDispose, ref, watch } from 'vue'
+import { useGameAchievements } from '../achievements'
 import { api } from '../api'
 import { useCaptures } from '../captures'
 import type { Capture, Game, GameDetail, GameStats } from '../types'
 import { duration, stripHtml } from '../utils'
+import AchievementIcon from './AchievementIcon.vue'
 import AppIcon from './AppIcon.vue'
 import BottomSheet from './BottomSheet.vue'
 import CaptureThumb from './CaptureThumb.vue'
@@ -11,7 +13,14 @@ import GameCover from './GameCover.vue'
 
 const props = defineProps<{ game: Game | null; running: boolean }>()
 const open = defineModel<boolean>('open', { required: true })
-const emit = defineEmits<{ start: []; focus: []; stop: []; install: []; uninstall: []; gallery: []; viewCapture: [items: Capture[], index: number] }>()
+const emit = defineEmits<{ start: []; focus: []; stop: []; install: []; uninstall: []; gallery: []; viewCapture: [items: Capture[], index: number]; achievements: [] }>()
+
+// Achievements, when SuccessStory has them: the count, and the last few unlocked.
+const gameId = computed(() => (open.value ? props.game?.id ?? null : null))
+const { data: achievements, stop: stopAchievements } = useGameAchievements(gameId)
+onScopeDispose(stopAchievements)
+const latestUnlocked = computed(() => (achievements.value?.items ?? []).filter((a) => a.unlocked).slice(0, 5))
+const achievementPercent = computed(() => (achievements.value?.total ? Math.round((achievements.value.unlocked / achievements.value.total) * 100) : 0))
 
 const { capture, items: allCaptures } = useCaptures()
 const captures = computed(() => (props.game ? allCaptures.value.filter((c) => c.gameId === props.game!.id) : []))
@@ -99,6 +108,26 @@ const description = computed(() => (detail.value?.description ? stripHtml(detail
         </p>
       </section>
 
+      <section v-if="achievements" class="achievements" aria-label="Obiettivi">
+        <div class="eyebrow">
+          <span>Obiettivi · {{ achievements.unlocked }}/{{ achievements.total }}</span>
+          <button class="link" @click="emit('achievements')">Vedi tutti<AppIcon name="chevron-right" :size="14" /></button>
+        </div>
+        <button class="ach card" @click="emit('achievements')">
+          <span class="ach-meter"><span class="ach-fill" :style="{ transform: `scaleX(${achievementPercent / 100})` }" /></span>
+          <span class="ach-row">
+            <span class="ach-icons">
+              <AchievementIcon v-for="a in latestUnlocked" :key="a.id" :achievement="a" :size="40" />
+              <span v-if="!latestUnlocked.length" class="ach-none"><AppIcon name="trophy" :size="18" /></span>
+            </span>
+            <span class="ach-text tabular">
+              <b>{{ achievementPercent }}%</b>
+              <span class="ach-sub">{{ latestUnlocked.length ? `ultimo: ${latestUnlocked[0].name}` : 'nessuno ancora' }}</span>
+            </span>
+          </span>
+        </button>
+      </section>
+
       <section v-if="capture && captures.length" class="captures" aria-label="Catture">
         <div class="eyebrow">
           <span>Catture · {{ captures.length }}</span>
@@ -138,7 +167,16 @@ const description = computed(() => (detail.value?.description ? stripHtml(detail
 .spark i.cur { background: var(--ink); }
 .last { font-size: 0.75rem; font-weight: 600; color: var(--ink-2); }
 .last b { color: var(--ink); font-weight: 750; }
-.captures .eyebrow { margin-top: var(--size-4); }
+.captures .eyebrow, .achievements .eyebrow { margin-top: var(--size-4); }
+.ach { display: grid; gap: 10px; inline-size: 100%; padding: 10px; text-align: left; background: var(--well); box-shadow: none; }
+.ach-meter { display: block; block-size: 6px; border-radius: 3px; background: var(--slider-track); overflow: hidden; }
+.ach-fill { display: block; block-size: 100%; border-radius: 3px; background: var(--run); transform-origin: left; transition: transform 300ms var(--ease-out-3); }
+.ach-row { display: flex; align-items: center; justify-content: space-between; gap: var(--size-3); }
+.ach-icons { display: flex; gap: 4px; }
+.ach-none { display: grid; place-items: center; inline-size: 40px; block-size: 40px; border-radius: 8px; background: var(--card); color: var(--ink-2); }
+.ach-text { display: grid; text-align: right; min-width: 0; }
+.ach-text b { font-size: 1.125rem; font-weight: 800; letter-spacing: -0.02em; }
+.ach-sub { font-size: 0.6875rem; font-weight: 600; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-inline-size: 9rem; }
 .link { display: inline-flex; align-items: center; gap: 2px; font-size: 0.75rem; font-weight: 600; letter-spacing: 0.02em; text-transform: none; color: var(--ink-2); }
 /* The latest one large, the next two stacked beside it. */
 .shots { display: grid; gap: 4px; }

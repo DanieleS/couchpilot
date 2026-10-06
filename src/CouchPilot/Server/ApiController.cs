@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Net;
 using System.Threading.Tasks;
+using CouchPilot.Achievements;
 using CouchPilot.Audio;
 using CouchPilot.Captures;
 using CouchPilot.Displays;
@@ -29,12 +30,20 @@ namespace CouchPilot.Server
         private readonly CaptureService captures;
         private readonly CaptureLibrary captureLibrary;
         private readonly Thumbnails thumbnails;
+        private readonly ClipEditor clips;
+        private readonly PairingService pairing;
+        private readonly PairingGate gate;
+        private readonly AchievementsService achievements;
 
-        public ApiController(LibraryService library, GameControl games, DisplayService displays, AudioService audio, MediaService media, StatsService stats, StatusSource status, LiveSocket live, CaptureService captures, CaptureLibrary captureLibrary, Thumbnails thumbnails)
+        public ApiController(LibraryService library, GameControl games, DisplayService displays, AudioService audio, MediaService media, StatsService stats, StatusSource status, LiveSocket live, CaptureService captures, CaptureLibrary captureLibrary, Thumbnails thumbnails, ClipEditor clips, PairingService pairing, PairingGate gate, AchievementsService achievements)
         {
             this.captures = captures;
             this.captureLibrary = captureLibrary;
             this.thumbnails = thumbnails;
+            this.clips = clips;
+            this.pairing = pairing;
+            this.gate = gate;
+            this.achievements = achievements;
             this.library = library;
             this.games = games;
             this.displays = displays;
@@ -45,9 +54,51 @@ namespace CouchPilot.Server
             this.live = live;
         }
 
+        // The paired phone this request came from, or null while pairing is off.
+        private PairedDevice Device => PairingGate.DeviceOf(HttpContext);
+
         // The phone fetches it again whenever the live socket says it changed.
         [Route(HttpVerbs.Get, "/status")]
-        public object Status() => status.Snapshot();
+        public object Status() => status.Snapshot(Device);
+
+        // Pairing. These three are open to every phone: they're how a phone gets in.
+        [Route(HttpVerbs.Get, "/pair")]
+        public object Pairing() => new
+        {
+            required = pairing.Required,
+            device = PairingService.ToDto(pairing.Required ? pairing.Authenticate(Request.Cookies[PairingService.CookieName]?.Value) : null),
+        };
+
+        // { "name": "Pixel 8 · Chrome" }: a PIN goes up on the PC's screen for two minutes.
+        [Route(HttpVerbs.Post, "/pair/request")]
+        public async Task<object> RequestPin()
+        {
+            if (!pairing.Required) throw new HttpException(HttpStatusCode.Conflict, "L'abbinamento non è richiesto: il telefono è già dentro.");
+            var body = await ReadBody<PairBody>();
+            var request = pairing.RequestPin(body?.Name);
+            return new { expiresAt = request.ExpiresAt.ToString("o"), seconds = (int)(request.ExpiresAt - DateTime.UtcNow).TotalSeconds };
+        }
+
+        // { "pin": "482913", "name": "…" }: right, and the phone gets its cookie and is a device.
+        [Route(HttpVerbs.Post, "/pair")]
+        public async Task<object> CompletePairing()
+        {
+            if (!pairing.Required) throw new HttpException(HttpStatusCode.Conflict, "L'abbinamento non è richiesto: il telefono è già dentro.");
+            var body = await ReadBody<PairBody>();
+            var device = pairing.Complete(body?.Pin, body?.Name, out var token);
+            gate.SetCookie(HttpContext, token);
+            live.Nudge();
+            return PairingService.ToDto(device);
+        }
+
+        // This phone forgets the PC, and the PC forgets it.
+        [Route(HttpVerbs.Delete, "/pair")]
+        public void Unpair()
+        {
+            var device = pairing.Authenticate(Request.Cookies[PairingService.CookieName]?.Value);
+            if (device != null) pairing.Forget(device.Id);
+            gate.ClearCookie(HttpContext);
+        }
 
         [Route(HttpVerbs.Get, "/games")]
         public object Games() => library.All();
@@ -227,16 +278,78 @@ namespace CouchPilot.Server
         // The next three answer once the file is there, with the new capture, or with an error
         // whose code says what's wrong (see CaptureException).
         [Route(HttpVerbs.Post, "/captures/screenshot")]
-        public Task<CaptureDto> Screenshot() => captures.Screenshot();
+        public Task<CaptureDto> Screenshot()
+        {
+            RequireCaptures();
+            return captures.Screenshot();
+        }
 
         [Route(HttpVerbs.Post, "/captures/replay")]
-        public Task<CaptureDto> Replay() => captures.Replay();
+        public Task<CaptureDto> Replay()
+        {
+            RequireCaptures();
+            return captures.Replay();
+        }
 
         [Route(HttpVerbs.Post, "/captures/record/stop")]
-        public Task<CaptureDto> StopRecording() => captures.StopRecording();
+        public Task<CaptureDto> StopRecording()
+        {
+            RequireCaptures();
+            return captures.StopRecording();
+        }
 
         [Route(HttpVerbs.Post, "/captures/record/start")]
-        public Task StartRecording() => captures.StartRecording();
+        public Task StartRecording()
+        {
+            RequireCaptures();
+            return captures.StartRecording();
+        }
+
+        // { "from": 12.4, "to": 41.0, "format": "mp4" | "gif", "audio": true }: a piece of the clip,
+        // written next to it. Answers once ffmpeg is done, with the new capture.
+        [Route(HttpVerbs.Post, "/captures/{id}/trim")]
+        public async Task<CaptureDto> Trim(string id)
+        {
+            RequireCaptures();
+            var body = await ReadBody<TrimBody>() ?? throw HttpException.BadRequest("Dimmi da dove a dove.");
+            return await clips.Trim(id, body);
+        }
+
+        // ?v=<version>: a strip of frames across the clip, for the trimmer. 404 when the PC can't make one.
+        [Route(HttpVerbs.Get, "/captures/{id}/strip")]
+        public async Task CaptureStrip(string id)
+        {
+            RequireCaptures();
+            var source = captureLibrary.ThumbnailOf(id) ?? throw HttpException.NotFound();
+            if (!source.Video) throw HttpException.NotFound();
+            var jpeg = await thumbnails.Strip(id, source.Version, source.Seconds, source.Path) ?? throw HttpException.NotFound();
+            Response.ContentType = "image/jpeg";
+            Response.Headers.Set("Cache-Control", "public, max-age=31536000, immutable");
+            await Response.OutputStream.WriteAsync(jpeg, 0, jpeg.Length);
+        }
+
+        // Achievements, from SuccessStory's data. 404 for a game it has nothing on.
+        [Route(HttpVerbs.Get, "/games/{id}/achievements")]
+        public object GameAchievements(string id) =>
+            achievements.Game(ParseId(id)) ?? throw new HttpException(HttpStatusCode.NotFound, "Nessun obiettivo per questo gioco.");
+
+        // The icon of an achievement SuccessStory keeps on disk (web ones are linked directly). ?locked=1 for the locked one.
+        [Route(HttpVerbs.Get, "/games/{id}/achievements/{index}/icon")]
+        public async Task AchievementIcon(string id, int index, [QueryField] string locked)
+        {
+            var path = achievements.IconPath(ParseId(id), index, locked == "1") ?? throw HttpException.NotFound();
+            var ext = Path.GetExtension(path);
+            Response.ContentType = MimeType.Associations.TryGetValue(ext, out var mime) ? mime : "application/octet-stream";
+            Response.Headers.Set("Cache-Control", "public, max-age=86400");
+            using (var file = File.OpenRead(path))
+            {
+                await file.CopyToAsync(Response.OutputStream);
+            }
+        }
+
+        // The latest unlocked achievements, whatever the game, newest first. The live socket says when to fetch again.
+        [Route(HttpVerbs.Get, "/achievements/recent")]
+        public object RecentAchievements() => achievements.Recent(40);
 
         // To the PC's Recycle Bin.
         [Route(HttpVerbs.Delete, "/captures/{id}")]
@@ -310,14 +423,22 @@ namespace CouchPilot.Server
             }
         }
 
-        // Screenshots may show more than the game: they stay private unless turned on.
+        // Screenshots may show more than the game: they stay private unless turned on, and
+        // unless this phone is allowed to see them.
         private void RequireCaptures()
         {
             if (!captures.Enabled) throw new HttpException(HttpStatusCode.Forbidden, "Le catture sono spente nelle impostazioni di CouchPilot.");
+            if (Device != null && !Device.AllowCaptures) throw new HttpException(HttpStatusCode.Forbidden, "Questo telefono non può vedere le catture: cambialo nelle impostazioni di CouchPilot.");
         }
 
         public class NameBody
         {
+            public string Name { get; set; }
+        }
+
+        public class PairBody
+        {
+            public string Pin { get; set; }
             public string Name { get; set; }
         }
 

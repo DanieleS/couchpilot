@@ -4,6 +4,7 @@ using System.IO;
 using System.Threading.Tasks;
 using System.Security.Cryptography.X509Certificates;
 using System.Windows.Controls;
+using CouchPilot.Achievements;
 using CouchPilot.Audio;
 using CouchPilot.Captures;
 using CouchPilot.Displays;
@@ -36,12 +37,17 @@ namespace CouchPilot
         private readonly CaptureLibrary captureLibrary;
         private readonly CaptureService captures;
         private readonly Thumbnails thumbnails;
+        private readonly ClipEditor clips;
+        private readonly AchievementsService achievements;
         // The extra folder the gallery was last set up with; null until it first is.
         private string capturesConfiguredFor;
         private RemoteServer server;
         private HomeAssistantBridge homeAssistant;
+        private PinWindow pinWindow;
 
         public CouchPilotSettings Settings { get; }
+
+        internal PairingService Pairing { get; }
 
         // Where the running server answers, for the settings page.
         internal IReadOnlyList<string> Addresses { get; private set; } = new string[0];
@@ -57,12 +63,19 @@ namespace CouchPilot
             gameControl = new GameControl(api, sessions);
             audio = new AudioService(gameControl);
             sessionLog = new SessionLog(Path.Combine(GetPluginUserDataPath(), "sessions.jsonl"));
-            stats = new StatsService(api, sessionLog, sessions);
+            achievements = new AchievementsService(api);
+            stats = new StatsService(api, sessionLog, sessions, achievements);
             displays = new DisplayService(Path.Combine(GetPluginUserDataPath(), "display-presets.json"));
             new AudioFollowsDisplays(displays, audio);
             captureLibrary = new CaptureLibrary(() => api.Database.Games, sessionLog, sessions, GetPluginUserDataPath());
             captures = new CaptureService(captureLibrary);
             thumbnails = new Thumbnails(Path.Combine(GetPluginUserDataPath(), "thumbnails"));
+            clips = new ClipEditor(captureLibrary);
+            achievements.Changed += () => server?.AchievementsChanged();
+            Pairing = new PairingService(Path.Combine(GetPluginUserDataPath(), "devices.json")) { Required = Settings.RequirePairing };
+            Pairing.Changed += () => server?.Nudge();
+            Pairing.PinRequested += ShowPin;
+            Pairing.PinDone += HidePin;
             captureLibrary.Changed += () =>
             {
                 server?.CapturesChanged();
@@ -85,6 +98,7 @@ namespace CouchPilot
             media.Changed += () => server?.MediaChanged();
             media.Start();
             ApplyCaptureSettings();
+            achievements.Start();
             StartServer();
             StartHomeAssistant();
         }
@@ -99,6 +113,7 @@ namespace CouchPilot
             media.Dispose();
             captureLibrary.Dispose();
             thumbnails.Dispose();
+            achievements.Dispose();
         }
 
         public override void OnGameStarted(OnGameStartedEventArgs args)
@@ -126,6 +141,53 @@ namespace CouchPilot
             server?.Dispose();
             server = null;
             StartServer();
+        }
+
+        // Takes effect at once. Switched on, phones that haven't typed the PIN are let go and
+        // see the pairing screen; switched off, every phone is back in.
+        internal void ApplyPairingSetting()
+        {
+            var was = Pairing.Required;
+            Pairing.Required = Settings.RequirePairing;
+            if (!was && Pairing.Required) server?.DropUnpaired();
+            server?.Nudge();
+        }
+
+        // The PIN goes on the PC's screen, on top of everything, and in Playnite's notifications
+        // in case a game in full screen keeps the window out of sight.
+        private void ShowPin(PinRequest request)
+        {
+            var app = System.Windows.Application.Current;
+            if (app == null) return;
+            app.Dispatcher.BeginInvoke(new Action(() =>
+            {
+                try
+                {
+                    pinWindow?.Close();
+                    pinWindow = new PinWindow(Pairing, request);
+                    pinWindow.Show();
+                }
+                catch (Exception e)
+                {
+                    logger.Error(e, "Couldn't show the PIN window");
+                }
+            }));
+            PlayniteApi.Notifications.Add(new NotificationMessage(
+                "couchpilot-pin",
+                $"CouchPilot: «{request.DeviceName}» chiede di collegarsi. PIN: {request.Pin.Substring(0, 3)} {request.Pin.Substring(3)}",
+                NotificationType.Info));
+        }
+
+        private void HidePin()
+        {
+            PlayniteApi.Notifications.Remove("couchpilot-pin");
+            var app = System.Windows.Application.Current;
+            if (app == null) return;
+            app.Dispatcher.BeginInvoke(new Action(() =>
+            {
+                pinWindow?.Close();
+                pinWindow = null;
+            }));
         }
 
         // Takes effect at once: turning it off lets go of anything held, and phones hear about it.
@@ -209,7 +271,7 @@ namespace CouchPilot
                             NotificationType.Error));
                     }
                 }
-                server = new RemoteServer(Settings.Port, certificate, webRoot, library, gameControl, displays, input, audio, media, stats, captures, captureLibrary, thumbnails);
+                server = new RemoteServer(Settings.Port, certificate, webRoot, library, gameControl, displays, input, audio, media, stats, captures, captureLibrary, thumbnails, clips, Pairing, achievements);
                 server.Start();
                 PlayniteApi.Notifications.Remove("couchpilot-server");
                 Addresses = NetworkInfo.LanUrls(Settings.Port, certificate != null, certificate == null ? null : ServerCertificate.HostName(certificate));

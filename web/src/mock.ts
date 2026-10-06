@@ -1,6 +1,6 @@
 // In-memory stand-in for the plugin's API, for `pnpm dev:mock` on a machine without Playnite.
 import { decode, type ServerMessage } from './protocol'
-import type { Capture, CaptureStatus, Game, Monitor, Preset, RunningGame, Status } from './types'
+import type { Achievement, Capture, CaptureStatus, Game, GameAchievements, Monitor, PairedDevice, Preset, RecentAchievement, RunningGame, Status } from './types'
 
 const names: [string, string, number][] = [
   ['Elden Ring', 'Steam', 142], ['Warhammer 40,000: Space Marine 2', 'Steam', 31], ['Hades II', 'Epic', 54],
@@ -62,6 +62,10 @@ function status(): Status {
     running,
     input: inputEnabled,
     capture: captureStatus(),
+    pairing: pairingRequired,
+    device: pairingRequired ? pairedDevice : null,
+    // `?noach=1` pretends SuccessStory isn't installed.
+    achievements: !new URLSearchParams(location.search).has('noach'),
     // `?nopads=1` pretends no controller is connected.
     controllers: new URLSearchParams(location.search).has('nopads')
       ? []
@@ -159,6 +163,10 @@ function mockStats(range: string, offset: number) {
       installed: games.filter((g) => g.installed).length, installedNeverPlayed: 1, playedThisYear: 9,
     },
     resume: [10, 12, 9].map((i) => ({ id: games[i].id, name: games[i].name, playtimeSeconds: games[i].playtimeMinutes * 60, lastActivity: new Date(Date.now() - (120 + i * 9) * DAY).toISOString(), hasCover: false })),
+    achievements: (() => {
+      const unlocked = mockRecentAchievements(from.getTime() + 5 * 3600000, to.getTime() + 5 * 3600000)
+      return { unlocked: unlocked.length, recent: unlocked.slice(0, 8) }
+    })(),
   }
 }
 function mockGameStats(index: number) {
@@ -201,7 +209,85 @@ function mockCapture(gameIndex: number | null, at: Date, kind: Capture['kind'], 
     gameId: g?.id ?? null, game: g?.name ?? 'Desktop', tool: captureTool,
     fileName: `${g?.name ?? 'Desktop'} ${at.toISOString().slice(0, 19).replace(/[T:]/g, '-')}.${kind === 'photo' ? 'png' : 'mp4'}`,
     version: '1',
+    edited: false,
+    sourceId: null,
   }
+}
+
+// Pairing: `?pair=1` pretends the PC wants a PIN (it's 123456) from this phone.
+const pairingRequired = new URLSearchParams(location.search).has('pair')
+let pairedDevice: PairedDevice | null = null
+let pinPending = false
+let pinAttempts = 5
+const fail = (message: string, code: string, extra: Record<string, unknown> = {}) => Object.assign(new Error(message), { code, ...extra })
+
+// Achievements: a stable, invented set per game, unlocked in step with how much it was played.
+const achievementNames = [
+  ['Primi passi', 'Completa il tutorial'], ['Esploratore', 'Scopri dieci luoghi'], ['Collezionista', 'Trova venti oggetti rari'],
+  ['Senza paura', 'Sconfiggi un boss senza subire danni'], ["Maestro d'armi", 'Padroneggia ogni arma'], ['Cento vittorie', 'Vinci cento scontri'],
+  ['Fine del viaggio', 'Finisci la storia'], ['Perfezionista', 'Finisci la storia al massimo livello'], ['Amico degli animali', 'Accarezza il cane'],
+  ['Nottambulo', 'Gioca per tre ore di fila'], ['Mani veloci', 'Completa un livello in meno di un minuto'], ['Cartografo', 'Rivela tutta la mappa'],
+  ['Mercante', 'Spendi diecimila monete'], ['Sopravvissuto', 'Sopravvivi a dieci ondate'], ['Leggenda', 'Ottieni ogni altro obiettivo'],
+]
+const achievementIcon = (name: string, locked: boolean) => {
+  const h = seed(name) % 360
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="12" fill="hsl(${h} ${locked ? 10 : 55}% ${locked ? 30 : 38}%)"/>` +
+    `<circle cx="32" cy="28" r="14" fill="hsl(${(h + 40) % 360} ${locked ? 10 : 80}% ${locked ? 45 : 70}%)"/><rect x="22" y="44" width="20" height="8" rx="2" fill="rgb(255 255 255 / 0.6)"/></svg>`
+  return `data:image/svg+xml,${encodeURIComponent(svg)}`
+}
+const extraUnlocks: { gameIndex: number; at: Date }[] = []
+let achievementsRevision = 0
+function mockAchievements(gameIndex: number): GameAchievements | null {
+  const g = games[gameIndex]
+  if (!g || gameIndex % 7 === 6) return null
+  const h = seed(g.name)
+  const total = 10 + (h % 6)
+  const playedDays: Date[] = []
+  for (let back = 0; back < 60; back++) {
+    const day = new Date(playDay().getTime() - back * DAY)
+    if (playedOn(day).some(([gi]) => gi === gameIndex)) playedDays.push(day)
+  }
+  const unlockedCount = Math.min(total, Math.round(total * Math.min(1, g.playtimeMinutes / 6000)) + (playedDays.length ? 2 : 0))
+  const items: Achievement[] = achievementNames.slice(0, total).map(([name, description], i) => {
+    const k = seed(g.name + name)
+    const unlocked = i < unlockedCount
+    const day = playedDays.length ? playedDays[(i * 7) % playedDays.length] : new Date(Date.now() - (30 + i) * DAY)
+    const at = new Date(day.getTime() + (20 * 60 + (k % 200)) * 60000)
+    const percent = i === total - 1 ? 0.8 : Math.max(1.2, 95 - i * (6 + (k % 5)))
+    return {
+      id: `ach_${i}`, name, description, unlocked, unlockedAt: unlocked ? at.toISOString() : null,
+      hidden: i >= total - 3, percent: k % 9 === 0 ? null : Math.round(percent * 10) / 10, gamerScore: 10 + (i % 4) * 15,
+      icon: achievementIcon(name, false), lockedIcon: k % 3 === 0 ? achievementIcon(name, true) : null,
+    }
+  })
+  for (const u of extraUnlocks.filter((x) => x.gameIndex === gameIndex)) {
+    const locked = items.find((a) => !a.unlocked)
+    if (locked) Object.assign(locked, { unlocked: true, unlockedAt: u.at.toISOString() })
+  }
+  items.sort((a, b) => Number(b.unlocked) - Number(a.unlocked) || (b.unlockedAt ?? '').localeCompare(a.unlockedAt ?? '') || (a.unlocked ? 0 : (b.percent ?? 0) - (a.percent ?? 0)))
+  return { gameId: g.id, game: g.name, total, unlocked: items.filter((a) => a.unlocked).length, lastRefresh: new Date(Date.now() - 3600000).toISOString(), items }
+}
+function mockRecentAchievements(fromMs = 0, toMs = Infinity): RecentAchievement[] {
+  const out: RecentAchievement[] = []
+  games.forEach((g, i) => {
+    const data = mockAchievements(i)
+    for (const a of data?.items ?? []) {
+      if (!a.unlockedAt) continue
+      const t = new Date(a.unlockedAt).getTime()
+      if (t >= fromMs && t < toMs) out.push({ ...a, gameId: g.id, game: g.name, hasCover: false })
+    }
+  })
+  return out.sort((a, b) => b.unlockedAt!.localeCompare(a.unlockedAt!))
+}
+// `?unlock=1`: an achievement gets unlocked a few seconds after the phone first looks, like a session ending.
+let unlockScheduled = false
+function scheduleMockUnlock() {
+  if (unlockScheduled || !new URLSearchParams(location.search).has('unlock')) return
+  unlockScheduled = true
+  setTimeout(() => {
+    extraUnlocks.push({ gameIndex: 2, at: new Date() })
+    achievementsRevision++
+  }, 6000)
 }
 for (let back = 0; back < 14; back++) {
   const day = new Date(playDay().getTime() - back * DAY)
@@ -220,7 +306,7 @@ captures.sort((a, b) => b.takenAt.localeCompare(a.takenAt))
 
 function captureStatus(): CaptureStatus | null {
   if (query.has('nocapture')) return null
-  return { tool: captureTool, recordingSince, replaySeconds: captureTool === 'gamebar' && !query.has('noreplay') ? 30 : null }
+  return { tool: captureTool, recordingSince, replaySeconds: captureTool === 'gamebar' && !query.has('noreplay') ? 30 : null, editing: !query.has('noffmpeg') }
 }
 
 // After a moment, as the PC answers once the file is on disk.
@@ -369,6 +455,7 @@ export function createMockLink(receive: (m: ServerMessage) => void, onClose: () 
   let lastLibrary = libraryRevision
   let lastMedia = mediaRevision
   let lastCaptures = captureRevision
+  let lastAchievements = achievementsRevision
   const deliver = (bytes: Uint8Array) => setTimeout(() => !closed && receive(decode(bytes)))
   const shapeOf = (channels: MockChannel[]) =>
     JSON.stringify([defaultOutput, defaultInput, channels.map((c) => [c.role, c.key, c.name])])
@@ -407,7 +494,7 @@ export function createMockLink(receive: (m: ServerMessage) => void, onClose: () 
   deliver(Uint8Array.of(0x80, 1))
   // Everything counts as changed on a new connection.
   lastStatus = statusKey()
-  deliver(Uint8Array.of(0x81, 1 | 2 | 4 | 8))
+  deliver(Uint8Array.of(0x81, 1 | 2 | 4 | 8 | 16))
   let tick = 0
   const timer = setInterval(() => {
     if (tick % 12 === 0 && libraryRevision !== lastLibrary) {
@@ -421,6 +508,10 @@ export function createMockLink(receive: (m: ServerMessage) => void, onClose: () 
     if (captureRevision !== lastCaptures) {
       lastCaptures = captureRevision
       deliver(Uint8Array.of(0x81, 8))
+    }
+    if (achievementsRevision !== lastAchievements) {
+      lastAchievements = achievementsRevision
+      deliver(Uint8Array.of(0x81, 16))
     }
     if (tick++ % 12 === 0) pushStatus()
     if (audio) pushAudio()
@@ -465,8 +556,42 @@ export async function mockRequest(method: string, path: string, body?: any): Pro
 }
 
 async function handle(method: string, path: string, body?: any): Promise<unknown> {
-  const [, a, b, c] = path.split('/')
+  const [, a, b, c, d] = path.split('/')
+  // Pairing comes first: like PairingGate.cs, everything else is 401 until the phone has typed the PIN.
+  if (a === 'pair') {
+    if (method === 'GET' && !b) return { required: pairingRequired, device: pairedDevice }
+    if (method === 'POST' && b === 'request') {
+      pinPending = true
+      pinAttempts = 5
+      console.info('CouchPilot mock: il PIN è 123456')
+      return { expiresAt: new Date(Date.now() + 120000).toISOString(), seconds: 120 }
+    }
+    if (method === 'POST' && !b) {
+      if (!pinPending) throw fail('Il PIN è scaduto: chiedine un altro.', 'expired')
+      if (body?.pin !== '123456') {
+        if (--pinAttempts <= 0) {
+          pinPending = false
+          throw fail('Troppi tentativi: chiedi un altro PIN.', 'expired')
+        }
+        throw fail(`PIN sbagliato, ${pinAttempts} tentativi rimasti.`, 'wrong-pin', { attemptsLeft: pinAttempts })
+      }
+      pinPending = false
+      pairedDevice = { id: 'dev1', name: body?.name || 'Telefono', input: true, captures: true }
+      return pairedDevice
+    }
+    if (method === 'DELETE') return void (pairedDevice = null)
+  }
+  if (pairingRequired && !pairedDevice) throw fail('Questo telefono non è abbinato al PC.', 'unpaired')
   if (method === 'GET' && a === 'status') return status()
+  if (method === 'GET' && a === 'achievements' && b === 'recent') {
+    scheduleMockUnlock()
+    return mockRecentAchievements().slice(0, 40)
+  }
+  if (method === 'GET' && a === 'games' && c === 'achievements' && !d) {
+    const data = mockAchievements(games.findIndex((g) => g.id === b))
+    if (!data) throw fail('Nessun obiettivo per questo gioco.', 'not-found')
+    return data
+  }
   if (method === 'GET' && a?.startsWith('stats')) {
     const q = new URLSearchParams(path.split('?')[1] ?? '')
     return mockStats(q.get('range') ?? 'week', Number(q.get('offset') ?? 0))
@@ -484,6 +609,24 @@ async function handle(method: string, path: string, body?: any): Promise<unknown
   if (a === 'captures') {
     if (!captureStatus()) throw new Error('Le catture sono spente nelle impostazioni di CouchPilot.')
     if (method === 'GET' && !b) return { items: captures, bytes: captures.reduce((t, x) => t + x.bytes, 0), folders: ['C:\\Users\\pc\\Videos\\Captures'] }
+    if (method === 'POST' && c === 'trim') {
+      const source = captures.find((x) => x.id === b)
+      if (!source) throw new Error('Clip non trovata.')
+      await new Promise((r) => setTimeout(r, 2500))
+      const gif = body?.format === 'gif'
+      const length = Math.max(0.5, (body?.to ?? 0) - (body?.from ?? 0))
+      const at = new Date(new Date(source.takenAt).getTime() + (body?.from ?? 0) * 1000 + 500)
+      const made: Capture = {
+        ...mockCapture(source.gameId ? games.findIndex((g) => g.id === source.gameId) : null, at, gif ? 'photo' : 'video', gif ? null : length),
+        edited: true, sourceId: source.id,
+        fileName: source.fileName.replace(/\.mp4$/, ` (0.${String(Math.floor(body?.from ?? 0)).padStart(2, '0')}-0.${String(Math.floor(body?.to ?? 0)).padStart(2, '0')}).${gif ? 'gif' : 'mp4'}`),
+        bytes: gif ? 2_400_000 : Math.round(length * 900_000),
+      }
+      captures.push(made)
+      captures.sort((x, y) => y.takenAt.localeCompare(x.takenAt))
+      captureRevision++
+      return made
+    }
     if (method === 'POST') return captureCommand(b === 'record' ? c : b)
     if (method === 'DELETE') {
       const i = captures.findIndex((x) => x.id === b)

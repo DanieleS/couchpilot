@@ -36,6 +36,9 @@ namespace CouchPilot.Captures
         public string FileName { get; set; }
         // Changes when the file does: the thumbnail's URL carries it.
         public string Version { get; set; }
+        // Cut out of another clip on the phone: that clip's id, when it's still there.
+        public bool Edited { get; set; }
+        public string SourceId { get; set; }
     }
 
     public class ThumbnailSource
@@ -45,6 +48,7 @@ namespace CouchPilot.Captures
         public string Version;
         public bool Video;
         public double? Seconds;
+        public DateTime TakenUtc;
     }
 
     public class CapturesDto
@@ -62,12 +66,14 @@ namespace CouchPilot.Captures
     public class CaptureLibrary : IDisposable
     {
         private static readonly ILogger logger = LogManager.GetLogger();
-        private static readonly HashSet<string> PhotoExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".png", ".jpg", ".jpeg" };
+        // GIFs are the clip editor's: a photo as far as the gallery is concerned, one that moves.
+        private static readonly HashSet<string> PhotoExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".png", ".jpg", ".jpeg", ".gif" };
         private static readonly HashSet<string> VideoExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".mp4" };
         // NVIDIA's names: "Elden Ring 2024.10.05 - 21.42.13.02.mp4", "… Screenshot 2024.10.05 - ….png".
         private static readonly Regex NvidiaName = new Regex(@"\d{4}\.\d{2}\.\d{2} - \d{2}\.\d{2}\.\d{2}", RegexOptions.Compiled);
         // From the first date-like run on: "Elden Ring 10_5_2024 9_42_13 PM" → "Elden Ring".
         private static readonly Regex DateTail = new Regex(@"\s*\d{1,4}[._-]\d{1,2}[._-]\d{1,4}.*$", RegexOptions.Compiled);
+        private static readonly Regex EditSuffix = new Regex(@"(\s\(\d+(\.\d+)+-\d+(\.\d+)+\))?(\s\(\d+\))?$", RegexOptions.Compiled);
         private static readonly TimeSpan Settle = TimeSpan.FromMilliseconds(800);
 
         private readonly Func<IEnumerable<Game>> library;
@@ -122,6 +128,8 @@ namespace CouchPilot.Captures
             public int? Height { get; set; }
             public double? Seconds { get; set; }
             public bool Replay { get; set; }
+            // Cut from another capture by the clip editor: that one's id.
+            public string Source { get; set; }
         }
 
         private class Waiter
@@ -238,7 +246,29 @@ namespace CouchPilot.Captures
             Version = e.WrittenUtc.Ticks.ToString("x"),
             Video = e.Video,
             Seconds = e.Meta.Seconds,
+            TakenUtc = e.TakenUtc,
         };
+
+        // A file the clip editor just wrote into one of the folders: indexed now, remembered as
+        // cut from `sourceId`, and returned as the gallery will list it. Null if it isn't in a
+        // watched folder after all.
+        public CaptureDto Adopt(string path, string sourceId)
+        {
+            Rescan();
+            Entry entry;
+            lock (gate)
+            {
+                if (!entries.TryGetValue(path, out entry)) return null;
+                if (entry.Meta.Source != sourceId)
+                {
+                    entry.Meta.Source = sourceId;
+                    metaDirty = true;
+                }
+            }
+            SaveMeta();
+            Changed?.Invoke();
+            return ToDto(entry, new Names(library(), sessionLog, sessions));
+        }
 
         private Entry Find(string id)
         {
@@ -527,6 +557,7 @@ namespace CouchPilot.Captures
                     Seconds = info.Seconds,
                     // GeForce Experience names its Instant Replays "….DVR.mp4".
                     Replay = m?.Replay == true || file.Name.EndsWith(".DVR.mp4", StringComparison.OrdinalIgnoreCase),
+                    Source = m?.Source,
                 };
                 lock (gate)
                 {
@@ -567,6 +598,8 @@ namespace CouchPilot.Captures
                 Tool = e.Root.Tool,
                 FileName = System.IO.Path.GetFileName(e.Path),
                 Version = e.WrittenUtc.Ticks.ToString("x"),
+                Edited = e.Meta.Source != null,
+                SourceId = e.Meta.Source != null && byId.ContainsKey(e.Meta.Source) ? e.Meta.Source : null,
             };
         }
 
@@ -577,6 +610,8 @@ namespace CouchPilot.Captures
             var slash = relative.IndexOfAny(new[] { '\\', '/' });
             if (e.Root.Tool == "nvidia" && slash > 0) return relative.Substring(0, slash);
             var name = System.IO.Path.GetFileNameWithoutExtension(e.Path);
+            // The clip editor's « (0.12-0.41)» and « (2)», so the piece keeps its clip's name.
+            name = EditSuffix.Replace(name, "");
             if (name.EndsWith(".DVR", StringComparison.OrdinalIgnoreCase)) name = name.Substring(0, name.Length - 4);
             name = DateTail.Replace(name, "");
             if (name.EndsWith(" Screenshot", StringComparison.OrdinalIgnoreCase)) name = name.Substring(0, name.Length - 11);

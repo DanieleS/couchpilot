@@ -115,7 +115,7 @@ export function useCaptures() {
     }
   }
 
-  return { capture, list, items, fresh, help, pending, unseen, recordingSince, markSeen, screenshot, saveReplay, toggleRecording, remove }
+  return { capture, list, items, fresh, help, pending, unseen, recordingSince, markSeen, screenshot, saveReplay, toggleRecording, remove, announce }
 }
 
 // Days of play run 5:00 to 5:00, like the statistics: a night's session stays in one day.
@@ -151,6 +151,9 @@ export function fileSize(bytes: number) {
 }
 
 export const toolName = (tool: string | null) => (tool === 'gamebar' ? 'Game Bar' : tool === 'nvidia' ? 'NVIDIA' : null)
+
+// A GIF the clip editor made: a photo to the gallery, one that moves.
+export const isGif = (c: Capture) => /\.gif$/i.test(c.fileName)
 
 // «Ultimi 30 s», «Ultimi 2 min», or plain «Replay» when the tool doesn't say how long.
 export function replayLabel(seconds: number | null) {

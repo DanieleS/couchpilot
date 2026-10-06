@@ -2,7 +2,7 @@
 import { DialogContent, DialogDescription, DialogOverlay, DialogPortal, DialogRoot, DialogTitle, VisuallyHidden } from 'reka-ui'
 import { computed, nextTick, ref, watch } from 'vue'
 import { captureFileUrl, captureThumbUrl, imageUrl } from '../api'
-import { clipLength, dayLabel, fileSize, playDayKey, toolName } from '../captures'
+import { clipLength, dayLabel, fileSize, isGif, playDayKey, toolName } from '../captures'
 import { useCouchPilot } from '../store'
 import type { Capture } from '../types'
 import { placeholderGradient } from '../utils'
@@ -14,9 +14,11 @@ import CaptureThumb from './CaptureThumb.vue'
 const props = defineProps<{ items: Capture[] }>()
 const open = defineModel<boolean>('open', { required: true })
 const index = defineModel<number>('index', { required: true })
-const emit = defineEmits<{ remove: [capture: Capture] }>()
+const emit = defineEmits<{ remove: [capture: Capture]; trim: [capture: Capture] }>()
 
-const { games, error } = useCouchPilot()
+const { games, error, status } = useCouchPilot()
+// Clips can be cut when the PC has ffmpeg, and this phone may see captures at all.
+const canTrim = computed(() => !!status.value?.capture?.editing)
 const current = computed(() => props.items[index.value] ?? null)
 const file = computed(() => (current.value ? captureFileUrl(current.value) : null))
 
@@ -49,10 +51,10 @@ const meta = computed(() => {
   const time = new Date(c.takenAt).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })
   return [
     `${day} alle ${time}`,
-    c.kind === 'video' ? (c.replay ? `Replay di ${clipLength(c.seconds)}` : clipLength(c.seconds)) : null,
+    c.kind === 'video' ? (c.replay ? `Replay di ${clipLength(c.seconds)}` : clipLength(c.seconds)) : isGif(c) ? 'GIF' : null,
     c.width && c.height ? `${c.width}×${c.height}` : null,
     fileSize(c.bytes),
-    toolName(c.tool),
+    c.edited ? 'tagliata da una clip' : toolName(c.tool),
   ].filter(Boolean).join(' · ')
 })
 
@@ -66,7 +68,7 @@ async function share() {
   sharing.value = true
   try {
     const blob = await (await fetch(file.value)).blob()
-    const shared = new File([blob], c.fileName, { type: blob.type || (c.kind === 'video' ? 'video/mp4' : 'image/png') })
+    const shared = new File([blob], c.fileName, { type: blob.type || (c.kind === 'video' ? 'video/mp4' : isGif(c) ? 'image/gif' : 'image/png') })
     if (!navigator.canShare({ files: [shared] })) throw new Error('Il telefono non sa condividere questo file: salvalo e condividilo dalla galleria.')
     await navigator.share({ files: [shared], title: c.game ?? c.fileName })
   } catch (e) {
@@ -133,6 +135,7 @@ watch([index, open], async () => {
             <button v-if="canShare" class="btn share" :disabled="sharing || !file" @click="share">
               <span v-if="sharing" class="spinner" aria-hidden="true" /><AppIcon v-else name="share" :size="17" />{{ sharing ? 'Preparo…' : 'Condividi' }}
             </button>
+            <button v-if="current.kind === 'video' && canTrim" class="btn small" @click="emit('trim', current)"><AppIcon name="scissors" :size="17" />Taglia</button>
             <a v-if="file" class="btn small" :href="file" :download="current.fileName"><AppIcon name="download" :size="17" />Salva</a>
             <button class="btn small danger" @click="emit('remove', current)"><AppIcon name="trash" :size="17" />Elimina</button>
           </div>

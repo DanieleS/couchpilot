@@ -27,12 +27,14 @@ namespace CouchPilot.Server
 
         // With a certificate the port speaks HTTPS only: one port can't carry both, and the
         // phone's browser needs HTTPS to install the app.
-        public RemoteServer(int port, X509Certificate2 certificate, string webRoot, LibraryService library, GameControl games, DisplayService displays, RemoteInput input, AudioService audio, MediaService media, StatsService stats, CaptureService captures, CaptureLibrary captureLibrary, Thumbnails thumbnails)
+        public RemoteServer(int port, X509Certificate2 certificate, string webRoot, LibraryService library, GameControl games, DisplayService displays, RemoteInput input, AudioService audio, MediaService media, StatsService stats, CaptureService captures, CaptureLibrary captureLibrary, Thumbnails thumbnails, ClipEditor clips, PairingService pairing, Achievements.AchievementsService achievements)
         {
             this.certificate = certificate;
             Swan.Logging.Logger.NoLogging();
-            var status = new StatusSource(library, displays, input, captures);
-            live = new LiveSocket("/ws", input, audio, status);
+            var status = new StatusSource(library, displays, input, captures, clips, pairing, achievements);
+            live = new LiveSocket("/ws", input, audio, status, pairing);
+            // In front of everything: while pairing is on, /api answers only phones that typed the PIN.
+            var gate = new PairingGate(pairing, certificate != null);
 
             // EmbedIO's own listener: unlike HttpListener it can bind every interface
             // without an admin-only `netsh http add urlacl`.
@@ -42,8 +44,9 @@ namespace CouchPilot.Server
                         .WithMode(HttpListenerMode.EmbedIO);
                     if (certificate != null) o.WithCertificate(certificate);
                 })
+                .WithModule(gate)
                 .WithCors()
-                .WithWebApi("/api", SerializeJson, m => m.WithController(() => new ApiController(library, games, displays, audio, media, stats, status, live, captures, captureLibrary, thumbnails)))
+                .WithWebApi("/api", SerializeJson, m => m.WithController(() => new ApiController(library, games, displays, audio, media, stats, status, live, captures, captureLibrary, thumbnails, clips, pairing, gate, achievements)))
                 .WithModule(live);
 
             if (Directory.Exists(webRoot))
@@ -64,6 +67,13 @@ namespace CouchPilot.Server
                     // The code tells the phone what to show: how to turn the replay on, say.
                     ctx.Response.StatusCode = 409;
                     await SerializeJson(ctx, new { error = ex.Message, code = capture.Code });
+                    return;
+                }
+                if (ex is PairingException pairing)
+                {
+                    // wrong-pin, expired, too-soon: the pairing screen says what to do next.
+                    ctx.Response.StatusCode = pairing.Code == "wrong-pin" ? 403 : 409;
+                    await SerializeJson(ctx, new { error = ex.Message, code = pairing.Code, attemptsLeft = pairing.AttemptsLeft });
                     return;
                 }
                 ctx.Response.StatusCode = ex is DisplayException ? 409 : 500;
@@ -87,6 +97,11 @@ namespace CouchPilot.Server
         public void MediaChanged() => live.MediaChanged();
 
         public void CapturesChanged() => live.CapturesChanged();
+
+        public void AchievementsChanged() => live.AchievementsChanged();
+
+        // Pairing was just switched on: phones connected without a token are let go.
+        public void DropUnpaired() => live.DropUnpaired();
 
         public void Dispose()
         {

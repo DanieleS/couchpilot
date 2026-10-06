@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# A small ffmpeg.exe for the gallery's video thumbnails, cross-built for 64-bit Windows from
-# Linux (CI runs it on ubuntu-latest). Just what one frame of a capture needs:
+# A small ffmpeg.exe for the gallery's video thumbnails and the clip editor, cross-built for
+# 64-bit Windows from Linux (CI runs it on ubuntu-latest). Just what those two need:
 #
-#   in   the MP4s Game Bar and NVIDIA write: H.264, HEVC (8 and 10 bit), AV1 (dav1d)
-#   out  one JPEG on stdout
+#   in   the MP4s Game Bar and NVIDIA write: H.264, HEVC (8 and 10 bit), AV1 (dav1d), AAC sound
+#   out  one JPEG on stdout (a thumbnail, or a strip of frames for the trimmer);
+#        a piece of a clip as MP4 (H.264 with x264, AAC) or as GIF (with its own palette)
 #   on   the way, scaled down and, for HDR clips, tone-mapped to SDR (zimg)
 #
 # Everything static, no DLLs: a single file next to CouchPilot.dll.
@@ -19,6 +20,7 @@ set -euo pipefail
 FFMPEG_VERSION=n7.1.1
 DAV1D_VERSION=1.5.1
 ZIMG_VERSION=release-3.0.5
+X264_VERSION=stable
 HOST=x86_64-w64-mingw32
 
 WORK=$(realpath -m "${1:-build/ffmpeg}")
@@ -33,6 +35,8 @@ fetch() { # name url tag
 }
 fetch dav1d https://github.com/videolan/dav1d "$DAV1D_VERSION"
 fetch zimg https://github.com/sekrit-twc/zimg "$ZIMG_VERSION"
+# From GitHub's mirror of code.videolan.org, like dav1d: one host for every source.
+fetch x264 https://github.com/mirror/x264 "$X264_VERSION"
 fetch ffmpeg https://github.com/FFmpeg/FFmpeg "$FFMPEG_VERSION"
 
 export PKG_CONFIG_PATH=$PREFIX/lib/pkgconfig
@@ -66,6 +70,13 @@ if [ ! -f "$PREFIX/lib/libzimg.a" ]; then
     && make -j"$JOBS" && make install)
 fi
 
+# H.264 for the clips the editor writes: x264, the encoder every phone plays back.
+if [ ! -f "$PREFIX/lib/libx264.a" ]; then
+  (cd x264 && ./configure --host=$HOST --cross-prefix=$HOST- --prefix="$PREFIX" --enable-static --disable-cli \
+      --disable-opencl --enable-pic --disable-lavf --disable-swscale --disable-avs --disable-ffms --disable-gpac --disable-lsmash \
+    && make -j"$JOBS" && make install)
+fi
+
 cd ffmpeg
 ./configure \
   --prefix="$PREFIX" --arch=x86_64 --target-os=mingw32 --cross-prefix=$HOST- \
@@ -73,26 +84,28 @@ cd ffmpeg
   --extra-ldflags=-static --extra-libs=-lstdc++ \
   --enable-gpl --enable-version3 --enable-small \
   --disable-everything --disable-autodetect --disable-network --disable-doc --disable-debug \
-  --disable-ffplay --disable-ffprobe --disable-avdevice --disable-swresample --disable-postproc \
+  --disable-ffplay --disable-ffprobe --disable-avdevice --disable-postproc \
   --enable-w32threads \
-  --enable-libdav1d --enable-libzimg \
+  --enable-libdav1d --enable-libzimg --enable-libx264 \
   --enable-protocol=file,pipe \
   --enable-demuxer=mov \
-  --enable-parser=h264,hevc,av1 \
-  --enable-decoder=h264,hevc,libdav1d \
-  --enable-filter=scale,zscale,tonemap,format,null \
-  --enable-encoder=mjpeg \
-  --enable-muxer=image2pipe
+  --enable-parser=h264,hevc,av1,aac \
+  --enable-decoder=h264,hevc,libdav1d,aac \
+  --enable-filter=scale,zscale,tonemap,format,null,fps,tile,split,palettegen,paletteuse,aresample,aformat,anull,trim,atrim,setpts,asetpts \
+  --enable-encoder=mjpeg,libx264,aac,gif \
+  --enable-muxer=image2pipe,mp4,gif
 make -j"$JOBS"
 $HOST-strip -o "$OUT/ffmpeg.exe" ffmpeg.exe
 
 # GPL: say what this is and where its source lives.
 cat > "$OUT/ffmpeg-readme.txt" <<EOF
-ffmpeg.exe makes the thumbnails of the clips in CouchPilot's gallery.
+ffmpeg.exe makes the thumbnails of the clips in CouchPilot's gallery, and cuts the pieces
+of them the phone asks for, as MP4 or GIF.
 
 FFmpeg $FFMPEG_VERSION (https://github.com/FFmpeg/FFmpeg/tree/$FFMPEG_VERSION), GPL v3,
-with dav1d $DAV1D_VERSION (https://github.com/videolan/dav1d, BSD-2-Clause) and
-zimg $ZIMG_VERSION (https://github.com/sekrit-twc/zimg, WTFPL).
+with dav1d $DAV1D_VERSION (https://github.com/videolan/dav1d, BSD-2-Clause),
+zimg $ZIMG_VERSION (https://github.com/sekrit-twc/zimg, WTFPL) and
+x264 ($X264_VERSION branch, https://code.videolan.org/videolan/x264, GPL v2 or later).
 Built by scripts/build-ffmpeg.sh in the CouchPilot repository, which lists every option.
 EOF
 ls -la "$OUT/ffmpeg.exe"

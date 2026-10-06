@@ -3,7 +3,7 @@ export type IconName =
   | 'play' | 'search' | 'focus' | 'power' | 'plus' | 'pencil' | 'trash' | 'check' | 'x'
   | 'speaker' | 'speaker-off' | 'mic' | 'mic-off' | 'headphones' | 'tv' | 'download'
   | 'pause' | 'next' | 'previous' | 'music' | 'chart' | 'chevron-left' | 'chevron-right'
-  | 'camera' | 'record' | 'stop' | 'replay' | 'image' | 'share'
+  | 'camera' | 'record' | 'stop' | 'replay' | 'image' | 'share' | 'scissors' | 'trophy' | 'lock' | 'eye'
 
 defineProps<{ name: IconName; size?: number }>()
 
@@ -52,5 +52,9 @@ const SPEAKER = 'M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5
     <template v-else-if="name === 'replay'"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><path d="M3 3v5h5" /><path d="M12 7v5l3 2" /></template>
     <template v-else-if="name === 'image'"><rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="9" cy="9" r="2" /><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21" /></template>
     <template v-else-if="name === 'share'"><circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><path d="m8.6 13.5 6.8 4" /><path d="m15.4 6.5-6.8 4" /></template>
+    <template v-else-if="name === 'scissors'"><circle cx="6" cy="6" r="3" /><path d="M8.12 8.12 12 12" /><path d="M20 4 8.12 15.88" /><circle cx="6" cy="18" r="3" /><path d="M14.8 14.8 20 20" /></template>
+    <template v-else-if="name === 'trophy'"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6" /><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18" /><path d="M4 22h16" /><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22" /><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22" /><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z" /></template>
+    <template v-else-if="name === 'lock'"><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></template>
+    <template v-else-if="name === 'eye'"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0" /><circle cx="12" cy="12" r="3" /></template>
   </svg>
 </template>

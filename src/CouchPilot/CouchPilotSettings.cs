@@ -21,6 +21,11 @@ namespace CouchPilot
         private string certificatePassword = "";
         public string CertificatePassword { get => certificatePassword; set => SetValue(ref certificatePassword, value); }
 
+        // Phones have to type a PIN shown on the PC before they're let in; off, every phone on
+        // the network is, as it always was.
+        private bool requirePairing;
+        public bool RequirePairing { get => requirePairing; set => SetValue(ref requirePairing, value); }
+
         // Touchpad and keyboard from the phone: off unless you turn it on.
         private bool remoteInput;
         public bool RemoteInput { get => remoteInput; set => SetValue(ref remoteInput, value); }
@@ -65,6 +70,10 @@ namespace CouchPilot
 
         [DontSerialize]
         public IReadOnlyList<string> Addresses => plugin?.Addresses ?? Server.NetworkInfo.LanUrls(Port);
+
+        // The paired phones, for the settings view. Changes to them are saved at once, not with the settings.
+        [DontSerialize]
+        public Server.PairingService Pairing => plugin?.Pairing;
 
         [DontSerialize]
         public MqttConfig Mqtt => new MqttConfig
@@ -111,6 +120,7 @@ namespace CouchPilot
             }
             plugin.ApplyInputSetting();
             plugin.ApplyCaptureSettings();
+            plugin.ApplyPairingSetting();
             if (MqttChanged(editing))
             {
                 plugin.RestartHomeAssistant();
@@ -164,6 +174,7 @@ namespace CouchPilot
             Port = other.Port;
             CertificatePath = other.CertificatePath;
             CertificatePassword = other.CertificatePassword;
+            RequirePairing = other.RequirePairing;
             RemoteInput = other.RemoteInput;
             Captures = other.Captures;
             CaptureTool = other.CaptureTool;

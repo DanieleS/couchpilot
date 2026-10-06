@@ -21,12 +21,14 @@ namespace CouchPilot.Stats
         private readonly IPlayniteAPI api;
         private readonly SessionLog log;
         private readonly GameSessions running;
+        private readonly Achievements.AchievementsService achievements;
 
-        public StatsService(IPlayniteAPI api, SessionLog log, GameSessions running)
+        public StatsService(IPlayniteAPI api, SessionLog log, GameSessions running, Achievements.AchievementsService achievements)
         {
             this.api = api;
             this.log = log;
             this.running = running;
+            this.achievements = achievements;
         }
 
         // range: week, month or year; offset: 0 the current one, -1 the one before, and so on.
@@ -107,7 +109,17 @@ namespace CouchPilot.Stats
                 }).ToList(),
                 library = Library(),
                 resume = Resume(now),
+                achievements = AchievementsIn(from, to),
             };
+        }
+
+        // Unlocked in the period, by SuccessStory's dates: how many, and the latest few. Null
+        // without SuccessStory. Days of play run 5:00 to 5:00 here too.
+        private object AchievementsIn(DateTime from, DateTime to)
+        {
+            if (!achievements.Available) return null;
+            var unlocked = achievements.Unlocked((from + DayStartsAt).ToUniversalTime(), (to + DayStartsAt).ToUniversalTime());
+            return new { unlocked = unlocked.Count, recent = unlocked.Take(8).ToList() };
         }
 
         // One game: Playnite's totals, and what the log knows about its sessions.

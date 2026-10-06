@@ -32,6 +32,8 @@ namespace CouchPilot.Captures
         public string RecordingSince { get; set; }
         // How much a replay keeps, when the tool says (Game Bar does); null otherwise.
         public int? ReplaySeconds { get; set; }
+        // Clips can be trimmed on the PC (the bundled ffmpeg is there).
+        public bool Editing { get; set; }
     }
 
     // Screenshots, recordings and replays, made by the capture tool already on the PC: CouchPilot
