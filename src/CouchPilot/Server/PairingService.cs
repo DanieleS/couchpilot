@@ -6,6 +6,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Playnite.SDK;
 using Playnite.SDK.Data;
+using static CouchPilot.Lang;
 
 namespace CouchPilot.Server
 {
@@ -151,13 +152,13 @@ namespace CouchPilot.Server
                 var now = DateTime.UtcNow;
                 if (now - lastRequest < RequestEvery)
                 {
-                    throw new PairingException("too-soon", "Ho appena mostrato un PIN sul PC: aspetta qualche secondo.");
+                    throw new PairingException("too-soon", Tr("A PIN just went up on the PC: wait a few seconds.", "Ho appena mostrato un PIN sul PC: aspetta qualche secondo."));
                 }
                 lastRequest = now;
                 request = pending = new PinRequest
                 {
                     Pin = NewPin(),
-                    DeviceName = Clean(deviceName) ?? "Telefono",
+                    DeviceName = Clean(deviceName) ?? Pc("Phone", "Telefono"),
                     ExpiresAt = now + PinLifetime,
                 };
                 attemptsLeft = Attempts;
@@ -175,7 +176,7 @@ namespace CouchPilot.Server
                 if (pending == null || DateTime.UtcNow > pending.ExpiresAt)
                 {
                     pending = null;
-                    throw new PairingException("expired", "Il PIN è scaduto: chiedine un altro.");
+                    throw new PairingException("expired", Tr("The PIN has expired: ask for another one.", "Il PIN è scaduto: chiedine un altro."));
                 }
                 if ((pin ?? "").Trim() != pending.Pin)
                 {
@@ -184,9 +185,9 @@ namespace CouchPilot.Server
                     {
                         pending = null;
                         PinDone?.Invoke();
-                        throw new PairingException("expired", "Troppi tentativi: chiedi un altro PIN.");
+                        throw new PairingException("expired", Tr("Too many tries: ask for another PIN.", "Troppi tentativi: chiedi un altro PIN."));
                     }
-                    throw new PairingException("wrong-pin", attemptsLeft == 1 ? "PIN sbagliato, ultimo tentativo." : $"PIN sbagliato, {attemptsLeft} tentativi rimasti.", attemptsLeft);
+                    throw new PairingException("wrong-pin", attemptsLeft == 1 ? Tr("Wrong PIN, last try.", "PIN sbagliato, ultimo tentativo.") : Tr($"Wrong PIN, {attemptsLeft} tries left.", $"PIN sbagliato, {attemptsLeft} tentativi rimasti."), attemptsLeft);
                 }
                 token = NewToken();
                 Load();

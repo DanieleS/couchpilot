@@ -3,6 +3,7 @@ using System.IO;
 using System.Net;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
+using static CouchPilot.Lang;
 
 namespace CouchPilot.Server
 {
@@ -11,7 +12,7 @@ namespace CouchPilot.Server
     {
         public static X509Certificate2 Load(string path, string password)
         {
-            if (!File.Exists(path)) throw new InvalidOperationException($"Il certificato {path} non esiste.");
+            if (!File.Exists(path)) throw new InvalidOperationException(Pc($"The certificate {path} doesn't exist.", $"Il certificato {path} non esiste."));
 
             X509Certificate2 certificate;
             try
@@ -21,13 +22,13 @@ namespace CouchPilot.Server
             }
             catch (CryptographicException e)
             {
-                throw new InvalidOperationException($"Impossibile aprire il certificato (password sbagliata o formato non supportato): {e.Message}", e);
+                throw new InvalidOperationException(Pc($"Couldn't open the certificate (wrong password or unsupported format): {e.Message}", $"Impossibile aprire il certificato (password sbagliata o formato non supportato): {e.Message}"), e);
             }
 
             if (!certificate.HasPrivateKey)
             {
                 certificate.Dispose();
-                throw new InvalidOperationException("Il certificato non contiene la chiave privata: esporta il .pfx insieme alla chiave.");
+                throw new InvalidOperationException(Pc("The certificate has no private key: export the .pfx together with its key.", "Il certificato non contiene la chiave privata: esporta il .pfx insieme alla chiave."));
             }
             return certificate;
         }

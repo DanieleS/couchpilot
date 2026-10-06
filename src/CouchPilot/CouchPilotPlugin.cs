@@ -18,6 +18,7 @@ using CouchPilot.Stats;
 using Playnite.SDK;
 using Playnite.SDK.Events;
 using Playnite.SDK.Plugins;
+using static CouchPilot.Lang;
 
 namespace CouchPilot
 {
@@ -57,6 +58,7 @@ namespace CouchPilot
         public CouchPilotPlugin(IPlayniteAPI api) : base(api)
         {
             Properties = new GenericPluginProperties { HasSettings = true };
+            Lang.UsePlaynite(api.ApplicationSettings.Language);
             Settings = new CouchPilotSettings(this);
             sessions = new GameSessions();
             library = new LibraryService(api, sessions);
@@ -174,7 +176,7 @@ namespace CouchPilot
             }));
             PlayniteApi.Notifications.Add(new NotificationMessage(
                 "couchpilot-pin",
-                $"CouchPilot: «{request.DeviceName}» chiede di collegarsi. PIN: {request.Pin.Substring(0, 3)} {request.Pin.Substring(3)}",
+                Pc($"CouchPilot: “{request.DeviceName}” wants to connect. PIN: {request.Pin.Substring(0, 3)} {request.Pin.Substring(3)}", $"CouchPilot: «{request.DeviceName}» chiede di collegarsi. PIN: {request.Pin.Substring(0, 3)} {request.Pin.Substring(3)}"),
                 NotificationType.Info));
         }
 
@@ -246,7 +248,7 @@ namespace CouchPilot
 
         internal void PickCertificate()
         {
-            var path = PlayniteApi.Dialogs.SelectFile("Certificato PKCS#12|*.pfx;*.p12");
+            var path = PlayniteApi.Dialogs.SelectFile(Pc("PKCS#12 certificate|*.pfx;*.p12", "Certificato PKCS#12|*.pfx;*.p12"));
             if (!string.IsNullOrEmpty(path)) Settings.CertificatePath = path;
         }
 
@@ -267,7 +269,7 @@ namespace CouchPilot
                     {
                         PlayniteApi.Notifications.Add(new NotificationMessage(
                             "couchpilot-certificate",
-                            $"CouchPilot: il certificato HTTPS è scaduto il {certificate.NotAfter:d}, il telefono lo rifiuterà. Generane uno nuovo.",
+                            Pc($"CouchPilot: the HTTPS certificate expired on {certificate.NotAfter:d}, the phone will refuse it. Make a new one.", $"CouchPilot: il certificato HTTPS è scaduto il {certificate.NotAfter:d}, il telefono lo rifiuterà. Generane uno nuovo."),
                             NotificationType.Error));
                     }
                 }
@@ -283,7 +285,7 @@ namespace CouchPilot
                 logger.Error(e, $"CouchPilot could not listen on port {Settings.Port}");
                 PlayniteApi.Notifications.Add(new NotificationMessage(
                     "couchpilot-server",
-                    $"CouchPilot: impossibile avviare il server sulla porta {Settings.Port}. {e.Message}",
+                    Pc($"CouchPilot: couldn't start the server on port {Settings.Port}. {e.Message}", $"CouchPilot: impossibile avviare il server sulla porta {Settings.Port}. {e.Message}"),
                     NotificationType.Error));
             }
         }

@@ -14,6 +14,7 @@ using EmbedIO;
 using EmbedIO.Routing;
 using EmbedIO.WebApi;
 using Swan.Formatters;
+using static CouchPilot.Lang;
 
 namespace CouchPilot.Server
 {
@@ -54,6 +55,13 @@ namespace CouchPilot.Server
             this.live = live;
         }
 
+        // Errors go back in the phone's language.
+        protected override void OnBeforeHandler()
+        {
+            base.OnBeforeHandler();
+            UseRequest(Request.Headers["Accept-Language"]);
+        }
+
         // The paired phone this request came from, or null while pairing is off.
         private PairedDevice Device => PairingGate.DeviceOf(HttpContext);
 
@@ -73,7 +81,7 @@ namespace CouchPilot.Server
         [Route(HttpVerbs.Post, "/pair/request")]
         public async Task<object> RequestPin()
         {
-            if (!pairing.Required) throw new HttpException(HttpStatusCode.Conflict, "L'abbinamento non è richiesto: il telefono è già dentro.");
+            if (!pairing.Required) throw new HttpException(HttpStatusCode.Conflict, Tr("Pairing isn't required: the phone is already in.", "L'abbinamento non è richiesto: il telefono è già dentro."));
             var body = await ReadBody<PairBody>();
             var request = pairing.RequestPin(body?.Name);
             return new { expiresAt = request.ExpiresAt.ToString("o"), seconds = (int)(request.ExpiresAt - DateTime.UtcNow).TotalSeconds };
@@ -83,7 +91,7 @@ namespace CouchPilot.Server
         [Route(HttpVerbs.Post, "/pair")]
         public async Task<object> CompletePairing()
         {
-            if (!pairing.Required) throw new HttpException(HttpStatusCode.Conflict, "L'abbinamento non è richiesto: il telefono è già dentro.");
+            if (!pairing.Required) throw new HttpException(HttpStatusCode.Conflict, Tr("Pairing isn't required: the phone is already in.", "L'abbinamento non è richiesto: il telefono è già dentro."));
             var body = await ReadBody<PairBody>();
             var device = pairing.Complete(body?.Pin, body?.Name, out var token);
             gate.SetCookie(HttpContext, token);
@@ -104,11 +112,11 @@ namespace CouchPilot.Server
         public object Games() => library.All();
 
         [Route(HttpVerbs.Get, "/games/{id}")]
-        public object Game(string id) => library.Get(ParseId(id)) ?? throw HttpException.NotFound("Gioco non trovato.");
+        public object Game(string id) => library.Get(ParseId(id)) ?? throw HttpException.NotFound(Tr("Game not found.", "Gioco non trovato."));
 
         // Playnite's totals for the game, and what CouchPilot logged of its sessions.
         [Route(HttpVerbs.Get, "/games/{id}/stats")]
-        public object GameStats(string id) => stats.Game(ParseId(id)) ?? throw HttpException.NotFound("Gioco non trovato.");
+        public object GameStats(string id) => stats.Game(ParseId(id)) ?? throw HttpException.NotFound(Tr("Game not found.", "Gioco non trovato."));
 
         // ?range=week|month|year&offset=0 (−1 the one before, and so on).
         [Route(HttpVerbs.Get, "/stats")]
@@ -126,9 +134,9 @@ namespace CouchPilot.Server
         [Route(HttpVerbs.Post, "/games/{id}/start")]
         public void Start(string id)
         {
-            var game = library.Get(ParseId(id)) ?? throw HttpException.NotFound("Gioco non trovato.");
-            if (!game.Installed) throw new HttpException(HttpStatusCode.Conflict, "Il gioco non è installato.");
-            if (game.Running) throw new HttpException(HttpStatusCode.Conflict, "Il gioco è già in esecuzione.");
+            var game = library.Get(ParseId(id)) ?? throw HttpException.NotFound(Tr("Game not found.", "Gioco non trovato."));
+            if (!game.Installed) throw new HttpException(HttpStatusCode.Conflict, Tr("The game isn't installed.", "Il gioco non è installato."));
+            if (game.Running) throw new HttpException(HttpStatusCode.Conflict, Tr("The game is already running.", "Il gioco è già in esecuzione."));
             games.Start(ParseId(id));
             live.Nudge();
         }
@@ -136,33 +144,33 @@ namespace CouchPilot.Server
         [Route(HttpVerbs.Post, "/games/{id}/install")]
         public void Install(string id)
         {
-            var game = library.Get(ParseId(id)) ?? throw HttpException.NotFound("Gioco non trovato.");
-            if (game.Installed) throw new HttpException(HttpStatusCode.Conflict, "Il gioco è già installato.");
-            if (game.Installing || game.Uninstalling) throw new HttpException(HttpStatusCode.Conflict, "Playnite ci sta già lavorando.");
+            var game = library.Get(ParseId(id)) ?? throw HttpException.NotFound(Tr("Game not found.", "Gioco non trovato."));
+            if (game.Installed) throw new HttpException(HttpStatusCode.Conflict, Tr("The game is already installed.", "Il gioco è già installato."));
+            if (game.Installing || game.Uninstalling) throw new HttpException(HttpStatusCode.Conflict, Tr("Playnite is already working on it.", "Playnite ci sta già lavorando."));
             games.Install(ParseId(id));
         }
 
         [Route(HttpVerbs.Post, "/games/{id}/uninstall")]
         public void Uninstall(string id)
         {
-            var game = library.Get(ParseId(id)) ?? throw HttpException.NotFound("Gioco non trovato.");
-            if (!game.Installed) throw new HttpException(HttpStatusCode.Conflict, "Il gioco non è installato.");
-            if (game.Running) throw new HttpException(HttpStatusCode.Conflict, "Chiudi il gioco prima di disinstallarlo.");
-            if (game.Installing || game.Uninstalling) throw new HttpException(HttpStatusCode.Conflict, "Playnite ci sta già lavorando.");
+            var game = library.Get(ParseId(id)) ?? throw HttpException.NotFound(Tr("Game not found.", "Gioco non trovato."));
+            if (!game.Installed) throw new HttpException(HttpStatusCode.Conflict, Tr("The game isn't installed.", "Il gioco non è installato."));
+            if (game.Running) throw new HttpException(HttpStatusCode.Conflict, Tr("Close the game before uninstalling it.", "Chiudi il gioco prima di disinstallarlo."));
+            if (game.Installing || game.Uninstalling) throw new HttpException(HttpStatusCode.Conflict, Tr("Playnite is already working on it.", "Playnite ci sta già lavorando."));
             games.Uninstall(ParseId(id));
         }
 
         [Route(HttpVerbs.Post, "/games/{id}/stop")]
         public void Stop(string id)
         {
-            if (!games.Stop(ParseId(id))) throw new HttpException(HttpStatusCode.Conflict, "Non trovo processi di questo gioco.");
+            if (!games.Stop(ParseId(id))) throw new HttpException(HttpStatusCode.Conflict, Tr("Can't find any process of this game.", "Non trovo processi di questo gioco."));
             live.Nudge();
         }
 
         [Route(HttpVerbs.Post, "/games/{id}/focus")]
         public void Focus(string id)
         {
-            if (!games.Focus(ParseId(id))) throw new HttpException(HttpStatusCode.Conflict, "Non trovo la finestra del gioco.");
+            if (!games.Focus(ParseId(id))) throw new HttpException(HttpStatusCode.Conflict, Tr("Can't find the game's window.", "Non trovo la finestra del gioco."));
         }
 
         [Route(HttpVerbs.Post, "/displays/presets")]
@@ -178,7 +186,7 @@ namespace CouchPilot.Server
         public async Task RenamePreset(string id)
         {
             var body = await ReadBody<NameBody>();
-            if (!displays.Rename(id, body?.Name)) throw HttpException.NotFound("Preset non trovato.");
+            if (!displays.Rename(id, body?.Name)) throw HttpException.NotFound(Tr("Preset not found.", "Preset non trovato."));
             live.Nudge();
         }
 
@@ -188,21 +196,21 @@ namespace CouchPilot.Server
         public async Task SetPresetAudio(string id)
         {
             var body = await ReadBody<PresetAudioBody>();
-            if (!displays.SetAudioOutput(id, body?.OutputId, body?.OutputName)) throw HttpException.NotFound("Preset non trovato.");
+            if (!displays.SetAudioOutput(id, body?.OutputId, body?.OutputName)) throw HttpException.NotFound(Tr("Preset not found.", "Preset non trovato."));
             live.Nudge();
         }
 
         [Route(HttpVerbs.Delete, "/displays/presets/{id}")]
         public void DeletePreset(string id)
         {
-            if (!displays.Delete(id)) throw HttpException.NotFound("Preset non trovato.");
+            if (!displays.Delete(id)) throw HttpException.NotFound(Tr("Preset not found.", "Preset non trovato."));
             live.Nudge();
         }
 
         [Route(HttpVerbs.Post, "/displays/presets/{id}/apply")]
         public void ApplyPreset(string id)
         {
-            if (!displays.Apply(id)) throw HttpException.NotFound("Preset non trovato.");
+            if (!displays.Apply(id)) throw HttpException.NotFound(Tr("Preset not found.", "Preset non trovato."));
             live.Nudge();
         }
 
@@ -239,19 +247,19 @@ namespace CouchPilot.Server
         [Route(HttpVerbs.Post, "/media/play-pause")]
         public void MediaPlayPause()
         {
-            if (!media.PlayPause()) throw new HttpException(HttpStatusCode.Conflict, "L'app non accetta il comando.");
+            if (!media.PlayPause()) throw new HttpException(HttpStatusCode.Conflict, Tr("The app doesn't accept the command.", "L'app non accetta il comando."));
         }
 
         [Route(HttpVerbs.Post, "/media/next")]
         public void MediaNext()
         {
-            if (!media.Next()) throw new HttpException(HttpStatusCode.Conflict, "L'app non accetta il comando.");
+            if (!media.Next()) throw new HttpException(HttpStatusCode.Conflict, Tr("The app doesn't accept the command.", "L'app non accetta il comando."));
         }
 
         [Route(HttpVerbs.Post, "/media/previous")]
         public void MediaPrevious()
         {
-            if (!media.Previous()) throw new HttpException(HttpStatusCode.Conflict, "L'app non accetta il comando.");
+            if (!media.Previous()) throw new HttpException(HttpStatusCode.Conflict, Tr("The app doesn't accept the command.", "L'app non accetta il comando."));
         }
 
         // For picking a display preset's audio output; the live mixer has its own list.
@@ -311,7 +319,7 @@ namespace CouchPilot.Server
         public async Task<CaptureDto> Trim(string id)
         {
             RequireCaptures();
-            var body = await ReadBody<TrimBody>() ?? throw HttpException.BadRequest("Dimmi da dove a dove.");
+            var body = await ReadBody<TrimBody>() ?? throw HttpException.BadRequest(Tr("Say from where to where.", "Dimmi da dove a dove."));
             return await clips.Trim(id, body);
         }
 
@@ -331,7 +339,7 @@ namespace CouchPilot.Server
         // Achievements, from SuccessStory's data. 404 for a game it has nothing on.
         [Route(HttpVerbs.Get, "/games/{id}/achievements")]
         public object GameAchievements(string id) =>
-            achievements.Game(ParseId(id)) ?? throw new HttpException(HttpStatusCode.NotFound, "Nessun obiettivo per questo gioco.");
+            achievements.Game(ParseId(id)) ?? throw new HttpException(HttpStatusCode.NotFound, Tr("No achievements for this game.", "Nessun obiettivo per questo gioco."));
 
         // The icon of an achievement SuccessStory keeps on disk (web ones are linked directly). ?locked=1 for the locked one.
         [Route(HttpVerbs.Get, "/games/{id}/achievements/{index}/icon")]
@@ -356,7 +364,7 @@ namespace CouchPilot.Server
         public void DeleteCapture(string id)
         {
             RequireCaptures();
-            if (!captureLibrary.Delete(id)) throw HttpException.NotFound("Cattura non trovata.");
+            if (!captureLibrary.Delete(id)) throw HttpException.NotFound(Tr("Capture not found.", "Cattura non trovata."));
             thumbnails.Forget(id);
         }
 
@@ -378,7 +386,7 @@ namespace CouchPilot.Server
         public async Task CaptureFile(string id)
         {
             RequireCaptures();
-            var path = captureLibrary.PathOf(id) ?? throw HttpException.NotFound("Cattura non trovata.");
+            var path = captureLibrary.PathOf(id) ?? throw HttpException.NotFound(Tr("Capture not found.", "Cattura non trovata."));
             using (var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 64 * 1024, true))
             {
                 var length = file.Length;
@@ -427,8 +435,8 @@ namespace CouchPilot.Server
         // unless this phone is allowed to see them.
         private void RequireCaptures()
         {
-            if (!captures.Enabled) throw new HttpException(HttpStatusCode.Forbidden, "Le catture sono spente nelle impostazioni di CouchPilot.");
-            if (Device != null && !Device.AllowCaptures) throw new HttpException(HttpStatusCode.Forbidden, "Questo telefono non può vedere le catture: cambialo nelle impostazioni di CouchPilot.");
+            if (!captures.Enabled) throw new HttpException(HttpStatusCode.Forbidden, Tr("Captures are off in CouchPilot's settings.", "Le catture sono spente nelle impostazioni di CouchPilot."));
+            if (Device != null && !Device.AllowCaptures) throw new HttpException(HttpStatusCode.Forbidden, Tr("This phone may not see the captures: change it in CouchPilot's settings.", "Questo telefono non può vedere le catture: cambialo nelle impostazioni di CouchPilot."));
         }
 
         public class NameBody
@@ -473,6 +481,6 @@ namespace CouchPilot.Server
         }
 
         private static Guid ParseId(string id) =>
-            Guid.TryParse(id, out var guid) ? guid : throw HttpException.BadRequest("Id non valido.");
+            Guid.TryParse(id, out var guid) ? guid : throw HttpException.BadRequest(Tr("Invalid id.", "Id non valido."));
     }
 }

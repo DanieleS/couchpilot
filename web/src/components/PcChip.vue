@@ -1,11 +1,13 @@
 <script setup lang="ts">
+import { t } from '../i18n'
+
 defineProps<{ name: string | null }>()
 </script>
 
 <template>
   <span class="chip">
     <span class="dot" :class="{ online: name }" />
-    {{ name ?? 'Offline' }}
+    {{ name ?? t.app.offline }}
   </span>
 </template>
 

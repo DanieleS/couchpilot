@@ -4,6 +4,7 @@ import { onChanged } from './live'
 import { Topic } from './protocol'
 import { serialized, useCouchPilot } from './store'
 import type { Capture, Captures } from './types'
+import { locale, t } from './i18n'
 import { capitalize } from './utils'
 
 // Screenshots and clips: the list in the capture tools' folders, fetched again whenever the live
@@ -127,11 +128,11 @@ export function playDayKey(iso: string) {
 export function dayLabel(key: string) {
   const today = playDayKey(new Date().toISOString())
   const yesterday = playDayKey(new Date(Date.now() - 86400000).toISOString())
-  if (key === today) return 'Oggi'
-  if (key === yesterday) return 'Ieri'
+  if (key === today) return t.captures.today
+  if (key === yesterday) return t.captures.yesterday
   const [y, m, d] = key.split('-').map(Number)
   const date = new Date(y, m - 1, d)
-  return capitalize(date.toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long', year: y === new Date().getFullYear() ? undefined : 'numeric' }))
+  return capitalize(date.toLocaleDateString(locale, { weekday: 'long', day: 'numeric', month: 'long', year: y === new Date().getFullYear() ? undefined : 'numeric' }))
 }
 
 // 0:30, 2:14, 1:02:07.
@@ -146,8 +147,8 @@ export function clipLength(seconds: number | null) {
 
 export function fileSize(bytes: number) {
   if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} kB`
-  if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toLocaleString('it-IT', { maximumFractionDigits: bytes < 10 * 1024 ** 2 ? 1 : 0 })} MB`
-  return `${(bytes / 1024 ** 3).toLocaleString('it-IT', { maximumFractionDigits: 1 })} GB`
+  if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toLocaleString(locale, { maximumFractionDigits: bytes < 10 * 1024 ** 2 ? 1 : 0 })} MB`
+  return `${(bytes / 1024 ** 3).toLocaleString(locale, { maximumFractionDigits: 1 })} GB`
 }
 
 export const toolName = (tool: string | null) => (tool === 'gamebar' ? 'Game Bar' : tool === 'nvidia' ? 'NVIDIA' : null)
@@ -155,8 +156,8 @@ export const toolName = (tool: string | null) => (tool === 'gamebar' ? 'Game Bar
 // A GIF the clip editor made: a photo to the gallery, one that moves.
 export const isGif = (c: Capture) => /\.gif$/i.test(c.fileName)
 
-// «Ultimi 30 s», «Ultimi 2 min», or plain «Replay» when the tool doesn't say how long.
+// «Last 30 s», «Last 2 min», or plain «Replay» when the tool doesn't say how long.
 export function replayLabel(seconds: number | null) {
-  if (!seconds) return 'Replay'
-  return seconds < 60 ? `Ultimi ${seconds} s` : `Ultimi ${Math.round(seconds / 60)} min`
+  if (!seconds) return t.captures.replay
+  return seconds < 60 ? t.captures.lastSeconds(seconds) : t.captures.lastMinutes(Math.round(seconds / 60))
 }

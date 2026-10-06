@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { DialogClose, DialogContent, DialogDescription, DialogOverlay, DialogPortal, DialogRoot, DialogTitle } from 'reka-ui'
 import { ref, watch } from 'vue'
+import { t } from '../i18n'
 
 const props = defineProps<{ title: string; description?: string; initial?: string; confirmLabel: string }>()
 const open = defineModel<boolean>('open', { required: true })
@@ -22,11 +23,11 @@ function submit() {
       <DialogOverlay class="sheet-overlay" />
       <DialogContent class="dialog card" @open-auto-focus.prevent="($event.target as HTMLElement)?.querySelector('input')?.focus()">
         <DialogTitle class="title">{{ title }}</DialogTitle>
-        <DialogDescription class="desc">{{ description ?? 'Dagli un nome che riconosci al volo.' }}</DialogDescription>
+        <DialogDescription class="desc">{{ description ?? t.app.namePrompt.description }}</DialogDescription>
         <form @submit.prevent="submit">
-          <input v-model="name" class="field" placeholder="Es. Solo TV" maxlength="40" autocomplete="off" />
+          <input v-model="name" class="field" :placeholder="t.app.namePrompt.placeholder" maxlength="40" autocomplete="off" />
           <div class="actions">
-            <DialogClose class="btn btn-ghost" type="button">Annulla</DialogClose>
+            <DialogClose class="btn btn-ghost" type="button">{{ t.app.cancel }}</DialogClose>
             <button class="btn btn-ink" type="submit" :disabled="!name.trim()">{{ confirmLabel }}</button>
           </div>
         </form>

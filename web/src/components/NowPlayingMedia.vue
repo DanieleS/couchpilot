@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { mediaArtUrl } from '../api'
+import { t } from '../i18n'
 import { appName, useNowPlaying } from '../media'
 import { useNow } from '../useNow'
 import { placeholderGradient } from '../utils'
@@ -26,14 +27,14 @@ const clock = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60))
 </script>
 
 <template>
-  <section v-if="media" class="media card" aria-label="In riproduzione">
+  <section v-if="media" class="media card" :aria-label="t.audio.media.label">
     <div class="top">
       <span class="art" :style="art ? undefined : { background: placeholderGradient(media.title) }">
         <img v-if="art" :src="art" alt="" @error="artFailed = true" />
         <AppIcon v-else name="music" :size="20" />
       </span>
       <div class="text">
-        <p class="label">{{ media.playing ? 'In riproduzione' : 'In pausa' }}</p>
+        <p class="label">{{ media.playing ? t.audio.media.playing : t.audio.media.paused }}</p>
         <p class="title truncate">{{ media.title }}</p>
         <p v-if="subtitle" class="sub truncate">{{ subtitle }}</p>
       </div>
@@ -43,11 +44,11 @@ const clock = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60))
       <span class="times tabular"><span>{{ clock(position) }}</span><span>{{ clock(media.durationSeconds) }}</span></span>
     </div>
     <div class="controls">
-      <button class="icon-btn" :disabled="!media.canPrevious" aria-label="Precedente" @click="previous"><AppIcon name="previous" :size="18" /></button>
-      <button class="icon-btn play" :disabled="!media.canPlayPause" :aria-label="media.playing ? 'Pausa' : 'Riproduci'" @click="playPause">
+      <button class="icon-btn" :disabled="!media.canPrevious" :aria-label="t.audio.media.previous" @click="previous"><AppIcon name="previous" :size="18" /></button>
+      <button class="icon-btn play" :disabled="!media.canPlayPause" :aria-label="media.playing ? t.audio.media.pause : t.audio.media.play" @click="playPause">
         <AppIcon :name="media.playing ? 'pause' : 'play'" :size="20" />
       </button>
-      <button class="icon-btn" :disabled="!media.canNext" aria-label="Successivo" @click="next"><AppIcon name="next" :size="18" /></button>
+      <button class="icon-btn" :disabled="!media.canNext" :aria-label="t.audio.media.next" @click="next"><AppIcon name="next" :size="18" /></button>
     </div>
   </section>
 </template>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { t } from '../i18n'
 import type { RunningGame } from '../types'
 import AppIcon from './AppIcon.vue'
 import GameCover from './GameCover.vue'
@@ -11,11 +12,11 @@ const emit = defineEmits<{ focus: []; close: [] }>()
   <div class="bar">
     <GameCover :id="game.id" :name="game.name" :has-cover="game.hasCover" class="mini" />
     <div class="info">
-      <p class="label">In gioco</p>
+      <p class="label">{{ t.audio.nowPlaying.inGame }}</p>
       <p class="name truncate">{{ game.name }}</p>
     </div>
-    <button class="icon-btn dark" aria-label="Primo piano" @click="emit('focus')"><AppIcon name="focus" :size="16" /></button>
-    <button class="icon-btn danger" aria-label="Chiudi" @click="emit('close')"><AppIcon name="power" :size="16" /></button>
+    <button class="icon-btn dark" :aria-label="t.audio.nowPlaying.focus" @click="emit('focus')"><AppIcon name="focus" :size="16" /></button>
+    <button class="icon-btn danger" :aria-label="t.audio.nowPlaying.close" @click="emit('close')"><AppIcon name="power" :size="16" /></button>
   </div>
 </template>
 

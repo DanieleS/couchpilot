@@ -1,5 +1,6 @@
 import { onScopeDispose, ref } from 'vue'
 import { api } from './api'
+import { t } from './i18n'
 import { onChanged } from './live'
 import { Topic } from './protocol'
 import { useCouchPilot } from './store'
@@ -47,7 +48,7 @@ export function useNowPlaying() {
 
 // Windows names apps by executable or package id; turn the usual ones into words.
 const known: Record<string, string> = {
-  spotify: 'Spotify', msedge: 'Edge', chrome: 'Chrome', firefox: 'Firefox', zunemusic: 'Lettore multimediale',
+  spotify: 'Spotify', msedge: 'Edge', chrome: 'Chrome', firefox: 'Firefox', zunemusic: t.audio.media.mediaPlayer,
   vlc: 'VLC', foobar2000: 'foobar2000', musicbee: 'MusicBee', tidal: 'TIDAL', applemusic: 'Apple Music',
 }
 export function appName(id: string | null) {

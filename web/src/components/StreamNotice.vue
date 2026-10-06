@@ -1,3 +1,7 @@
+<script setup lang="ts">
+import { t } from '../i18n'
+</script>
+
 <template>
   <div class="notice" role="status">
     <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -7,8 +11,8 @@
       <line x1="2" x2="2.01" y1="20" y2="20" />
     </svg>
     <div>
-      <p class="title">Stream Vibepollo in corso</p>
-      <p class="text">Gli schermi li sta gestendo Vibepollo. I preset tornano disponibili quando lo stream finisce.</p>
+      <p class="title">{{ t.app.stream.title }}</p>
+      <p class="text">{{ t.app.stream.text }}</p>
     </div>
   </div>
 </template>

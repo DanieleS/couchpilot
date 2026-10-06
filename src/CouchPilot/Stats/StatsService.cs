@@ -5,6 +5,7 @@ using System.Linq;
 using CouchPilot.Games;
 using Playnite.SDK;
 using Playnite.SDK.Models;
+using static CouchPilot.Lang;
 
 namespace CouchPilot.Stats
 {
@@ -105,7 +106,7 @@ namespace CouchPilot.Stats
                 top = perGame.OrderByDescending(p => p.Value).Take(5).Select(p =>
                 {
                     var g = games.Get(p.Key);
-                    return new { id = p.Key.ToString(), name = g?.Name ?? "Gioco rimosso", seconds = p.Value, hasCover = !string.IsNullOrEmpty(g?.CoverImage) };
+                    return new { id = p.Key.ToString(), name = g?.Name ?? Tr("Removed game", "Gioco rimosso"), seconds = p.Value, hasCover = !string.IsNullOrEmpty(g?.CoverImage) };
                 }).ToList(),
                 library = Library(),
                 resume = Resume(now),

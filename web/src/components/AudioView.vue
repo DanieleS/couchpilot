@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useAudio, type MixerChannel } from '../audio'
+import { t } from '../i18n'
 import type { AudioFlow } from '../protocol'
 import { useCouchPilot } from '../store'
 import AppIcon from './AppIcon.vue'
@@ -46,13 +47,13 @@ const inputVolume = endpointVolume(() => input.value)
 <template>
   <div class="page">
     <header class="page-header">
-      <h1>Audio</h1>
+      <h1>{{ t.audio.title }}</h1>
       <PcChip :name="status?.pc ?? null" />
     </header>
 
     <div v-if="!state && !status" class="empty">
-      <p class="empty-title">Mi collego al PC…</p>
-      <p class="muted">Il PC e il telefono devono essere sulla stessa rete.</p>
+      <p class="empty-title">{{ t.audio.connecting }}</p>
+      <p class="muted">{{ t.audio.sameNetwork }}</p>
     </div>
     <div v-else-if="!state" class="skeleton" />
 
@@ -61,23 +62,23 @@ const inputVolume = endpointVolume(() => input.value)
         <button class="device card" @click="choose('output')">
           <span class="ico"><AppIcon :name="outputDevice ? deviceIcon(outputDevice.kind) : 'speaker-off'" :size="18" /></span>
           <span class="text">
-            <span class="label">Uscita</span>
-            <span class="name truncate">{{ outputDevice?.name ?? 'Nessuna uscita attiva' }}</span>
+            <span class="label">{{ t.audio.output }}</span>
+            <span class="name truncate">{{ outputDevice?.name ?? t.audio.noOutput }}</span>
           </span>
-          <span class="change">Cambia</span>
+          <span class="change">{{ t.audio.change }}</span>
         </button>
 
         <div v-if="output" class="master card">
           <div class="master-top">
-            <span class="label-strong">Volume generale</span>
-            <span class="big-number tabular" :class="{ off: output.muted }">{{ output.muted ? 'Muto' : output.volume }}</span>
+            <span class="label-strong">{{ t.audio.masterVolume }}</span>
+            <span class="big-number tabular" :class="{ off: output.muted }">{{ output.muted ? t.audio.muted : output.volume }}</span>
           </div>
           <div class="row">
-            <VolumeSlider v-model="outputVolume" big label="Volume generale" :muted="output.muted" />
+            <VolumeSlider v-model="outputVolume" big :label="t.audio.masterVolume" :muted="output.muted" />
             <button
               class="icon-btn mute"
               :class="{ on: output.muted }"
-              :aria-label="output.muted ? 'Riattiva l\'audio' : 'Silenzia tutto'"
+              :aria-label="output.muted ? t.audio.unmuteAll : t.audio.muteAll"
               :aria-pressed="output.muted"
               @click="set(output, { muted: !output.muted })"
             >
@@ -91,28 +92,28 @@ const inputVolume = endpointVolume(() => input.value)
       <NowPlayingMedia class="now-playing" />
 
       <template v-if="output">
-        <p class="eyebrow">Mixer</p>
+        <p class="eyebrow">{{ t.audio.mixer }}</p>
         <AudioGameCard v-for="g in games" :key="g.stableKey" class="game" :channel="g" :level="levelOf(g)" @change="set(g, $event)" />
-        <p v-if="apps.length === 0 && games.length === 0" class="muted hint">Nessuna app sta usando l'audio adesso.</p>
+        <p v-if="apps.length === 0 && games.length === 0" class="muted hint">{{ t.audio.noApps }}</p>
         <TransitionGroup v-else tag="ul" name="list" class="apps">
           <AudioAppRow v-for="a in apps" :key="a.stableKey" :app="a" :level="levelOf(a)" @change="set(a, $event)" />
         </TransitionGroup>
       </template>
 
-      <p class="eyebrow">Ingresso</p>
+      <p class="eyebrow">{{ t.audio.input }}</p>
       <div class="card mic">
         <button class="mic-head" @click="choose('input')">
           <span class="ico small"><AppIcon :name="input?.muted ? 'mic-off' : 'mic'" :size="15" /></span>
-          <span class="name truncate">{{ input?.name ?? 'Nessun microfono attivo' }}</span>
-          <span class="change">Cambia</span>
+          <span class="name truncate">{{ input?.name ?? t.audio.noMic }}</span>
+          <span class="change">{{ t.audio.change }}</span>
         </button>
         <div v-if="input" class="row">
-          <VolumeSlider v-model="inputVolume" label="Volume del microfono" :muted="input.muted" />
+          <VolumeSlider v-model="inputVolume" :label="t.audio.micVolume" :muted="input.muted" />
           <span class="pct tabular">{{ input.volume }}</span>
           <button
             class="icon-btn mute"
             :class="{ on: input.muted }"
-            :aria-label="input.muted ? 'Riattiva il microfono' : 'Silenzia il microfono'"
+            :aria-label="input.muted ? t.audio.unmuteMic : t.audio.muteMic"
             :aria-pressed="input.muted"
             @click="set(input, { muted: !input.muted })"
           >

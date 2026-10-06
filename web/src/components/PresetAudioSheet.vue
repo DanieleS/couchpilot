@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { api } from '../api'
+import { t } from '../i18n'
 import type { AudioOutput, Preset } from '../types'
 import AppIcon from './AppIcon.vue'
 import BottomSheet from './BottomSheet.vue'
@@ -24,7 +25,7 @@ watch(open, (o) => {
 const missing = computed(() => {
   const p = props.preset
   if (!p?.audioOutputId || !outputs.value || outputs.value.some((o) => o.id === p.audioOutputId)) return null
-  return p.audioOutputName ?? 'Dispositivo audio'
+  return p.audioOutputName ?? t.audio.preset.device
 })
 const pick = (output: AudioOutput | null) => {
   if ((output?.id ?? null) !== (props.preset?.audioOutputId ?? null)) emit('select', output)
@@ -33,21 +34,21 @@ const pick = (output: AudioOutput | null) => {
 </script>
 
 <template>
-  <BottomSheet v-model:open="open" :title="`Audio con ${preset?.name ?? ''}`">
-    <h2 class="title">Audio con «{{ preset?.name }}»</h2>
-    <p class="muted lead">Quando applichi il preset, l'audio passa qui. Se il preset viene annullato, torna com'era.</p>
+  <BottomSheet v-model:open="open" :title="t.audio.preset.sheetTitle(preset?.name ?? '')">
+    <h2 class="title">{{ t.audio.preset.heading(preset?.name ?? '') }}</h2>
+    <p class="muted lead">{{ t.audio.preset.lead }}</p>
     <ul class="list">
       <li>
         <button class="device" :class="{ on: !preset?.audioOutputId }" @click="pick(null)">
           <span class="ico"><AppIcon name="x" :size="18" /></span>
-          <span class="text"><span class="name">Non cambiare l'audio</span></span>
+          <span class="text"><span class="name">{{ t.audio.preset.unchanged }}</span></span>
           <AppIcon v-if="!preset?.audioOutputId" name="check" :size="18" class="check" />
         </button>
       </li>
       <li v-if="missing">
         <button class="device on" disabled>
           <span class="ico"><AppIcon name="speaker-off" :size="18" /></span>
-          <span class="text"><span class="name truncate">{{ missing }}</span><span class="detail">Non collegato adesso</span></span>
+          <span class="text"><span class="name truncate">{{ missing }}</span><span class="detail">{{ t.audio.preset.notConnected }}</span></span>
           <AppIcon name="check" :size="18" class="check" />
         </button>
       </li>
@@ -62,10 +63,10 @@ const pick = (output: AudioOutput | null) => {
         </button>
       </li>
     </ul>
-    <p v-if="failed" class="muted note">Non riesco a leggere le uscite audio del PC.</p>
-    <p v-else-if="outputs === null" class="muted note">Leggo le uscite audio…</p>
+    <p v-if="failed" class="muted note">{{ t.audio.preset.failed }}</p>
+    <p v-else-if="outputs === null" class="muted note">{{ t.audio.preset.loading }}</p>
     <p v-else class="muted note">
-      L'uscita di uno schermo (HDMI, DisplayPort) compare solo quando lo schermo è acceso: aspetto qualche secondo che arrivi.
+      {{ t.audio.preset.note }}
     </p>
   </BottomSheet>
 </template>

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { CaptureAction } from '../captures'
+import { t } from '../i18n'
 import type { CaptureTool } from '../types'
 import AppIcon from './AppIcon.vue'
 import BottomSheet from './BottomSheet.vue'
@@ -12,28 +13,10 @@ const open = defineModel<boolean>('open', { required: true })
 const emit = defineEmits<{ retry: [action: CaptureAction] }>()
 
 const content = computed(() => {
-  if (props.help?.code === 'capture-off') {
-    return {
-      title: 'Le acquisizioni di Game Bar sono spente',
-      lead: 'Windows non lascia catturare niente finché non le riaccendi. Una volta sul PC:',
-      steps: ['Impostazioni di Windows → <b>Giochi</b> → <b>Acquisizioni</b>', 'Accendi le acquisizioni, e <b>Xbox Game Bar</b> in Giochi'],
-      note: null,
-    }
-  }
-  if (props.tool === 'nvidia') {
-    return {
-      title: 'Il PC non ha salvato nessuna clip',
-      lead: 'NVIDIA tiene da parte gli ultimi minuti solo col Replay istantaneo acceso. Una volta sul PC:',
-      steps: ["Premi <b>Alt+Z</b> per aprire l'overlay di NVIDIA", 'Apri <b>Replay istantaneo</b> e scegli <b>Attiva</b>'],
-      note: 'Se è già acceso, il gioco dev’essere in primo piano e le scorciatoie quelle di serie (Alt+F10 per salvare).',
-    }
-  }
-  return {
-    title: 'Il PC non sta tenendo gli ultimi secondi',
-    lead: "Game Bar li tiene da parte solo se registra in sottofondo, e quell'opzione è spenta. Accendila una volta sul PC:",
-    steps: ['Impostazioni di Windows → <b>Giochi</b> → <b>Acquisizioni</b>', 'Accendi <b>«Registra ciò che è successo»</b> e scegli quanto tenere'],
-    note: 'Costa qualche fps mentre giochi. Con una scheda NVIDIA, il Replay istantaneo pesa meno: sceglilo in Playnite, CouchPilot → Cattura con.',
-  }
+  const h = t.captures.help
+  if (props.help?.code === 'capture-off') return { ...h.captureOff, note: null }
+  if (props.tool === 'nvidia') return h.nvidia
+  return h.gamebar
 })
 
 const retry = () => {
@@ -53,8 +36,8 @@ const retry = () => {
     </ol>
     <p v-if="content.note" class="note">{{ content.note }}</p>
     <div class="actions">
-      <button class="btn btn-ghost" @click="open = false">Chiudi</button>
-      <button class="btn btn-wait" @click="retry">Riprova</button>
+      <button class="btn btn-ghost" @click="open = false">{{ t.captures.help.close }}</button>
+      <button class="btn btn-wait" @click="retry">{{ t.captures.help.retry }}</button>
     </div>
   </BottomSheet>
 </template>

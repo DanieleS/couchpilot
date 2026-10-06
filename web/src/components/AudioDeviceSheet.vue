@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { t } from '../i18n'
 import type { AudioDevice, AudioFlow } from '../protocol'
 import AppIcon from './AppIcon.vue'
 import BottomSheet from './BottomSheet.vue'
@@ -18,11 +19,11 @@ const pick = (d: AudioDevice) => {
 </script>
 
 <template>
-  <BottomSheet v-model:open="open" :title="flow === 'output' ? 'Uscita audio' : 'Ingresso audio'">
-    <h2 class="title">{{ flow === 'output' ? "Dove esce l'audio" : 'Da dove entra la voce' }}</h2>
+  <BottomSheet v-model:open="open" :title="flow === 'output' ? t.audio.sheet.outputTitle : t.audio.sheet.inputTitle">
+    <h2 class="title">{{ flow === 'output' ? t.audio.sheet.outputHeading : t.audio.sheet.inputHeading }}</h2>
     <div class="seg" role="tablist">
-      <button role="tab" :aria-selected="flow === 'output'" :class="{ on: flow === 'output' }" @click="flow = 'output'">Uscita</button>
-      <button role="tab" :aria-selected="flow === 'input'" :class="{ on: flow === 'input' }" @click="flow = 'input'">Ingresso</button>
+      <button role="tab" :aria-selected="flow === 'output'" :class="{ on: flow === 'output' }" @click="flow = 'output'">{{ t.audio.output }}</button>
+      <button role="tab" :aria-selected="flow === 'input'" :class="{ on: flow === 'input' }" @click="flow = 'input'">{{ t.audio.input }}</button>
     </div>
     <ul class="list">
       <li v-for="d in devices" :key="d.index">
@@ -37,10 +38,10 @@ const pick = (d: AudioDevice) => {
       </li>
     </ul>
     <p v-if="devices.length === 0" class="muted empty">
-      {{ flow === 'output' ? 'Nessuna uscita audio attiva sul PC.' : 'Nessun microfono attivo sul PC.' }}
+      {{ flow === 'output' ? t.audio.sheet.noOutputs : t.audio.sheet.noInputs }}
     </p>
     <p class="muted note">
-      Diventa il dispositivo predefinito di Windows: le app che seguono il predefinito ci passano da sole.
+      {{ t.audio.sheet.note }}
     </p>
   </BottomSheet>
 </template>

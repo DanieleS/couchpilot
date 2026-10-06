@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onBeforeUnmount, reactive, ref } from 'vue'
+import { t } from '../i18n'
 import type { MouseButton, RemoteInput } from '../input'
 
 // `height` overrides the surface's own size, e.g. to fit above the phone's keyboard; `compact`
@@ -157,11 +158,11 @@ const dots = () => {
       <slot v-if="disabled" name="disabled" />
       <template v-else>
         <ul class="hints" aria-hidden="true">
-          <li><span class="shape circle" />Un dito muove, un tocco clicca</li>
-          <li><span class="shape square" />Due dita scorrono, toccando fai clic destro</li>
-          <li><span class="shape triangle" />Tocca e poi tieni premuto per trascinare</li>
+          <li><span class="shape circle" />{{ t.control.pad.move }}</li>
+          <li><span class="shape square" />{{ t.control.pad.scroll }}</li>
+          <li><span class="shape triangle" />{{ t.control.pad.drag }}</li>
         </ul>
-        <span v-if="dragging" class="drag-pill">Trascinamento</span>
+        <span v-if="dragging" class="drag-pill">{{ t.control.pad.dragging }}</span>
       </template>
       <span v-for="d in dots()" :key="d.id" class="dot" :style="{ transform: `translate(${d.x}px, ${d.y}px)` }" />
     </div>
@@ -173,7 +174,7 @@ const dots = () => {
         @pointerup="release('l')"
         @pointercancel="release('l')"
         @contextmenu.prevent
-      >Sinistro</button>
+      >{{ t.control.pad.left }}</button>
       <button
         :class="{ on: held.has('r') }"
         :disabled="disabled"
@@ -181,7 +182,7 @@ const dots = () => {
         @pointerup="release('r')"
         @pointercancel="release('r')"
         @contextmenu.prevent
-      >Destro</button>
+      >{{ t.control.pad.right }}</button>
     </div>
   </div>
 </template>

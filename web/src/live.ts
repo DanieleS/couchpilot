@@ -115,7 +115,7 @@ function connect() {
     try {
       receive(decode(e.data))
     } catch (error) {
-      console.warn('CouchPilot: messaggio non valido dal PC', error)
+      console.warn('CouchPilot: invalid message from the PC', error)
     }
   }
 }

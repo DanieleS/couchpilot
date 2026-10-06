@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using Microsoft.Win32;
 using Playnite.SDK;
 using Key = CouchPilot.Native.Input;
+using static CouchPilot.Lang;
 
 namespace CouchPilot.Captures
 {
@@ -91,7 +92,7 @@ namespace CouchPilot.Captures
             var known = library.KnownIds();
             Press(Shortcut.Screenshot);
             var shot = await library.WaitForNew(known, c => c.Kind == "photo", ScreenshotWait);
-            return shot ?? throw NothingSaved("Lo screenshot non è arrivato.");
+            return shot ?? throw NothingSaved(Tr("The screenshot didn't arrive.", "Lo screenshot non è arrivato."));
         });
 
         public Task<CaptureDto> Replay() => Run(async () =>
@@ -101,18 +102,18 @@ namespace CouchPilot.Captures
                 GameBar.EnsureCapturesOn();
                 if (GameBar.ReplaySeconds() == null)
                 {
-                    throw new CaptureException("replay-off", "Game Bar non sta registrando in sottofondo: non c'è niente da salvare.");
+                    throw new CaptureException("replay-off", Tr("Game Bar isn't recording in the background: there's nothing to save.", "Game Bar non sta registrando in sottofondo: non c'è niente da salvare."));
                 }
             }
-            if (recordingSince != null) throw new CaptureException("busy", "Ferma prima la registrazione.");
+            if (recordingSince != null) throw new CaptureException("busy", Tr("Stop the recording first.", "Ferma prima la registrazione."));
             var known = library.KnownIds();
             Press(Shortcut.Replay);
             var clip = await library.WaitForNew(known, c => c.Kind == "video", VideoWait);
             if (clip == null)
             {
                 throw Tool == CaptureTool.Nvidia
-                    ? new CaptureException("replay-off", "Il PC non ha salvato nessuna clip: il Replay istantaneo di NVIDIA è acceso?")
-                    : NothingSaved("Il PC non ha salvato nessuna clip.");
+                    ? new CaptureException("replay-off", Tr("The PC didn't save any clip: is NVIDIA's Instant Replay on?", "Il PC non ha salvato nessuna clip: il Replay istantaneo di NVIDIA è acceso?"))
+                    : NothingSaved(Tr("The PC didn't save any clip.", "Il PC non ha salvato nessuna clip."));
             }
             library.MarkReplay(clip.Id);
             clip.Replay = true;
@@ -134,7 +135,7 @@ namespace CouchPilot.Captures
             Press(Shortcut.Record);
             SetRecording(null);
             var clip = await library.WaitForNew(known, c => c.Kind == "video", VideoWait);
-            return clip ?? throw NothingSaved("La registrazione non è arrivata: forse era già ferma.");
+            return clip ?? throw NothingSaved(Tr("The recording didn't arrive: maybe it had already stopped.", "La registrazione non è arrivata: forse era già ferma."));
         });
 
         // Game Bar stops recording when the game closes.
@@ -175,8 +176,8 @@ namespace CouchPilot.Captures
 
         private async Task<T> Run<T>(Func<Task<T>> command)
         {
-            if (!Enabled) throw new CaptureException("off", "Le catture sono spente nelle impostazioni di CouchPilot.");
-            if (!await busy.WaitAsync(0)) throw new CaptureException("busy", "Sto ancora aspettando la cattura di prima.");
+            if (!Enabled) throw new CaptureException("off", Tr("Captures are off in CouchPilot's settings.", "Le catture sono spente nelle impostazioni di CouchPilot."));
+            if (!await busy.WaitAsync(0)) throw new CaptureException("busy", Tr("Still waiting for the previous capture.", "Sto ancora aspettando la cattura di prima."));
             try
             {
                 return await command();
@@ -190,8 +191,8 @@ namespace CouchPilot.Captures
         private CaptureException NothingSaved(string what) => new CaptureException(
             "nothing-saved",
             Tool == CaptureTool.Nvidia
-                ? $"{what} L'overlay di NVIDIA è acceso e il gioco è in primo piano?"
-                : $"{what} Il gioco è in primo piano sul PC?");
+                ? Tr($"{what} Is NVIDIA's overlay on and the game in the foreground?", $"{what} L'overlay di NVIDIA è acceso e il gioco è in primo piano?")
+                : Tr($"{what} Is the game in the foreground on the PC?", $"{what} Il gioco è in primo piano sul PC?"));
 
         // Game Bar's own settings, in the registry: Settings → Gaming → Captures.
         private static class GameBar
@@ -202,7 +203,7 @@ namespace CouchPilot.Captures
             {
                 if (Read("AppCaptureEnabled") == 0)
                 {
-                    throw new CaptureException("capture-off", "Le acquisizioni di Game Bar sono spente in Windows: Impostazioni → Giochi → Acquisizioni.");
+                    throw new CaptureException("capture-off", Tr("Game Bar captures are off in Windows: Settings → Gaming → Captures.", "Le acquisizioni di Game Bar sono spente in Windows: Impostazioni → Giochi → Acquisizioni."));
                 }
             }
 

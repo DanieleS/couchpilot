@@ -15,8 +15,8 @@
     { "src": "/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
   ],
   "shortcuts": [
-    { "name": "Schermi", "url": "/?tab=displays", "icons": [{ "src": "/shortcut-displays.png", "sizes": "192x192", "type": "image/png" }] },
+    { "name": "Displays", "url": "/?tab=displays", "icons": [{ "src": "/shortcut-displays.png", "sizes": "192x192", "type": "image/png" }] },
     { "name": "Audio", "url": "/?tab=audio", "icons": [{ "src": "/shortcut-audio.png", "sizes": "192x192", "type": "image/png" }] },
-    { "name": "Controllo", "url": "/?tab=control", "icons": [{ "src": "/shortcut-control.png", "sizes": "192x192", "type": "image/png" }] }
+    { "name": "Control", "url": "/?tab=control", "icons": [{ "src": "/shortcut-control.png", "sizes": "192x192", "type": "image/png" }] }
   ]
 }

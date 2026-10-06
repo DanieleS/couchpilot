@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { nextTick, ref, watch } from 'vue'
 import { usePairing } from '../pairing'
+import { t } from '../i18n'
 import AppIcon from './AppIcon.vue'
 
 // The screen a phone sees until the PC knows it: ask for the PIN, read it off the TV, type it.
@@ -28,26 +29,23 @@ const clock = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2,
   <div class="pairing">
     <div class="card box">
       <span class="mark" aria-hidden="true"><span class="dot" /><span class="bar" /></span>
-      <h1 class="title">Collega questo telefono</h1>
+      <h1 class="title">{{ t.app.pairing.title }}</h1>
 
       <template v-if="step === 'start' || step === 'requesting'">
-        <p class="lead">
-          Il PC chiede un PIN ai telefoni nuovi. Quando lo chiedi, compare sullo schermo del PC per due minuti:
-          scrivilo qui e questo telefono sarà sempre il benvenuto.
-        </p>
+        <p class="lead">{{ t.app.pairing.lead }}</p>
         <label class="name">
-          <span>Come chiamare questo telefono</span>
+          <span>{{ t.app.pairing.name }}</span>
           <input v-model="name" maxlength="60" autocomplete="off" enterkeyhint="done" @keydown.enter="requestPin" />
         </label>
         <button class="btn btn-ink btn-block go" :disabled="step === 'requesting' || !name.trim()" @click="requestPin">
           <span v-if="step === 'requesting'" class="spinner" aria-hidden="true" />
           <AppIcon v-else name="tv" :size="18" />
-          {{ step === 'requesting' ? 'Chiedo al PC…' : 'Mostra il PIN sul PC' }}
+          {{ step === 'requesting' ? t.app.pairing.asking : t.app.pairing.show }}
         </button>
       </template>
 
       <template v-else>
-        <p class="lead">Scrivi il PIN che vedi sullo schermo del PC.</p>
+        <p class="lead">{{ t.app.pairing.typePin }}</p>
         <button class="cells" :class="{ shake: !!error && step === 'pin', busy: step === 'checking' }" type="button" aria-hidden="true" @click="focusField">
           <span v-for="i in cells" :key="i" class="cell" :class="{ on: i === pin.length, full: i < pin.length }">{{ pin[i] ?? '' }}</span>
         </button>
@@ -59,22 +57,22 @@ const clock = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2,
           pattern="[0-9]*"
           autocomplete="one-time-code"
           maxlength="6"
-          aria-label="PIN di sei cifre"
+          :aria-label="t.app.pairing.pinLabel"
           :disabled="step === 'checking'"
         />
         <p class="countdown tabular">
-          <template v-if="step === 'checking'">Controllo…</template>
-          <template v-else>Il PIN vale ancora {{ clock(secondsLeft) }}</template>
+          <template v-if="step === 'checking'">{{ t.app.pairing.checking }}</template>
+          <template v-else>{{ t.app.pairing.validFor(clock(secondsLeft)) }}</template>
         </p>
-        <button class="again" @click="reset">Chiedine un altro</button>
+        <button class="again" @click="reset">{{ t.app.pairing.again }}</button>
       </template>
 
       <p v-if="error" class="error" role="alert">
         {{ error }}
       </p>
-      <p v-else-if="attemptsLeft !== null && step === 'pin'" class="hint">{{ attemptsLeft }} {{ attemptsLeft === 1 ? 'tentativo' : 'tentativi' }} rimasti</p>
+      <p v-else-if="attemptsLeft !== null && step === 'pin'" class="hint">{{ t.app.pairing.attemptsLeft(attemptsLeft) }}</p>
     </div>
-    <p class="foot">Si cambia in Playnite: Componenti aggiuntivi → Impostazioni estensioni → CouchPilot → Telefoni.</p>
+    <p class="foot">{{ t.app.pairing.foot }}</p>
   </div>
 </template>
 

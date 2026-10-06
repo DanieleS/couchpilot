@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { imageUrl } from '../api'
 import { dayLabel, fileSize, playDayKey, toolName, useCaptures } from '../captures'
+import { plural, t } from '../i18n'
 import { useCouchPilot } from '../store'
 import type { Capture } from '../types'
 import { placeholderGradient } from '../utils'
@@ -31,9 +32,9 @@ const ofGame = computed(() => (game.value === null ? items.value : items.value.f
 const shown = computed(() => (kind.value === 'all' ? ofGame.value : ofGame.value.filter((c) => c.kind === kind.value)))
 
 const kinds = computed(() => [
-  { key: 'all' as Kind, label: 'Tutto', n: ofGame.value.length },
-  { key: 'photo' as Kind, label: 'Foto', n: ofGame.value.filter((c) => c.kind === 'photo').length },
-  { key: 'video' as Kind, label: 'Clip', n: ofGame.value.filter((c) => c.kind === 'video').length },
+  { key: 'all' as Kind, label: t.captures.gallery.all, n: ofGame.value.length },
+  { key: 'photo' as Kind, label: t.captures.gallery.photos, n: ofGame.value.filter((c) => c.kind === 'photo').length },
+  { key: 'video' as Kind, label: t.captures.gallery.clips, n: ofGame.value.filter((c) => c.kind === 'video').length },
 ])
 
 // The games with captures, the most captured first; the one opened from a game's sheet leads,
@@ -42,7 +43,7 @@ const gameChips = computed(() => {
   const byKey = new Map<string, { key: string; name: string; id: string | null; n: number }>()
   for (const c of items.value) {
     const key = keyOf(c)
-    const chip = byKey.get(key) ?? { key, name: c.game ?? 'Altro', id: c.gameId, n: 0 }
+    const chip = byKey.get(key) ?? { key, name: c.game ?? t.captures.gallery.other, id: c.gameId, n: 0 }
     chip.n++
     byKey.set(key, chip)
   }
@@ -66,15 +67,15 @@ const days = computed(() => {
     if (day?.key !== key) out.push((day = { key, label: dayLabel(key), games: '', items: [] }))
     day.items.push(c)
   }
-  for (const d of out) d.games = [...new Set(d.items.map((c) => c.game ?? 'Altro'))].join(', ')
+  for (const d of out) d.games = [...new Set(d.items.map((c) => c.game ?? t.captures.gallery.other))].join(', ')
   return out
 })
 
 const summary = computed(() => {
   const l = list.value
   if (!l) return ''
-  const tools = [...new Set(l.items.map((c) => toolName(c.tool)).filter(Boolean))].join(' e ')
-  return [`${l.items.length} ${l.items.length === 1 ? 'cattura' : 'catture'}`, fileSize(l.bytes), tools].filter(Boolean).join(' · ')
+  const tools = [...new Set(l.items.map((c) => toolName(c.tool)).filter(Boolean))].join(t.captures.gallery.toolsJoin)
+  return [plural(l.items.length, t.captures.gallery.captureOne, t.captures.gallery.captureOther), fileSize(l.bytes), tools].filter(Boolean).join(' · ')
 })
 
 const view = (c: Capture) => emit('view', shown.value, shown.value.indexOf(c))
@@ -82,29 +83,27 @@ const view = (c: Capture) => emit('view', shown.value, shown.value.indexOf(c))
 
 <template>
   <div class="page">
-    <button class="back" @click="emit('back')"><AppIcon name="chevron-left" :size="16" />Giochi</button>
+    <button class="back" @click="emit('back')"><AppIcon name="chevron-left" :size="16" />{{ t.captures.gallery.back }}</button>
     <header class="page-header">
-      <h1>Galleria</h1>
+      <h1>{{ t.captures.gallery.title }}</h1>
       <PcChip :name="status?.pc ?? null" />
     </header>
 
     <div v-if="!capture" class="empty">
-      <p class="empty-title">Le catture sono spente</p>
-      <p class="muted">
-        Accendile in Playnite: Componenti aggiuntivi → Impostazioni estensioni → CouchPilot → «Mostra screenshot e clip sul telefono».
-      </p>
+      <p class="empty-title">{{ t.captures.gallery.offTitle }}</p>
+      <p class="muted">{{ t.captures.gallery.offHint }}</p>
     </div>
     <template v-else-if="list">
       <p class="summary muted tabular">{{ summary }}</p>
 
-      <div class="seg" role="tablist" aria-label="Tipo">
+      <div class="seg" role="tablist" :aria-label="t.captures.gallery.kind">
         <button v-for="k in kinds" :key="k.key" role="tab" :aria-selected="kind === k.key" :class="{ on: kind === k.key }" @click="kind = k.key">
           {{ k.label }} <span class="n tabular">{{ k.n }}</span>
         </button>
       </div>
 
       <div v-if="gameChips.length > 1" class="scroll-row chips">
-        <button class="chip" :class="{ on: game === null }" @click="game = null">Tutti i giochi</button>
+        <button class="chip" :class="{ on: game === null }" @click="game = null">{{ t.captures.gallery.allGames }}</button>
         <button v-for="g in gameChips" :key="g.key" class="chip" :class="{ on: game === g.key }" @click="game = g.key">
           <span class="art" :style="coverOf(g.id) ? undefined : { background: placeholderGradient(g.name, 48, 20) }">
             <img v-if="coverOf(g.id)" :src="coverOf(g.id)!" alt="" loading="lazy" />
@@ -115,14 +114,14 @@ const view = (c: Capture) => emit('view', shown.value, shown.value.indexOf(c))
 
       <div v-if="!shown.length" class="empty">
         <template v-if="items.length">
-          <p class="empty-title">Niente qui</p>
-          <p class="muted">Prova un altro filtro.</p>
+          <p class="empty-title">{{ t.captures.gallery.nothingTitle }}</p>
+          <p class="muted">{{ t.captures.gallery.nothingHint }}</p>
         </template>
         <template v-else>
-          <p class="empty-title">Ancora nessuna cattura</p>
+          <p class="empty-title">{{ t.captures.gallery.noneTitle }}</p>
           <p class="muted">
-            Mentre giochi, usa Scatta, Registra o il replay dalla scheda del gioco.
-            <template v-if="list.folders.length"> Guardo in {{ list.folders.join(', ') }}.</template>
+            {{ t.captures.gallery.noneHint }}
+            <template v-if="list.folders.length">{{ t.captures.gallery.folders(list.folders.join(', ')) }}</template>
           </p>
         </template>
       </div>
@@ -133,13 +132,13 @@ const view = (c: Capture) => emit('view', shown.value, shown.value.indexOf(c))
           <span class="aside truncate">{{ d.games }} · {{ d.items.length }}</span>
         </div>
         <div class="grid">
-          <button v-for="c in d.items" :key="c.id" class="tile" :aria-label="`${c.kind === 'video' ? 'Clip' : 'Foto'} di ${c.game ?? 'un gioco'}`" @click="view(c)">
+          <button v-for="c in d.items" :key="c.id" class="tile" :aria-label="t.captures.gallery.tile(c.kind === 'video', c.game)" @click="view(c)">
             <CaptureThumb :capture="c" />
           </button>
         </div>
       </section>
 
-      <button v-if="shown.length > limit" class="btn btn-ghost btn-block more" @click="limit += PAGE">Mostra altre</button>
+      <button v-if="shown.length > limit" class="btn btn-ghost btn-block more" @click="limit += PAGE">{{ t.captures.gallery.more }}</button>
     </template>
     <div v-else class="skeleton" />
   </div>

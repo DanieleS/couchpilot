@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
 import { useRemoteInput, Vk, type Mod } from '../input'
+import { t } from '../i18n'
 import { useCouchPilot } from '../store'
 import { useVisualViewport } from '../viewport'
 import ControllerChips from './ControllerChips.vue'
@@ -16,7 +17,7 @@ const disabled = computed(() => input.link.value !== 'open')
 
 const shortcuts: { label: string; vk: number; mods?: Mod[] }[] = [
   { label: 'Alt+Tab', vk: Vk.tab, mods: ['alt'] },
-  { label: 'Schermo intero', vk: Vk.enter, mods: ['alt'] },
+  { label: t.control.fullScreen, vk: Vk.enter, mods: ['alt'] },
   { label: 'Start', vk: Vk.win },
   { label: 'Desktop', vk: Vk.d, mods: ['win'] },
   { label: 'Alt+F4', vk: Vk.f4, mods: ['alt'] },
@@ -47,7 +48,7 @@ watch(
 <template>
   <div class="page" :class="{ typing: keyboardOpen }">
     <header class="page-header">
-      <h1>Controllo</h1>
+      <h1>{{ t.control.title }}</h1>
       <PcChip :name="status?.pc ?? null" />
     </header>
 
@@ -55,15 +56,14 @@ watch(
       <template #disabled>
         <div class="off">
           <template v-if="turnedOff">
-            <p class="title">Touchpad e tastiera sono spenti</p>
+            <p class="title">{{ t.control.off.title }}</p>
             <p class="muted">
-              Accendili in Playnite: Componenti aggiuntivi → Impostazioni estensioni → CouchPilot →
-              «Permetti al telefono di usare mouse e tastiera del PC»<template v-if="status?.pairing">, e in Telefoni spunta «Mouse e tastiera» per questo telefono</template>.
+              {{ t.control.off.before }}<template v-if="status?.pairing">{{ t.control.off.pairing }}</template>{{ t.control.off.after }}
             </p>
           </template>
           <template v-else>
-            <p class="title">Mi collego al PC…</p>
-            <p class="muted">Il PC e il telefono devono essere sulla stessa rete.</p>
+            <p class="title">{{ t.control.connecting.title }}</p>
+            <p class="muted">{{ t.control.connecting.text }}</p>
           </template>
         </div>
       </template>
@@ -73,15 +73,15 @@ watch(
       <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <rect x="2" y="5" width="20" height="14" rx="2" /><path d="M6 9h.01M10 9h.01M14 9h.01M18 9h.01M6 13h.01M18 13h.01M9 15h6" />
       </svg>
-      Tastiera
+      {{ t.control.keyboard }}
     </button>
 
     <template v-if="status?.controllers?.length">
-      <p class="eyebrow">Controller</p>
+      <p class="eyebrow">{{ t.control.controllers }}</p>
       <ControllerChips :controllers="status.controllers" />
     </template>
 
-    <p class="eyebrow">Scorciatoie</p>
+    <p class="eyebrow">{{ t.control.shortcuts }}</p>
     <div class="scroll-row">
       <button v-for="s in shortcuts" :key="s.label" class="key chip" :disabled="disabled" @click="input.key(s.vk, s.mods)">{{ s.label }}</button>
     </div>

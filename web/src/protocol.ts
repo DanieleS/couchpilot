@@ -79,11 +79,11 @@ class Reader {
     this.view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
   }
   u8() {
-    if (this.at >= this.bytes.length) throw new RangeError('Messaggio troncato')
+    if (this.at >= this.bytes.length) throw new RangeError('Truncated message')
     return this.view.getUint8(this.at++)
   }
   take(n: number) {
-    if (this.at + n > this.bytes.length) throw new RangeError('Messaggio troncato')
+    if (this.at + n > this.bytes.length) throw new RangeError('Truncated message')
     const slice = this.bytes.subarray(this.at, this.at + n)
     this.at += n
     return slice

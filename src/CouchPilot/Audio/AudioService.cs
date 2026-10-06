@@ -14,6 +14,7 @@ using Playnite.SDK;
 using Playnite.SDK.Models;
 using static CouchPilot.Audio.AudioProtocol;
 using static CouchPilot.Native.CoreAudio;
+using static CouchPilot.Lang;
 
 namespace CouchPilot.Audio
 {
@@ -355,10 +356,10 @@ namespace CouchPilot.Audio
 
         private static string AppName(SessionEntry session)
         {
-            if (session.System) return "Suoni di sistema";
+            if (session.System) return Pc("System sounds", "Suoni di sistema");
             // Apps can name their session; "@dll,-id" resource references are Windows' own.
             if (!string.IsNullOrWhiteSpace(session.DisplayName) && !session.DisplayName.StartsWith("@")) return session.DisplayName;
-            if (session.Path == null) return $"Processo {session.Pid}";
+            if (session.Path == null) return Pc($"Process {session.Pid}", $"Processo {session.Pid}");
             try
             {
                 var description = FileVersionInfo.GetVersionInfo(session.Path).FileDescription;
@@ -394,7 +395,7 @@ namespace CouchPilot.Audio
             return new AudioModel.Device
             {
                 Id = id,
-                Name = string.IsNullOrWhiteSpace(name) ? "Dispositivo audio" : name,
+                Name = string.IsNullOrWhiteSpace(name) ? Pc("Audio device", "Dispositivo audio") : name,
                 Detail = detail,
                 Kind = Kind(formFactor, flow),
             };
