@@ -259,6 +259,26 @@ namespace CouchPilot.Server
             await Response.OutputStream.WriteAsync(jpeg, 0, jpeg.Length);
         }
 
+        // A video's thumbnail made by the phone, for files Windows can't decode (see Thumbnails.Put).
+        // Only where the PC has none: a good thumbnail is never replaced.
+        [Route(HttpVerbs.Post, "/captures/{id}/thumb")]
+        public async Task PutCaptureThumbnail(string id)
+        {
+            RequireCaptures();
+            var source = captureLibrary.ThumbnailSource(id) ?? throw HttpException.NotFound();
+            if (!source.video) throw HttpException.BadRequest("Solo i video.");
+            if (await thumbnails.Get(id, source.version, source.video, source.path) != null) return;
+            var body = new MemoryStream();
+            var buffer = new byte[64 * 1024];
+            int read;
+            while ((read = await Request.InputStream.ReadAsync(buffer, 0, buffer.Length)) > 0)
+            {
+                body.Write(buffer, 0, read);
+                if (body.Length > Thumbnails.MaxUpload) throw new HttpException(HttpStatusCode.RequestEntityTooLarge, "Miniatura troppo grande.");
+            }
+            if (!thumbnails.Put(id, source.version, body.ToArray())) throw HttpException.BadRequest("Serve un JPEG.");
+        }
+
         // The file itself. Videos are asked for in ranges: the player seeks by asking for the
         // bytes it needs, so a 5-minute clip starts at once and jumps anywhere.
         [Route(HttpVerbs.Get, "/captures/{id}/file")]

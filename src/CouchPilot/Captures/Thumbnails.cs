@@ -41,11 +41,14 @@ namespace CouchPilot.Captures
             worker.Start();
         }
 
-        // The thumbnail's JPEG, or null when the file has none (a video Windows can't decode).
+        // The thumbnail's JPEG, or null when the file has none (a video Windows can't decode: the
+        // phone then makes one and hands it over, see Put).
         public Task<byte[]> Get(string id, string version, bool video, string source)
         {
             var target = Path.Combine(folder, $"{id}-{version}.jpg");
             if (File.Exists(target)) return Task.FromResult(File.ReadAllBytes(target));
+            // Windows already failed at this one: no point asking the shell again on every request.
+            if (File.Exists(Path.ChangeExtension(target, ".none"))) return Task.FromResult<byte[]>(null);
             return making.GetOrAdd(target, _ =>
             {
                 var job = new Job { Source = source, Target = target, Video = video, Done = new TaskCompletionSource<byte[]>() };
@@ -58,13 +61,25 @@ namespace CouchPilot.Captures
             });
         }
 
+        // A thumbnail the phone made from a video Windows couldn't decode: HEVC without its Windows
+        // extension, AV1. Phones decode those in hardware. False if it isn't a JPEG of a sane size.
+        public bool Put(string id, string version, byte[] jpeg)
+        {
+            if (jpeg == null || jpeg.Length < 3 || jpeg.Length > MaxUpload || jpeg[0] != 0xFF || jpeg[1] != 0xD8 || jpeg[2] != 0xFF) return false;
+            Directory.CreateDirectory(folder);
+            ClearOld(id);
+            File.WriteAllBytes(Path.Combine(folder, $"{id}-{version}.jpg"), jpeg);
+            return true;
+        }
+
+        public const int MaxUpload = 1024 * 1024;
+
         // Thumbnails of files that are gone.
         public void Forget(string id)
         {
             try
             {
-                if (!Directory.Exists(folder)) return;
-                foreach (var file in Directory.EnumerateFiles(folder, id + "-*.jpg").ToList()) File.Delete(file);
+                ClearOld(id);
             }
             catch (Exception e)
             {
@@ -85,7 +100,21 @@ namespace CouchPilot.Captures
                 {
                     logger.Warn(e, $"No thumbnail for {job.Source}");
                 }
+                if (jpeg == null && job.Video) MarkFailed(job.Target);
                 job.Done.TrySetResult(jpeg);
+            }
+        }
+
+        private void MarkFailed(string target)
+        {
+            try
+            {
+                Directory.CreateDirectory(folder);
+                File.WriteAllBytes(Path.ChangeExtension(target, ".none"), new byte[0]);
+            }
+            catch (Exception e)
+            {
+                logger.Warn(e, "Couldn't note a missing thumbnail");
             }
         }
 
@@ -113,12 +142,19 @@ namespace CouchPilot.Captures
                         small.Save(output, codec, quality);
                         var bytes = output.ToArray();
                         Directory.CreateDirectory(folder);
-                        foreach (var old in Directory.EnumerateFiles(folder, Path.GetFileName(job.Target).Split('-')[0] + "-*.jpg").ToList()) File.Delete(old);
+                        ClearOld(Path.GetFileName(job.Target).Split('-')[0]);
                         File.WriteAllBytes(job.Target, bytes);
                         return bytes;
                     }
                 }
             }
+        }
+
+        // Every thumbnail of this capture, and the marks of failed attempts.
+        private void ClearOld(string id)
+        {
+            if (!Directory.Exists(folder)) return;
+            foreach (var file in Directory.EnumerateFiles(folder, id + "-*.*").ToList()) File.Delete(file);
         }
 
         // Read fully into memory, so the file isn't held open while the gallery browses.

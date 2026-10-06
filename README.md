@@ -117,7 +117,7 @@ CouchPilot presses the tool's own shortcut, as you would at the keyboard, and wa
 
 The gallery shows Game Bar's *Captures* folder (wherever you moved it), NVIDIA's folder (the one set in its settings, or *Videos\NVIDIA*) and one more of your choice. Screenshots and MP4 clips are listed with their game: the game whose session they fall in, from CouchPilot's own session log, or the game their file or folder is named after. A new file shows up on the phone a moment after the tool finishes writing it, with a notice; that includes captures made at the PC.
 
-Thumbnails are made once, on the PC, and kept with the extension's data (`thumbnails`); a video's thumbnail is the one Explorer shows, so a codec Windows lacks (HEVC without its extension, AV1) gives a plain tile. Videos stream with seeking; **Condividi** hands the file to the phone's apps (it needs HTTPS, see above), **Salva** downloads it, **Elimina** moves it to the PC's Recycle Bin.
+Thumbnails are made once, on the PC, and kept with the extension's data (`thumbnails`). A video's is the one Explorer shows, so for a codec Windows lacks (HEVC without its extension, AV1, both common with NVIDIA) the phone makes it instead: phones decode those in hardware. It reads only the bytes it needs for one frame, a moment into the clip, and hands the thumbnail to the PC, which keeps it for next time. A clip neither can decode shows its game's cover. Videos stream with seeking; **Condividi** hands the file to the phone's apps (it needs HTTPS, see above), **Salva** downloads it, **Elimina** moves it to the PC's Recycle Bin.
 
 ## Home Assistant
 
