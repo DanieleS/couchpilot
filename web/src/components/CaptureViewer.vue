@@ -6,7 +6,6 @@ import { clipLength, dayLabel, fileSize, playDayKey, toolName } from '../capture
 import { useCouchPilot } from '../store'
 import type { Capture } from '../types'
 import { placeholderGradient } from '../utils'
-import { frameOf } from '../videoFrames'
 import AppIcon from './AppIcon.vue'
 import CaptureThumb from './CaptureThumb.vue'
 
@@ -109,7 +108,7 @@ watch([index, open], async () => {
             :key="current.id"
             class="media"
             :src="file"
-            :poster="frameOf(current) ?? captureThumbUrl(current) ?? undefined"
+            :poster="captureThumbUrl(current) ?? undefined"
             controls
             playsinline
             preload="metadata"

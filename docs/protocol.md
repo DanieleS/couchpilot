@@ -259,7 +259,7 @@ The artwork is at `GET /api/media/art?v=<artVersion>`; the version changes with 
 }
 ```
 
-The thumbnail is at `GET /api/captures/{id}/thumb?v=<version>` (a JPEG up to 480 px, cacheable for good; 404 for a video Windows can't decode, whose thumbnail the phone then grabs from the video itself and sends back with `POST /api/captures/{id}/thumb`, a JPEG body of at most 1 MB, kept only where the PC has none), the file at `GET /api/captures/{id}/file`, which honours `Range` so the player can seek. `DELETE /api/captures/{id}` moves it to the PC's Recycle Bin.
+The thumbnail is at `GET /api/captures/{id}/thumb?v=<version>` (a JPEG up to 480 px, cacheable for good; 404 when the PC can't make one, a damaged clip say), the file at `GET /api/captures/{id}/file`, which honours `Range` so the player can seek. `DELETE /api/captures/{id}` moves it to the PC's Recycle Bin.
 
 `POST /api/captures/screenshot`, `/api/captures/replay` and `/api/captures/record/stop` press the tool's shortcut and answer once the new file is on disk, with it as above; `/api/captures/record/start` answers at once. When they can't, the answer is 409 with a `code` besides the `error`:
 

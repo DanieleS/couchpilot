@@ -37,6 +37,10 @@
   <ItemGroup>
     <None Include="extension.yaml" CopyToOutputDirectory="PreserveNewest" />
     <None Include="icon.png" CopyToOutputDirectory="PreserveNewest" Condition="Exists('icon.png')" />
+    <!-- The gallery's video thumbnails: built by scripts/build-ffmpeg.sh, absent from a plain
+         checkout, where clips fall back to Windows' own thumbnails. -->
+    <None Include="ffmpeg\ffmpeg.exe" Link="ffmpeg.exe" CopyToOutputDirectory="PreserveNewest" Condition="Exists('ffmpeg\ffmpeg.exe')" />
+    <None Include="ffmpeg\ffmpeg-readme.txt" Link="ffmpeg-readme.txt" CopyToOutputDirectory="PreserveNewest" Condition="Exists('ffmpeg\ffmpeg-readme.txt')" />
     <!-- The PWA, built by `pnpm build` in /web. -->
     <None Include="wwwroot\**\*" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>

@@ -5,23 +5,17 @@ import { clipLength } from '../captures'
 import { useCouchPilot } from '../store'
 import type { Capture } from '../types'
 import { placeholderGradient } from '../utils'
-import { frameOf, makeFrame } from '../videoFrames'
 import AppIcon from './AppIcon.vue'
 
 // A screenshot or clip at grid size: the PC's thumbnail, a clip's length, optionally the time.
 const props = defineProps<{ capture: Capture; time?: boolean }>()
 const { games } = useCouchPilot()
 
-// The PC's thumbnail; for a clip Windows can't decode, a frame the phone grabs itself; failing
-// both, the game's cover, so a tile is never a blank.
+// The PC's thumbnail; failing that (a damaged clip), the game's cover, so a tile is never a blank.
 const failed = ref(false)
 watch(() => props.capture.id + props.capture.version, () => (failed.value = false))
-const frame = computed(() => frameOf(props.capture))
-const url = computed(() => frame.value ?? (failed.value ? null : captureThumbUrl(props.capture)))
-const onError = () => {
-  failed.value = true
-  if (props.capture.kind === 'video') makeFrame(props.capture)
-}
+const url = computed(() => (failed.value ? null : captureThumbUrl(props.capture)))
+const onError = () => (failed.value = true)
 const cover = computed(() => {
   const g = props.capture.gameId ? games.value?.find((x) => x.id === props.capture.gameId) : null
   return g?.hasCover ? imageUrl(g.id, 'cover') : null

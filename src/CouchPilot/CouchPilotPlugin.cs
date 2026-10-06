@@ -63,7 +63,15 @@ namespace CouchPilot
             captureLibrary = new CaptureLibrary(() => api.Database.Games, sessionLog, sessions, GetPluginUserDataPath());
             captures = new CaptureService(captureLibrary);
             thumbnails = new Thumbnails(Path.Combine(GetPluginUserDataPath(), "thumbnails"));
-            captureLibrary.Changed += () => server?.CapturesChanged();
+            captureLibrary.Changed += () =>
+            {
+                server?.CapturesChanged();
+                // The newest ones get their thumbnails now, so they're ready when the phone looks.
+                if (Settings.Captures)
+                {
+                    foreach (var c in captureLibrary.Newest(24)) thumbnails.Warm(c);
+                }
+            };
             captures.StatusChanged += () => server?.Nudge();
             ApplyInputSetting();
         }

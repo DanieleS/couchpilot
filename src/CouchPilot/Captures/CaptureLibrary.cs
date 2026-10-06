@@ -38,6 +38,15 @@ namespace CouchPilot.Captures
         public string Version { get; set; }
     }
 
+    public class ThumbnailSource
+    {
+        public string Id;
+        public string Path;
+        public string Version;
+        public bool Video;
+        public double? Seconds;
+    }
+
     public class CapturesDto
     {
         public List<CaptureDto> Items { get; set; }
@@ -206,12 +215,30 @@ namespace CouchPilot.Captures
         // The file behind an id, if it's one of ours: nothing else on the disk can be asked for.
         public string PathOf(string id) => Find(id)?.Path;
 
-        // What a thumbnail needs: the file, its version and whether it's a video.
-        public (string path, string version, bool video)? ThumbnailSource(string id)
+        // What a thumbnail needs: the file, its version, whether it's a video and how long.
+        public ThumbnailSource ThumbnailOf(string id)
         {
             var entry = Find(id);
-            return entry == null ? ((string, string, bool)?)null : (entry.Path, entry.WrittenUtc.Ticks.ToString("x"), entry.Video);
+            return entry == null ? null : SourceOf(entry);
         }
+
+        // The newest captures, for making their thumbnails before anyone asks.
+        public List<ThumbnailSource> Newest(int count)
+        {
+            lock (gate)
+            {
+                return entries.Values.OrderByDescending(e => e.TakenUtc).Take(count).Select(SourceOf).ToList();
+            }
+        }
+
+        private static ThumbnailSource SourceOf(Entry e) => new ThumbnailSource
+        {
+            Id = e.Id,
+            Path = e.Path,
+            Version = e.WrittenUtc.Ticks.ToString("x"),
+            Video = e.Video,
+            Seconds = e.Meta.Seconds,
+        };
 
         private Entry Find(string id)
         {

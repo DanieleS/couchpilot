@@ -12,9 +12,10 @@ using Playnite.SDK;
 namespace CouchPilot.Captures
 {
     // Small JPEGs for the gallery's grid, made once and kept in the extension's data folder.
-    // Screenshots are scaled down here; videos get the frame Explorer shows, through the shell,
-    // which wants an STA thread: one worker makes them all, one at a time, so a gallery opening
-    // on the phone can't load the PC with a hundred decoders at once.
+    // Screenshots are scaled down here; videos go through the bundled ffmpeg (VideoFrame), or,
+    // in a build without it, the frame Explorer shows, through the shell, which wants an STA
+    // thread. One worker makes them all, one at a time, so a gallery opening on the phone can't
+    // load the PC with a hundred decoders at once.
     public class Thumbnails : IDisposable
     {
         private const int LongSide = 480;
@@ -30,6 +31,7 @@ namespace CouchPilot.Captures
             public string Source;
             public string Target;
             public bool Video;
+            public double? Seconds;
             public TaskCompletionSource<byte[]> Done;
         }
 
@@ -41,17 +43,16 @@ namespace CouchPilot.Captures
             worker.Start();
         }
 
-        // The thumbnail's JPEG, or null when the file has none (a video Windows can't decode: the
-        // phone then makes one and hands it over, see Put).
-        public Task<byte[]> Get(string id, string version, bool video, string source)
+        // The thumbnail's JPEG, or null when the file has none (a clip that's damaged, say).
+        public Task<byte[]> Get(string id, string version, bool video, double? seconds, string source)
         {
             var target = Path.Combine(folder, $"{id}-{version}.jpg");
             if (File.Exists(target)) return Task.FromResult(File.ReadAllBytes(target));
-            // Windows already failed at this one: no point asking the shell again on every request.
+            // Already failed at this one: no point trying again on every request.
             if (File.Exists(Path.ChangeExtension(target, ".none"))) return Task.FromResult<byte[]>(null);
             return making.GetOrAdd(target, _ =>
             {
-                var job = new Job { Source = source, Target = target, Video = video, Done = new TaskCompletionSource<byte[]>() };
+                var job = new Job { Source = source, Target = target, Video = video, Seconds = seconds, Done = new TaskCompletionSource<byte[]>() };
                 queue.Add(job);
                 return job.Done.Task.ContinueWith(t =>
                 {
@@ -61,18 +62,13 @@ namespace CouchPilot.Captures
             });
         }
 
-        // A thumbnail the phone made from a video Windows couldn't decode: HEVC without its Windows
-        // extension, AV1. Phones decode those in hardware. False if it isn't a JPEG of a sane size.
-        public bool Put(string id, string version, byte[] jpeg)
+        // Makes it in the background if it isn't made yet.
+        public void Warm(ThumbnailSource c)
         {
-            if (jpeg == null || jpeg.Length < 3 || jpeg.Length > MaxUpload || jpeg[0] != 0xFF || jpeg[1] != 0xD8 || jpeg[2] != 0xFF) return false;
-            Directory.CreateDirectory(folder);
-            ClearOld(id);
-            File.WriteAllBytes(Path.Combine(folder, $"{id}-{version}.jpg"), jpeg);
-            return true;
+            var target = Path.Combine(folder, $"{c.Id}-{c.Version}.jpg");
+            if (File.Exists(target) || File.Exists(Path.ChangeExtension(target, ".none"))) return;
+            Get(c.Id, c.Version, c.Video, c.Seconds, c.Path);
         }
-
-        public const int MaxUpload = 1024 * 1024;
 
         // Thumbnails of files that are gone.
         public void Forget(string id)
@@ -120,6 +116,11 @@ namespace CouchPilot.Captures
 
         private byte[] Make(Job job)
         {
+            if (job.Video && VideoFrame.Available)
+            {
+                var frame = VideoFrame.Grab(job.Source, job.Seconds, LongSide);
+                return frame == null ? null : Save(job.Target, frame);
+            }
             using (var source = job.Video ? Native.Shell.Thumbnail(job.Source, LongSide) : Load(job.Source))
             {
                 if (source == null) return null;
@@ -140,14 +141,18 @@ namespace CouchPilot.Captures
                         var quality = new EncoderParameters(1);
                         quality.Param[0] = new EncoderParameter(Encoder.Quality, 82L);
                         small.Save(output, codec, quality);
-                        var bytes = output.ToArray();
-                        Directory.CreateDirectory(folder);
-                        ClearOld(Path.GetFileName(job.Target).Split('-')[0]);
-                        File.WriteAllBytes(job.Target, bytes);
-                        return bytes;
+                        return Save(job.Target, output.ToArray());
                     }
                 }
             }
+        }
+
+        private byte[] Save(string target, byte[] jpeg)
+        {
+            Directory.CreateDirectory(folder);
+            ClearOld(Path.GetFileName(target).Split('-')[0]);
+            File.WriteAllBytes(target, jpeg);
+            return jpeg;
         }
 
         // Every thumbnail of this capture, and the marks of failed attempts.

@@ -16,3 +16,7 @@ dist/
 
 # Local tooling
 .claude/
+
+# ffmpeg for the gallery: built by scripts/build-ffmpeg.sh
+build/
+src/CouchPilot/ffmpeg/

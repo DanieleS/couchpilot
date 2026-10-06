@@ -117,7 +117,7 @@ CouchPilot presses the tool's own shortcut, as you would at the keyboard, and wa
 
 The gallery shows Game Bar's *Captures* folder (wherever you moved it), NVIDIA's folder (the one set in its settings, or *Videos\NVIDIA*) and one more of your choice. Screenshots and MP4 clips are listed with their game: the game whose session they fall in, from CouchPilot's own session log, or the game their file or folder is named after. A new file shows up on the phone a moment after the tool finishes writing it, with a notice; that includes captures made at the PC.
 
-Thumbnails are made once, on the PC, and kept with the extension's data (`thumbnails`). A video's is the one Explorer shows, so for a codec Windows lacks (HEVC without its extension, AV1, both common with NVIDIA) the phone makes it instead: phones decode those in hardware. It reads only the bytes it needs for one frame, a moment into the clip, and hands the thumbnail to the PC, which keeps it for next time. A clip neither can decode shows its game's cover. Videos stream with seeking; **Condividi** hands the file to the phone's apps (it needs HTTPS, see above), **Salva** downloads it, **Elimina** moves it to the PC's Recycle Bin.
+Thumbnails are made once, on the PC, and kept with the extension's data (`thumbnails`); the newest are made as soon as a capture lands. Clips go through a small ffmpeg shipped with the extension (`ffmpeg.exe`, built by `scripts/build-ffmpeg.sh`): it decodes H.264, HEVC and AV1 whatever codecs Windows has, and tone-maps HDR clips so they don't come out grey. A clip it can't read shows its game's cover. Videos stream with seeking; **Condividi** hands the file to the phone's apps (it needs HTTPS, see above), **Salva** downloads it, **Elimina** moves it to the PC's Recycle Bin.
 
 ## Home Assistant
 
@@ -179,7 +179,7 @@ Against a running CouchPilot:
 COUCHPILOT_HOST=http://<pc-address>:8642 pnpm dev     # or https:// if the PC has a certificate
 ```
 
-The extension builds on Windows (`pnpm build` in `web/` first, then `dotnet build src/CouchPilot`); CI does both and packages the `.pext` on every push. Tag `vX.Y.Z` to publish a release.
+The extension builds on Windows (`pnpm build` in `web/` first, then `dotnet build src/CouchPilot`); CI does both and packages the `.pext` on every push. The gallery's `ffmpeg.exe` is cross-built on Linux by `scripts/build-ffmpeg.sh` (mingw-w64, nasm, meson, autotools) into `src/CouchPilot/ffmpeg/`; without it the extension still builds, and clips get Windows' own thumbnails. Tag `vX.Y.Z` to publish a release.
 
 ## Credits
 
