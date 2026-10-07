@@ -67,6 +67,17 @@ jobs:
         with:
           dotnet-version: 8.0.x
 
+      # The lock-screen credential provider and its elevated setup helper (C++/MSVC). Copied in
+      # before the extension build so the .csproj packs them into the output; see docs/unlock.md.
+      - name: Build native unlock components
+        shell: pwsh
+        run: |
+          cmake -S src -B build/native -A x64
+          cmake --build build/native --config Release
+          New-Item -ItemType Directory -Force src/CouchPilot/native | Out-Null
+          Copy-Item build/native/CouchPilotUnlock/Release/CouchPilotUnlock.dll src/CouchPilot/native/
+          Copy-Item build/native/CouchPilotUnlockSetup/Release/CouchPilotUnlockSetup.exe src/CouchPilot/native/
+
       - name: Build extension
         run: dotnet build src/CouchPilot/CouchPilot.csproj -c Release
 
