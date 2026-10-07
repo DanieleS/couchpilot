@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
+import { api } from '../api'
 import { useRemoteInput, Vk, type Mod } from '../input'
 import { t } from '../i18n'
 import { useCouchPilot } from '../store'
@@ -9,11 +10,21 @@ import KeyboardBar from './KeyboardBar.vue'
 import PcChip from './PcChip.vue'
 import TouchPad from './TouchPad.vue'
 
-const { status } = useCouchPilot()
+const { status, act } = useCouchPilot()
 const input = useRemoteInput()
 const viewport = useVisualViewport()
 const turnedOff = computed(() => status.value?.input === false)
 const disabled = computed(() => input.link.value !== 'open')
+
+// The PC is locked and this phone may unlock it. On success the PC unlocks, the status loses its
+// locked flag, and this card goes away on its own.
+const canUnlock = computed(() => status.value?.unlock === true)
+const unlocking = ref(false)
+async function unlockPc() {
+  unlocking.value = true
+  await act(() => api.unlock())
+  unlocking.value = false
+}
 
 const shortcuts: { label: string; vk: number; mods?: Mod[] }[] = [
   { label: 'Alt+Tab', vk: Vk.tab, mods: ['alt'] },
@@ -51,6 +62,20 @@ watch(
       <h1>{{ t.control.title }}</h1>
       <PcChip :name="status?.pc ?? null" />
     </header>
+
+    <div v-if="canUnlock" class="unlock card">
+      <svg class="unlock-icon" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 9.9-1" />
+      </svg>
+      <div class="unlock-text">
+        <p class="unlock-title">{{ t.control.unlock.title }}</p>
+        <p class="unlock-sub">{{ t.control.unlock.text }}</p>
+      </div>
+      <button class="btn btn-ink unlock-btn" :disabled="unlocking" @click="unlockPc">
+        <span v-if="unlocking" class="spinner" aria-hidden="true" />
+        {{ unlocking ? t.control.unlock.unlocking : t.control.unlock.button }}
+      </button>
+    </div>
 
     <TouchPad ref="pad" class="pad" :input="input" :disabled="disabled" :height="padHeight" :compact="keyboardOpen">
       <template #disabled>
@@ -99,6 +124,19 @@ watch(
 </template>
 
 <style scoped>
+.unlock {
+  display: flex;
+  align-items: center;
+  gap: var(--size-3);
+  margin-top: var(--size-4);
+  padding: var(--size-3);
+}
+.unlock-icon { flex-shrink: 0; color: var(--accent); }
+.unlock-text { flex: 1; min-width: 0; }
+.unlock-title { font-weight: 800; }
+.unlock-sub { font-size: 0.75rem; line-height: 1.4; margin-top: 2px; opacity: 0.7; }
+.unlock-btn { flex-shrink: 0; padding: 0.6rem 0.9rem; font-size: 0.8125rem; }
+
 .pad { margin-top: var(--size-4); }
 .off { max-inline-size: 18rem; padding: var(--size-4); text-align: center; }
 .title { font-weight: 800; }

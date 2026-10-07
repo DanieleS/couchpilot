@@ -22,6 +22,9 @@ namespace CouchPilot.Server
         // What this phone may do, on top of the switches in the settings.
         public bool AllowInput { get; set; } = true;
         public bool AllowCaptures { get; set; } = true;
+        // Unlocking the PC from the lock screen: off by default, since it's the most powerful thing
+        // a phone can do. Granted per phone in the settings.
+        public bool AllowUnlock { get; set; } = false;
     }
 
     public class PairedDeviceDto
@@ -30,6 +33,7 @@ namespace CouchPilot.Server
         public string Name { get; set; }
         public bool Input { get; set; }
         public bool Captures { get; set; }
+        public bool Unlock { get; set; }
     }
 
     // The PIN on the PC's screen while a phone asks to be paired.
@@ -243,7 +247,7 @@ namespace CouchPilot.Server
             return true;
         }
 
-        public bool SetPermissions(string id, bool? input, bool? captures)
+        public bool SetPermissions(string id, bool? input, bool? captures, bool? unlock = null)
         {
             lock (gate)
             {
@@ -251,6 +255,7 @@ namespace CouchPilot.Server
                 if (device == null) return false;
                 if (input != null) device.AllowInput = input.Value;
                 if (captures != null) device.AllowCaptures = captures.Value;
+                if (unlock != null) device.AllowUnlock = unlock.Value;
                 Save();
             }
             Bump();
@@ -278,6 +283,7 @@ namespace CouchPilot.Server
             Name = d.Name,
             Input = d.AllowInput,
             Captures = d.AllowCaptures,
+            Unlock = d.AllowUnlock,
         };
 
         private void Bump()
