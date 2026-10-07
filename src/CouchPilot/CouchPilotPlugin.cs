@@ -81,10 +81,13 @@ namespace CouchPilot
             captureLibrary.Changed += () =>
             {
                 server?.CapturesChanged();
-                // The newest ones get their thumbnails now, so they're ready when the phone looks.
+                // The newest ones get their thumbnails now, so they're ready when the phone looks, and
+                // the newest of all its preview, since it's the one the phone most likely opens next.
                 if (Settings.Captures)
                 {
-                    foreach (var c in captureLibrary.Newest(24)) thumbnails.Warm(c);
+                    var newest = captureLibrary.Newest(24);
+                    if (newest.Count > 0) thumbnails.WarmPreview(newest[0]);
+                    foreach (var c in newest) thumbnails.Warm(c);
                 }
             };
             captures.StatusChanged += () => server?.Nudge();

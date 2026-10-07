@@ -380,6 +380,21 @@ namespace CouchPilot.Server
             await Response.OutputStream.WriteAsync(jpeg, 0, jpeg.Length);
         }
 
+        // ?v=<version>: a screenshot sized for the phone's screen, a JPEG of a few hundred kB where the
+        // PNG can weigh tens of MB. 404 for clips and GIFs, and for a file the PC can't read: the
+        // viewer then shows the file itself.
+        [Route(HttpVerbs.Get, "/captures/{id}/preview")]
+        public async Task CapturePreview(string id)
+        {
+            RequireCaptures();
+            var source = captureLibrary.ThumbnailOf(id) ?? throw HttpException.NotFound();
+            if (!Thumbnails.HasPreview(source)) throw HttpException.NotFound();
+            var jpeg = await thumbnails.Preview(id, source.Version, source.Path) ?? throw HttpException.NotFound();
+            Response.ContentType = "image/jpeg";
+            Response.Headers.Set("Cache-Control", "public, max-age=31536000, immutable");
+            await Response.OutputStream.WriteAsync(jpeg, 0, jpeg.Length);
+        }
+
         // The file itself. Videos are asked for in ranges: the player seeks by asking for the
         // bytes it needs, so a 5-minute clip starts at once and jumps anywhere.
         [Route(HttpVerbs.Get, "/captures/{id}/file")]
