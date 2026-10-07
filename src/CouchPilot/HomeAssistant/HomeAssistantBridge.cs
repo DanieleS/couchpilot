@@ -11,6 +11,7 @@ using MQTTnet;
 using MQTTnet.Client;
 using Playnite.SDK;
 using Swan.Formatters;
+using static CouchPilot.Lang;
 
 namespace CouchPilot.HomeAssistant
 {
@@ -33,6 +34,8 @@ namespace CouchPilot.HomeAssistant
         private static readonly ILogger logger = LogManager.GetLogger();
         private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(3);
         private static readonly TimeSpan ReconnectDelay = TimeSpan.FromSeconds(10);
+        // What the display preset reads when the screens match none of the saved ones.
+        private static string Custom => Pc("Custom", "Personalizzato");
 
         private readonly MqttConfig config;
         private readonly LibraryService library;
@@ -281,20 +284,20 @@ namespace CouchPilot.HomeAssistant
                 };
             }
 
-            var game = Entity("game", "Gioco", "mdi:gamepad-variant", "{{ value_json.get('game') or 'Nessuno' }}");
+            var game = Entity("game", Pc("Game", "Gioco"), "mdi:gamepad-variant", $"{{{{ value_json.get('game') or '{Pc("None", "Nessuno")}' }}}}");
             game["json_attributes_topic"] = stateTopic;
             game["json_attributes_template"] =
                 "{{ {'game_id': value_json.get('game_id'), 'source': value_json.get('source'), 'started_at': value_json.get('started_at')} | tojson }}";
 
-            var playing = Entity("playing", "In gioco", "mdi:controller", "{{ 'ON' if value_json.get('playing') else 'OFF' }}");
+            var playing = Entity("playing", Pc("Playing", "In gioco"), "mdi:controller", "{{ 'ON' if value_json.get('playing') else 'OFF' }}");
             playing["device_class"] = "running";
 
-            var preset = Entity("display_preset", "Preset schermo", "mdi:monitor-multiple",
-                "{{ value_json.get('preset') or 'Personalizzato' }}");
+            var preset = Entity("display_preset", Pc("Display preset", "Preset schermo"), "mdi:monitor-multiple",
+                $"{{{{ value_json.get('preset') or '{Custom}' }}}}");
             preset["json_attributes_topic"] = stateTopic;
             preset["json_attributes_template"] = "{{ {'monitors': value_json.get('monitors')} | tojson }}";
 
-            var streaming = Entity("streaming", "Stream Vibepollo", "mdi:cast", "{{ 'ON' if value_json.get('streaming') else 'OFF' }}");
+            var streaming = Entity("streaming", Pc("Vibepollo stream", "Stream Vibepollo"), "mdi:cast", "{{ 'ON' if value_json.get('streaming') else 'OFF' }}");
 
             var prefix = string.IsNullOrWhiteSpace(config.DiscoveryPrefix) ? "homeassistant" : config.DiscoveryPrefix.Trim('/');
 
@@ -306,17 +309,17 @@ namespace CouchPilot.HomeAssistant
             if (config.AcceptCommands)
             {
                 var names = displays.Snapshot().Presets.Select(p => p.Name).ToList();
-                var select = Entity("display_preset_select", "Cambia schermo", "mdi:monitor-multiple",
-                    "{{ value_json.get('preset') or 'Personalizzato' }}");
+                var select = Entity("display_preset_select", Pc("Switch display", "Cambia schermo"), "mdi:monitor-multiple",
+                    $"{{{{ value_json.get('preset') or '{Custom}' }}}}");
                 select["command_topic"] = $"{commandTopic}/display_preset";
-                select["options"] = names.Concat(new[] { "Personalizzato" }).Distinct().ToList();
+                select["options"] = names.Concat(new[] { Custom }).Distinct().ToList();
 
-                var close = Entity("close_game", "Chiudi gioco", "mdi:close-box", null);
+                var close = Entity("close_game", Pc("Close game", "Chiudi gioco"), "mdi:close-box", null);
                 close.Remove("state_topic");
                 close.Remove("value_template");
                 close["command_topic"] = $"{commandTopic}/close_game";
 
-                var focus = Entity("focus_game", "Primo piano", "mdi:open-in-app", null);
+                var focus = Entity("focus_game", Pc("Bring to front", "Primo piano"), "mdi:open-in-app", null);
                 focus.Remove("state_topic");
                 focus.Remove("value_template");
                 focus["command_topic"] = $"{commandTopic}/focus_game";

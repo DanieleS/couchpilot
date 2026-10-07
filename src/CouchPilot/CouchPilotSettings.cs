@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using CouchPilot.HomeAssistant;
 using Playnite.SDK;
 using Playnite.SDK.Data;
+using static CouchPilot.Lang;
 
 namespace CouchPilot
 {
@@ -136,7 +137,7 @@ namespace CouchPilot
             errors = new List<string>();
             if (Port < 1024 || Port > 65535)
             {
-                errors.Add("La porta deve essere tra 1024 e 65535.");
+                errors.Add(Pc("The port must be between 1024 and 65535.", "La porta deve essere tra 1024 e 65535."));
             }
             if (!string.IsNullOrWhiteSpace(CertificatePath))
             {
@@ -151,15 +152,15 @@ namespace CouchPilot
             }
             if (!string.IsNullOrWhiteSpace(CaptureFolder) && !System.IO.Directory.Exists(CaptureFolder.Trim()))
             {
-                errors.Add("La cartella delle catture non esiste.");
+                errors.Add(Pc("The captures folder doesn't exist.", "La cartella delle catture non esiste."));
             }
             if (MqttEnabled && string.IsNullOrWhiteSpace(MqttHost))
             {
-                errors.Add("Per Home Assistant serve l'indirizzo del broker MQTT.");
+                errors.Add(Pc("Home Assistant needs the MQTT broker's address.", "Per Home Assistant serve l'indirizzo del broker MQTT."));
             }
             if (MqttEnabled && (MqttPort < 1 || MqttPort > 65535))
             {
-                errors.Add("La porta del broker MQTT non è valida.");
+                errors.Add(Pc("The MQTT broker's port isn't valid.", "La porta del broker MQTT non è valida."));
             }
             return errors.Count == 0;
         }

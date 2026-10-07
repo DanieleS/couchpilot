@@ -3,6 +3,7 @@ import { DialogContent, DialogDescription, DialogOverlay, DialogPortal, DialogRo
 import { computed, ref, watch } from 'vue'
 import { api, captureFileUrl, captureStripUrl } from '../api'
 import { clipLength } from '../captures'
+import { t } from '../i18n'
 import { useCouchPilot } from '../store'
 import type { Capture } from '../types'
 import AppIcon from './AppIcon.vue'
@@ -140,12 +141,12 @@ const round = (s: number) => Math.round(s * 1000) / 1000
       <DialogOverlay class="trim-overlay" />
       <DialogContent class="trimmer" :aria-describedby="undefined" @escape-key-down="working && $event.preventDefault()" @pointer-down-outside="working && $event.preventDefault()">
         <VisuallyHidden>
-          <DialogTitle>Taglia la clip</DialogTitle>
-          <DialogDescription>Scegli da dove a dove e il PC scrive una clip più corta, o una GIF.</DialogDescription>
+          <DialogTitle>{{ t.captures.trimmer.title }}</DialogTitle>
+          <DialogDescription>{{ t.captures.trimmer.description }}</DialogDescription>
         </VisuallyHidden>
         <header class="bar">
-          <button class="round" aria-label="Chiudi" :disabled="working" @click="open = false"><AppIcon name="x" :size="18" /></button>
-          <p class="heading">Taglia</p>
+          <button class="round" :aria-label="t.captures.trimmer.close" :disabled="working" @click="open = false"><AppIcon name="x" :size="18" /></button>
+          <p class="heading">{{ t.captures.trimmer.heading }}</p>
           <span class="round-space" />
         </header>
 
@@ -165,13 +166,13 @@ const round = (s: number) => Math.round(s * 1000) / 1000
             @ended="play"
           />
           <div v-else class="media placeholder"><AppIcon name="play" :size="28" /></div>
-          <p v-if="working" class="working"><span class="spinner" aria-hidden="true" />Il PC sta tagliando la clip: può volerci un minuto…</p>
+          <p v-if="working" class="working"><span class="spinner" aria-hidden="true" />{{ t.captures.trimmer.working }}</p>
         </div>
 
         <section class="editor">
           <div class="times tabular">
             <span class="t"><b>{{ clock(from) }}</b></span>
-            <span class="t mid">{{ clock(selected) }} {{ format === 'gif' ? 'di GIF' : 'di clip' }}</span>
+            <span class="t mid">{{ clock(selected) }} {{ format === 'gif' ? t.captures.trimmer.ofGif : t.captures.trimmer.ofClip }}</span>
             <span class="t"><b>{{ clock(to) }}</b></span>
           </div>
 
@@ -180,42 +181,42 @@ const round = (s: number) => Math.round(s * 1000) / 1000
             <div class="dim left" :style="{ width: pct(from) }" />
             <div class="dim right" :style="{ width: pct(length - to) }" />
             <div class="window" :style="{ left: pct(from), width: pct(selected) }" @pointerdown="pointerDown($event, 'both')" />
-            <button class="handle start" :class="{ on: dragging === 'from' }" :style="{ left: pct(from) }" aria-label="Inizio" @pointerdown="pointerDown($event, 'from')"><i /></button>
-            <button class="handle end" :class="{ on: dragging === 'to' }" :style="{ left: pct(to) }" aria-label="Fine" @pointerdown="pointerDown($event, 'to')"><i /></button>
+            <button class="handle start" :class="{ on: dragging === 'from' }" :style="{ left: pct(from) }" :aria-label="t.captures.trimmer.start" @pointerdown="pointerDown($event, 'from')"><i /></button>
+            <button class="handle end" :class="{ on: dragging === 'to' }" :style="{ left: pct(to) }" :aria-label="t.captures.trimmer.end" @pointerdown="pointerDown($event, 'to')"><i /></button>
           </div>
 
           <div class="nudges">
             <span class="nudge-group">
-              <button class="nudge" aria-label="Inizio mezzo secondo prima" @click="nudge('from', -0.5)">−</button>
-              <span>inizio</span>
-              <button class="nudge" aria-label="Inizio mezzo secondo dopo" @click="nudge('from', 0.5)">+</button>
+              <button class="nudge" :aria-label="t.captures.trimmer.startEarlier" @click="nudge('from', -0.5)">−</button>
+              <span>{{ t.captures.trimmer.startShort }}</span>
+              <button class="nudge" :aria-label="t.captures.trimmer.startLater" @click="nudge('from', 0.5)">+</button>
             </span>
             <span class="nudge-group">
-              <button class="nudge" aria-label="Fine mezzo secondo prima" @click="nudge('to', -0.5)">−</button>
-              <span>fine</span>
-              <button class="nudge" aria-label="Fine mezzo secondo dopo" @click="nudge('to', 0.5)">+</button>
+              <button class="nudge" :aria-label="t.captures.trimmer.endEarlier" @click="nudge('to', -0.5)">−</button>
+              <span>{{ t.captures.trimmer.endShort }}</span>
+              <button class="nudge" :aria-label="t.captures.trimmer.endLater" @click="nudge('to', 0.5)">+</button>
             </span>
           </div>
 
           <div class="options">
-            <div class="seg" role="tablist" aria-label="Formato">
-              <button role="tab" :aria-selected="format === 'mp4'" :class="{ on: format === 'mp4' }" @click="format = 'mp4'">Clip</button>
+            <div class="seg" role="tablist" :aria-label="t.captures.trimmer.format">
+              <button role="tab" :aria-selected="format === 'mp4'" :class="{ on: format === 'mp4' }" @click="format = 'mp4'">{{ t.captures.trimmer.clip }}</button>
               <button role="tab" :aria-selected="format === 'gif'" :class="{ on: format === 'gif' }" @click="format = 'gif'">GIF</button>
             </div>
             <label v-if="format === 'mp4'" class="audio">
               <input v-model="audio" type="checkbox" />
               <span class="box"><AppIcon name="check" :size="12" /></span>
-              Con l'audio
+              {{ t.captures.trimmer.withAudio }}
             </label>
-            <p v-else class="gif-note">Fino a {{ MAX_GIF_SECONDS }} s, 480 px, senza audio.</p>
+            <p v-else class="gif-note">{{ t.captures.trimmer.gifNote(MAX_GIF_SECONDS) }}</p>
           </div>
-          <p v-if="tooLongForGif" class="warn">Una GIF può durare al massimo {{ MAX_GIF_SECONDS }} secondi: stringi la selezione.</p>
+          <p v-if="tooLongForGif" class="warn">{{ t.captures.trimmer.tooLong(MAX_GIF_SECONDS) }}</p>
 
           <button class="btn make" :disabled="!canMake" @click="make">
             <span v-if="working" class="spinner" aria-hidden="true" /><AppIcon v-else name="scissors" :size="17" />
-            {{ working ? 'Taglio…' : format === 'gif' ? 'Crea la GIF' : 'Crea la clip' }}
+            {{ working ? t.captures.trimmer.cutting : format === 'gif' ? t.captures.trimmer.makeGif : t.captures.trimmer.makeClip }}
           </button>
-          <p class="foot">Finisce nella galleria, accanto alla clip da cui viene, pronta da condividere.</p>
+          <p class="foot">{{ t.captures.trimmer.foot }}</p>
         </section>
       </DialogContent>
     </DialogPortal>

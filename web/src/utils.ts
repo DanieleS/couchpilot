@@ -1,3 +1,5 @@
+import { t } from './i18n'
+
 const hue = (s: string) => [...s].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 7)
 
 export const placeholderGradient = (name: string, light = 42, dark = 16) => {
@@ -10,13 +12,11 @@ export function stripHtml(html: string) {
   return new DOMParser().parseFromString(html, 'text/html').body.textContent?.trim() ?? ''
 }
 
-// "9 h 40", "45 min", "0 min": how long, the way the stats speak.
+// "9 h 40" / "9h 40m", "45 min", "0 min": how long, the way the stats speak.
 export function duration(seconds: number) {
   const minutes = Math.round(seconds / 60)
-  if (minutes < 60) return `${minutes} min`
-  const h = Math.floor(minutes / 60)
-  const m = minutes % 60
-  return m ? `${h} h ${String(m).padStart(2, '0')}` : `${h} h`
+  if (minutes < 60) return t.app.minutes(minutes)
+  return t.app.hours(Math.floor(minutes / 60), minutes % 60)
 }
 
 // A yyyy-MM-dd day as a local date, without the UTC shift `new Date('2026-10-03')` would do.
@@ -25,5 +25,5 @@ export const parseDay = (day: string) => {
   return new Date(y, m - 1, d)
 }
 
-// Italian capitalises the first word of a label only: «Mercoledì 7 ottobre», not «7 Ottobre».
+// Capitalises the first letter of a label only, as Italian wants: «Mercoledì 7 ottobre», not «7 Ottobre».
 export const capitalize = (text: string) => text.charAt(0).toUpperCase() + text.slice(1)

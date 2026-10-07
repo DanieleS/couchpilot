@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
+import { t } from '../i18n'
 import { Vk, type Mod, type RemoteInput } from '../input'
 
 const props = defineProps<{ input: RemoteInput; disabled: boolean; bottomOffset: number; keyboardHeight: number }>()
@@ -41,8 +42,8 @@ const rows = computed<BarKey[][]>(() =>
         [{ label: 'Fn', fn: true }, F(9), F(10), F(11), F(12), mod('Ctrl', 'ctrl'), mod('Alt', 'alt'), mod('⇧', 'shift')],
       ]
     : [
-        [k('Esc', Vk.esc), k('Tab', Vk.tab), mod('Ctrl', 'ctrl'), mod('Alt', 'alt'), mod('Win', 'win'), k('Home', Vk.home), k('↑', Vk.up, true, 'Su'), k('End', Vk.end)],
-        [{ label: 'Fn', fn: true }, mod('⇧', 'shift'), k('Canc', Vk.delete, true), k('Pag↑', Vk.pageUp, true), k('Pag↓', Vk.pageDown, true), k('←', Vk.left, true, 'Sinistra'), k('↓', Vk.down, true, 'Giù'), k('→', Vk.right, true, 'Destra')],
+        [k('Esc', Vk.esc), k('Tab', Vk.tab), mod('Ctrl', 'ctrl'), mod('Alt', 'alt'), mod('Win', 'win'), k('Home', Vk.home), k('↑', Vk.up, true, t.control.keys.up), k('End', Vk.end)],
+        [{ label: 'Fn', fn: true }, mod('⇧', 'shift'), k(t.control.keys.del, Vk.delete, true), k(t.control.keys.pageUp, Vk.pageUp, true), k(t.control.keys.pageDown, Vk.pageDown, true), k('←', Vk.left, true, t.control.keys.left), k('↓', Vk.down, true, t.control.keys.down), k('→', Vk.right, true, t.control.keys.right)],
       ],
 )
 
@@ -182,7 +183,7 @@ onBeforeUnmount(() => {
     autocapitalize="off"
     spellcheck="false"
     tabindex="-1"
-    aria-label="Scrivi sul PC"
+    :aria-label="t.control.keys.field"
     @input="onInput"
     @keydown="onFieldKeydown"
     @focus="onFocus"
@@ -218,7 +219,7 @@ onBeforeUnmount(() => {
         @pointerleave="onKeyUp"
       >{{ key.label }}</button>
     </div>
-    <button type="button" tabindex="-1" class="done" @pointerdown.prevent @pointerup="hide">Fine</button>
+    <button type="button" tabindex="-1" class="done" @pointerdown.prevent @pointerup="hide">{{ t.control.keys.done }}</button>
   </div>
 </template>
 

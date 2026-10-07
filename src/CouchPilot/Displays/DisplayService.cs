@@ -7,6 +7,7 @@ using CouchPilot.Native;
 using Playnite.SDK;
 using Playnite.SDK.Data;
 using static CouchPilot.Native.Ccd;
+using static CouchPilot.Lang;
 
 namespace CouchPilot.Displays
 {
@@ -142,7 +143,7 @@ namespace CouchPilot.Displays
                 var (paths, modes) = Query(QDC_ONLY_ACTIVE_PATHS);
                 if (Describe(paths, modes).Any(m => m.Virtual))
                 {
-                    throw new DisplayException("C'è uno stream Vibepollo in corso: salva il preset quando è finito, senza lo schermo virtuale.");
+                    throw new DisplayException(Tr("A Vibepollo stream is on: save the preset once it's over, without the virtual display.", "C'è uno stream Vibepollo in corso: salva il preset quando è finito, senza lo schermo virtuale."));
                 }
                 var preset = new DisplayPreset
                 {
@@ -342,7 +343,7 @@ namespace CouchPilot.Displays
                 if (!connected.TryGetValue(target.DevicePath ?? "", out var now))
                 {
                     var monitor = preset.Monitors.FirstOrDefault(m => m.DevicePath == target.DevicePath);
-                    throw new DisplayException($"Il monitor {monitor?.Name ?? target.DevicePath} non è collegato.");
+                    throw new DisplayException(Tr($"The monitor {monitor?.Name ?? target.DevicePath} isn't connected.", $"Il monitor {monitor?.Name ?? target.DevicePath} non è collegato."));
                 }
                 luidMap[target.AdapterId] = now.adapterId;
                 paths[i].targetInfo.id = now.id;

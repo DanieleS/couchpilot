@@ -3,6 +3,7 @@ import { DialogContent, DialogDescription, DialogOverlay, DialogPortal, DialogRo
 import { computed, nextTick, ref, watch } from 'vue'
 import { captureFileUrl, captureThumbUrl, imageUrl } from '../api'
 import { clipLength, dayLabel, fileSize, isGif, playDayKey, toolName } from '../captures'
+import { locale, t } from '../i18n'
 import { useCouchPilot } from '../store'
 import type { Capture } from '../types'
 import { placeholderGradient } from '../utils'
@@ -48,13 +49,13 @@ const meta = computed(() => {
   const c = current.value
   if (!c) return ''
   const day = dayLabel(playDayKey(c.takenAt))
-  const time = new Date(c.takenAt).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })
+  const time = new Date(c.takenAt).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })
   return [
-    `${day} alle ${time}`,
-    c.kind === 'video' ? (c.replay ? `Replay di ${clipLength(c.seconds)}` : clipLength(c.seconds)) : isGif(c) ? 'GIF' : null,
+    t.captures.viewer.at(day, time),
+    c.kind === 'video' ? (c.replay ? t.captures.viewer.replayOf(clipLength(c.seconds)) : clipLength(c.seconds)) : isGif(c) ? 'GIF' : null,
     c.width && c.height ? `${c.width}×${c.height}` : null,
     fileSize(c.bytes),
-    c.edited ? 'tagliata da una clip' : toolName(c.tool),
+    c.edited ? t.captures.viewer.cutFromClip : toolName(c.tool),
   ].filter(Boolean).join(' · ')
 })
 
@@ -69,7 +70,7 @@ async function share() {
   try {
     const blob = await (await fetch(file.value)).blob()
     const shared = new File([blob], c.fileName, { type: blob.type || (c.kind === 'video' ? 'video/mp4' : isGif(c) ? 'image/gif' : 'image/png') })
-    if (!navigator.canShare({ files: [shared] })) throw new Error('Il telefono non sa condividere questo file: salvalo e condividilo dalla galleria.')
+    if (!navigator.canShare({ files: [shared] })) throw new Error(t.captures.viewer.cantShare)
     await navigator.share({ files: [shared], title: c.game ?? c.fileName })
   } catch (e) {
     if ((e as Error).name !== 'AbortError') error.value = (e as Error).message
@@ -95,12 +96,12 @@ watch([index, open], async () => {
       <DialogOverlay class="viewer-overlay" />
       <DialogContent class="viewer" :aria-describedby="undefined">
         <VisuallyHidden>
-          <DialogTitle>{{ current?.game ?? 'Cattura' }}</DialogTitle>
+          <DialogTitle>{{ current?.game ?? t.captures.viewer.capture }}</DialogTitle>
           <DialogDescription>{{ meta }}</DialogDescription>
         </VisuallyHidden>
         <header class="bar">
-          <button class="round" aria-label="Chiudi" @click="open = false"><AppIcon name="x" :size="18" /></button>
-          <p class="count tabular">{{ index + 1 }} di {{ items.length }}</p>
+          <button class="round" :aria-label="t.captures.viewer.close" @click="open = false"><AppIcon name="x" :size="18" /></button>
+          <p class="count tabular">{{ t.captures.viewer.position(index + 1, items.length) }}</p>
           <span class="round-space" />
         </header>
 
@@ -117,8 +118,8 @@ watch([index, open], async () => {
           />
           <img v-else-if="file" :key="current.id" class="media" :src="file" :alt="current.game ?? ''" />
           <CaptureThumb v-else class="media" :capture="current" />
-          <button v-if="index > 0" class="step prev" aria-label="Precedente" @click="go(index - 1)"><AppIcon name="chevron-left" :size="20" /></button>
-          <button v-if="index < items.length - 1" class="step next" aria-label="Successiva" @click="go(index + 1)"><AppIcon name="chevron-right" :size="20" /></button>
+          <button v-if="index > 0" class="step prev" :aria-label="t.captures.viewer.prev" @click="go(index - 1)"><AppIcon name="chevron-left" :size="20" /></button>
+          <button v-if="index < items.length - 1" class="step next" :aria-label="t.captures.viewer.next" @click="go(index + 1)"><AppIcon name="chevron-right" :size="20" /></button>
         </div>
 
         <section v-if="current" class="info">
@@ -127,17 +128,17 @@ watch([index, open], async () => {
               <img v-if="cover" :src="cover" alt="" />
             </span>
             <div class="text">
-              <h2 class="game truncate">{{ current.game ?? 'Altro' }}</h2>
+              <h2 class="game truncate">{{ current.game ?? t.captures.viewer.other }}</h2>
               <p class="meta">{{ meta }}</p>
             </div>
           </div>
           <div class="actions">
             <button v-if="canShare" class="btn share" :disabled="sharing || !file" @click="share">
-              <span v-if="sharing" class="spinner" aria-hidden="true" /><AppIcon v-else name="share" :size="17" />{{ sharing ? 'Preparo…' : 'Condividi' }}
+              <span v-if="sharing" class="spinner" aria-hidden="true" /><AppIcon v-else name="share" :size="17" />{{ sharing ? t.captures.viewer.preparing : t.captures.viewer.share }}
             </button>
-            <button v-if="current.kind === 'video' && canTrim" class="btn small" @click="emit('trim', current)"><AppIcon name="scissors" :size="17" />Taglia</button>
-            <a v-if="file" class="btn small" :href="file" :download="current.fileName"><AppIcon name="download" :size="17" />Salva</a>
-            <button class="btn small danger" @click="emit('remove', current)"><AppIcon name="trash" :size="17" />Elimina</button>
+            <button v-if="current.kind === 'video' && canTrim" class="btn small" @click="emit('trim', current)"><AppIcon name="scissors" :size="17" />{{ t.captures.viewer.trim }}</button>
+            <a v-if="file" class="btn small" :href="file" :download="current.fileName"><AppIcon name="download" :size="17" />{{ t.captures.viewer.save }}</a>
+            <button class="btn small danger" @click="emit('remove', current)"><AppIcon name="trash" :size="17" />{{ t.captures.viewer.delete }}</button>
           </div>
         </section>
 
@@ -147,7 +148,7 @@ watch([index, open], async () => {
             :key="c.id"
             class="frame"
             :class="{ on: stripFrom + i === index }"
-            :aria-label="`Cattura ${stripFrom + i + 1}`"
+            :aria-label="t.captures.viewer.frame(stripFrom + i + 1)"
             @click="go(stripFrom + i)"
           >
             <CaptureThumb :capture="c" />

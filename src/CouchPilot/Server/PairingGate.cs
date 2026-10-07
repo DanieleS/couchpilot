@@ -2,6 +2,7 @@ using System;
 using System.Net;
 using System.Threading.Tasks;
 using EmbedIO;
+using static CouchPilot.Lang;
 
 namespace CouchPilot.Server
 {
@@ -35,12 +36,13 @@ namespace CouchPilot.Server
             var path = context.Request.Url.AbsolutePath;
             if (!path.StartsWith("/api/", StringComparison.Ordinal) || path.StartsWith("/api/pair", StringComparison.Ordinal)) return;
             if (context.Request.HttpVerb == HttpVerbs.Options) return;
+            UseRequest(context.Request.Headers["Accept-Language"]);
 
             var device = pairing.Required ? pairing.Authenticate(context.Request.Cookies[PairingService.CookieName]?.Value) : null;
             if (pairing.Required && device == null)
             {
                 context.Response.StatusCode = (int)HttpStatusCode.Unauthorized;
-                await RemoteServer.SerializeJson(context, new { error = "Questo telefono non è abbinato al PC.", code = "unpaired" });
+                await RemoteServer.SerializeJson(context, new { error = Tr("This phone isn't paired with the PC.", "Questo telefono non è abbinato al PC."), code = "unpaired" });
                 context.SetHandled();
                 return;
             }

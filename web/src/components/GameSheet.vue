@@ -3,6 +3,7 @@ import { computed, onScopeDispose, ref, watch } from 'vue'
 import { useGameAchievements } from '../achievements'
 import { api } from '../api'
 import { useCaptures } from '../captures'
+import { locale, t } from '../i18n'
 import type { Capture, Game, GameDetail, GameStats } from '../types'
 import { duration, stripHtml } from '../utils'
 import AchievementIcon from './AchievementIcon.vue'
@@ -27,7 +28,7 @@ const captures = computed(() => (props.game ? allCaptures.value.filter((c) => c.
 const captureCounts = computed(() => {
   const clips = captures.value.filter((c) => c.kind === 'video').length
   const photos = captures.value.length - clips
-  return [photos && `${photos} foto`, clips && `${clips} clip`].filter(Boolean).join(', ')
+  return [photos && t.games.sheet.photos(photos), clips && t.games.sheet.clips(clips)].filter(Boolean).join(', ')
 })
 
 const detail = ref<GameDetail | null>(null)
@@ -50,15 +51,15 @@ const lastPlayed = computed(() => {
   if (!when) return null
   const date = new Date(when)
   const days = Math.round((new Date().setHours(0, 0, 0, 0) - new Date(date).setHours(0, 0, 0, 0)) / 86400000)
-  const day = days === 0 ? 'oggi' : days === 1 ? 'ieri' : days < 7 ? `${days} giorni fa` : date.toLocaleDateString('it-IT', { day: 'numeric', month: 'long', year: days > 300 ? 'numeric' : undefined })
+  const day = days === 0 ? t.games.sheet.today : days === 1 ? t.games.sheet.yesterday : days < 7 ? t.games.sheet.daysAgo(days) : date.toLocaleDateString(locale, { day: 'numeric', month: 'long', year: days > 300 ? 'numeric' : undefined })
   return { day, length: s?.lastSession ? duration(s.lastSession.seconds) : null }
 })
 
-const hours = (m: number) => (m < 60 ? `${m} min` : `${Math.round(m / 60)} h`)
+const hours = (m: number) => (m < 60 ? t.games.sheet.minutes(m) : t.games.sheet.hours(Math.round(m / 60)))
 const meta = computed(() => {
   const g = props.game
   if (!g) return ''
-  return [g.source, g.playtimeMinutes ? `${hours(g.playtimeMinutes)} giocate` : null, g.releaseYear].filter(Boolean).join(' · ')
+  return [g.source, g.playtimeMinutes ? t.games.sheet.played(hours(g.playtimeMinutes)) : null, g.releaseYear].filter(Boolean).join(' · ')
 })
 const description = computed(() => (detail.value?.description ? stripHtml(detail.value.description) : ''))
 </script>
@@ -76,42 +77,42 @@ const description = computed(() => (detail.value?.description ? stripHtml(detail
       </div>
 
       <div v-if="running" class="actions two">
-        <button class="btn btn-dark" @click="emit('focus')"><AppIcon name="focus" :size="16" />Primo piano</button>
-        <button class="btn btn-danger" @click="emit('stop')"><AppIcon name="power" :size="16" />Chiudi gioco</button>
+        <button class="btn btn-dark" @click="emit('focus')"><AppIcon name="focus" :size="16" />{{ t.games.sheet.focus }}</button>
+        <button class="btn btn-danger" @click="emit('stop')"><AppIcon name="power" :size="16" />{{ t.games.sheet.stop }}</button>
       </div>
       <button v-else-if="game.installing || game.uninstalling" class="btn btn-ink btn-block play" disabled>
-        <span class="spinner" aria-hidden="true" />{{ game.installing ? 'Installazione in corso…' : 'Disinstallazione in corso…' }}
+        <span class="spinner" aria-hidden="true" />{{ game.installing ? t.games.sheet.installing : t.games.sheet.uninstalling }}
       </button>
       <template v-else-if="game.installed">
-        <button class="btn btn-ink btn-block play" @click="emit('start')"><AppIcon name="play" :size="18" />Gioca</button>
-        <button class="uninstall" @click="emit('uninstall')"><AppIcon name="trash" :size="14" />Disinstalla</button>
+        <button class="btn btn-ink btn-block play" @click="emit('start')"><AppIcon name="play" :size="18" />{{ t.games.sheet.play }}</button>
+        <button class="uninstall" @click="emit('uninstall')"><AppIcon name="trash" :size="14" />{{ t.games.sheet.uninstall }}</button>
       </template>
-      <button v-else class="btn btn-dark btn-block play" @click="emit('install')"><AppIcon name="download" :size="18" />Installa</button>
+      <button v-else class="btn btn-dark btn-block play" @click="emit('install')"><AppIcon name="download" :size="18" />{{ t.games.sheet.install }}</button>
 
-      <section v-if="stats && stats.playtimeSeconds > 0" class="stats" aria-label="Statistiche">
+      <section v-if="stats && stats.playtimeSeconds > 0" class="stats" :aria-label="t.games.sheet.stats">
         <div class="figures">
-          <div><span class="n tabular">{{ duration(stats.playtimeSeconds) }}</span><span class="l">in tutto</span></div>
-          <div v-if="stats.sessions"><span class="n tabular">{{ stats.sessions }}</span><span class="l">{{ stats.sessions === 1 ? 'sessione' : 'sessioni' }}</span></div>
-          <div v-else><span class="n tabular">{{ stats.playCount }}</span><span class="l">avvii</span></div>
-          <div v-if="stats.sessions"><span class="n tabular">{{ duration(stats.averageSeconds) }}</span><span class="l">a sessione</span></div>
-          <div v-else-if="stats.playCount"><span class="n tabular">{{ duration(stats.playtimeSeconds / stats.playCount) }}</span><span class="l">ad avvio</span></div>
+          <div><span class="n tabular">{{ duration(stats.playtimeSeconds) }}</span><span class="l">{{ t.games.sheet.total }}</span></div>
+          <div v-if="stats.sessions"><span class="n tabular">{{ stats.sessions }}</span><span class="l">{{ stats.sessions === 1 ? t.games.sheet.session : t.games.sheet.sessions }}</span></div>
+          <div v-else><span class="n tabular">{{ stats.playCount }}</span><span class="l">{{ t.games.sheet.launches }}</span></div>
+          <div v-if="stats.sessions"><span class="n tabular">{{ duration(stats.averageSeconds) }}</span><span class="l">{{ t.games.sheet.perSession }}</span></div>
+          <div v-else-if="stats.playCount"><span class="n tabular">{{ duration(stats.playtimeSeconds / stats.playCount) }}</span><span class="l">{{ t.games.sheet.perLaunch }}</span></div>
         </div>
         <div v-if="stats.sessions" class="weeks">
-          <p class="weeks-head"><span>Ultime 12 settimane</span><span>{{ duration(stats.weeks[11]) }} questa</span></p>
-          <div class="spark" role="img" :aria-label="`Ore per settimana nelle ultime 12 settimane, l'ultima ${duration(stats.weeks[11])}`">
+          <p class="weeks-head"><span>{{ t.games.sheet.last12Weeks }}</span><span>{{ t.games.sheet.thisWeek(duration(stats.weeks[11])) }}</span></p>
+          <div class="spark" role="img" :aria-label="t.games.sheet.weeksLabel(duration(stats.weeks[11]))">
             <i v-for="(w, i) in stats.weeks" :key="i" :class="{ cur: i === 11 }" :style="{ height: `${(w / weeksMax) * 100}%` }" />
           </div>
         </div>
         <p v-if="lastPlayed" class="last">
-          Ultima volta <b>{{ lastPlayed.day }}</b><template v-if="lastPlayed.length">, per <b>{{ lastPlayed.length }}</b></template>
+          {{ t.games.sheet.lastTime }} <b>{{ lastPlayed.day }}</b><template v-if="lastPlayed.length">, {{ t.games.sheet.lastFor }} <b>{{ lastPlayed.length }}</b></template>
           <template v-if="stats.completionStatus"> · {{ stats.completionStatus }}</template>
         </p>
       </section>
 
-      <section v-if="achievements" class="achievements" aria-label="Obiettivi">
+      <section v-if="achievements" class="achievements" :aria-label="t.games.sheet.achievements">
         <div class="eyebrow">
-          <span>Obiettivi · {{ achievements.unlocked }}/{{ achievements.total }}</span>
-          <button class="link" @click="emit('achievements')">Vedi tutti<AppIcon name="chevron-right" :size="14" /></button>
+          <span>{{ t.games.sheet.achievementsCount(achievements.unlocked, achievements.total) }}</span>
+          <button class="link" @click="emit('achievements')">{{ t.games.sheet.seeAll }}<AppIcon name="chevron-right" :size="14" /></button>
         </div>
         <button class="ach card" @click="emit('achievements')">
           <span class="ach-meter"><span class="ach-fill" :style="{ transform: `scaleX(${achievementPercent / 100})` }" /></span>
@@ -122,16 +123,16 @@ const description = computed(() => (detail.value?.description ? stripHtml(detail
             </span>
             <span class="ach-text tabular">
               <b>{{ achievementPercent }}%</b>
-              <span class="ach-sub">{{ latestUnlocked.length ? `ultimo: ${latestUnlocked[0].name}` : 'nessuno ancora' }}</span>
+              <span class="ach-sub">{{ latestUnlocked.length ? t.games.sheet.latest(latestUnlocked[0].name) : t.games.sheet.noneYet }}</span>
             </span>
           </span>
         </button>
       </section>
 
-      <section v-if="capture && captures.length" class="captures" aria-label="Catture">
+      <section v-if="capture && captures.length" class="captures" :aria-label="t.games.sheet.captures">
         <div class="eyebrow">
-          <span>Catture · {{ captures.length }}</span>
-          <button class="link" @click="emit('gallery')">Vedi tutte<AppIcon name="chevron-right" :size="14" /></button>
+          <span>{{ t.games.sheet.capturesCount(captures.length) }}</span>
+          <button class="link" @click="emit('gallery')">{{ t.games.sheet.seeAllCaptures }}<AppIcon name="chevron-right" :size="14" /></button>
         </div>
         <div class="shots" :class="`n${Math.min(3, captures.length)}`">
           <button v-for="(c, i) in captures.slice(0, 3)" :key="c.id" class="shot" @click="emit('viewCapture', captures, i)">

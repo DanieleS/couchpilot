@@ -2,6 +2,7 @@
 import { ToggleGroupItem, ToggleGroupRoot } from 'reka-ui'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { playDayKey, useCaptures } from '../captures'
+import { t } from '../i18n'
 import type { Capture, Game, RunningGame } from '../types'
 import { useLive } from '../live'
 import { useCouchPilot } from '../store'
@@ -91,12 +92,12 @@ const setFilter = (v: unknown) => v && (filter.value = v as Filter)
     </Transition>
 
     <header class="page-header">
-      <h1>Giochi</h1>
+      <h1>{{ t.games.title }}</h1>
       <span class="header-tools">
-        <button v-if="capture" class="icon-btn tool" aria-label="Galleria" @click="emit('gallery')">
-          <AppIcon name="image" :size="17" /><span v-if="unseen" class="new" aria-label="Catture nuove" />
+        <button v-if="capture" class="icon-btn tool" :aria-label="t.games.gallery" @click="emit('gallery')">
+          <AppIcon name="image" :size="17" /><span v-if="unseen" class="new" :aria-label="t.games.newCaptures" />
         </button>
-        <button class="icon-btn tool stats" aria-label="Statistiche" @click="emit('stats')"><AppIcon name="chart" :size="17" /></button>
+        <button class="icon-btn tool stats" :aria-label="t.games.stats" @click="emit('stats')"><AppIcon name="chart" :size="17" /></button>
         <PcChip :name="status?.pc ?? null" />
       </span>
     </header>
@@ -107,8 +108,8 @@ const setFilter = (v: unknown) => v && (filter.value = v as Filter)
 
     <template v-if="capture && today.length">
       <div class="eyebrow">
-        <span>Catture di oggi · {{ today.length }}</span>
-        <button class="link" @click="emit('gallery')">Galleria</button>
+        <span>{{ t.games.todayCaptures(today.length) }}</span>
+        <button class="link" @click="emit('gallery')">{{ t.games.gallery }}</button>
       </div>
       <div class="scroll-row">
         <button v-for="(c, i) in today.slice(0, 12)" :key="c.id" class="today" @click="emit('viewCapture', today, i)">
@@ -119,8 +120,8 @@ const setFilter = (v: unknown) => v && (filter.value = v as Filter)
 
     <template v-if="displays">
       <div class="eyebrow">
-        <span>Schermo</span>
-        <button class="link" @click="emit('manageDisplays')">Gestisci</button>
+        <span>{{ t.games.screen }}</span>
+        <button class="link" @click="emit('manageDisplays')">{{ t.games.manage }}</button>
       </div>
       <StreamNotice v-if="displays.streamActive" class="stream" />
       <PresetCards
@@ -140,26 +141,26 @@ const setFilter = (v: unknown) => v && (filter.value = v as Filter)
 
     <label class="search card">
       <AppIcon name="search" :size="16" />
-      <input v-model="query" type="search" placeholder="Cerca nella libreria" enterkeyhint="search" />
+      <input v-model="query" type="search" :placeholder="t.games.search" enterkeyhint="search" />
     </label>
 
     <ToggleGroupRoot v-if="!query" type="single" :model-value="filter" class="filters" @update:model-value="setFilter">
-      <ToggleGroupItem value="installed" class="filter">Installati<span class="n tabular">{{ counts.installed }}</span></ToggleGroupItem>
-      <ToggleGroupItem value="recent" class="filter">Recenti</ToggleGroupItem>
-      <ToggleGroupItem value="favorite" class="filter">Preferiti</ToggleGroupItem>
-      <ToggleGroupItem value="all" class="filter">Tutti<span class="n tabular">{{ counts.all }}</span></ToggleGroupItem>
+      <ToggleGroupItem value="installed" class="filter">{{ t.games.filters.installed }}<span class="n tabular">{{ counts.installed }}</span></ToggleGroupItem>
+      <ToggleGroupItem value="recent" class="filter">{{ t.games.filters.recent }}</ToggleGroupItem>
+      <ToggleGroupItem value="favorite" class="filter">{{ t.games.filters.favorite }}</ToggleGroupItem>
+      <ToggleGroupItem value="all" class="filter">{{ t.games.filters.all }}<span class="n tabular">{{ counts.all }}</span></ToggleGroupItem>
     </ToggleGroupRoot>
 
     <div v-if="games === null && unreachable" class="empty">
-      <p class="empty-title">Il PC non risponde</p>
-      <p class="muted">Accendilo e apri Playnite: mi ricollego da solo.</p>
+      <p class="empty-title">{{ t.games.offline.title }}</p>
+      <p class="muted">{{ t.games.offline.hint }}</p>
     </div>
     <div v-else-if="games === null" class="grid">
       <div v-for="i in 9" :key="i" class="skeleton" />
     </div>
     <div v-else-if="visible.length === 0" class="empty">
-      <p class="empty-title">{{ query ? `Nessun gioco per «${query}»` : 'Niente qui' }}</p>
-      <p class="muted">{{ query ? 'I giochi nascosti in Playnite non compaiono.' : 'Prova un altro filtro.' }}</p>
+      <p class="empty-title">{{ query ? t.games.noMatch(query) : t.games.nothing }}</p>
+      <p class="muted">{{ query ? t.games.noMatchHint : t.games.nothingHint }}</p>
     </div>
     <div v-else class="grid">
       <button v-for="g in visible" :key="g.id" class="tile" :class="{ uninstalled: !g.installed }" @click="emit('open', g)">
@@ -167,7 +168,7 @@ const setFilter = (v: unknown) => v && (filter.value = v as Filter)
           :id="g.id"
           :name="g.name"
           :has-cover="g.hasCover"
-          :badge="runningIds.has(g.id) ? 'In gioco' : g.installing ? 'Installo…' : g.uninstalling ? 'Disinstallo…' : undefined"
+          :badge="runningIds.has(g.id) ? t.games.badge.playing : g.installing ? t.games.badge.installing : g.uninstalling ? t.games.badge.uninstalling : undefined"
           :class="{ running: runningIds.has(g.id) }"
         />
         <span class="caption line-clamp-2">{{ g.name }}</span>

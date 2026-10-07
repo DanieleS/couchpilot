@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { clipLength, replayLabel, useCaptures } from '../captures'
+import { t } from '../i18n'
 import type { RunningGame } from '../types'
 import { useNow } from '../useNow'
 import AppIcon from './AppIcon.vue'
@@ -24,11 +25,11 @@ const clock = computed(() => {
   const minutes = Math.max(0, Math.floor((now.value - new Date(props.game.startedAt).getTime()) / 60000))
   return `${Math.floor(minutes / 60)}:${String(minutes % 60).padStart(2, '0')}`
 })
-const label = computed(() => ['In gioco', props.game.source, props.screen && `su ${props.screen}`].filter(Boolean).join(' · '))
+const label = computed(() => [t.audio.nowPlaying.inGame, props.game.source, props.screen && t.audio.nowPlaying.on(props.screen)].filter(Boolean).join(' · '))
 </script>
 
 <template>
-  <section class="hero" :class="{ recording }" aria-label="Gioco in esecuzione">
+  <section class="hero" :class="{ recording }" :aria-label="t.audio.game.running">
     <svg class="deco" viewBox="0 0 320 200" preserveAspectRatio="xMaxYMin slice" aria-hidden="true">
       <circle cx="318" cy="-6" r="56" fill="var(--hero-deco-1)" />
       <polygon points="262,52 290,100 234,100" fill="var(--hero-deco-2)" />
@@ -45,19 +46,19 @@ const label = computed(() => ['In gioco', props.game.source, props.screen && `su
     <ControllerChips v-if="status?.controllers?.length" :controllers="status.controllers" on-color class="pads" />
     <div v-if="capture" class="captures">
       <button class="capture" :disabled="!!pending" @click="screenshot">
-        <span v-if="pending === 'screenshot'" class="spinner" aria-hidden="true" /><AppIcon v-else name="camera" :size="20" />Scatta
+        <span v-if="pending === 'screenshot'" class="spinner" aria-hidden="true" /><AppIcon v-else name="camera" :size="20" />{{ t.audio.nowPlaying.screenshot }}
       </button>
       <button class="capture" :class="{ stop: recording }" :disabled="!!pending" @click="toggleRecording">
         <span v-if="pending === 'record'" class="spinner" aria-hidden="true" /><AppIcon v-else :name="recording ? 'stop' : 'record'" :size="20" />
-        <span class="tabular">{{ recording ? `Ferma · ${recording}` : 'Registra' }}</span>
+        <span class="tabular">{{ recording ? t.audio.nowPlaying.stop(recording) : t.audio.nowPlaying.record }}</span>
       </button>
       <button class="capture dark" :disabled="!!pending || !!recording" @click="saveReplay">
         <span v-if="pending === 'replay'" class="spinner" aria-hidden="true" /><AppIcon v-else name="replay" :size="20" />{{ replayLabel(capture.replaySeconds) }}
       </button>
     </div>
     <div class="actions">
-      <button class="btn btn-dark" @click="emit('focus')"><AppIcon name="focus" :size="16" />Primo piano</button>
-      <button class="btn btn-danger" @click="emit('close')"><AppIcon name="power" :size="16" />Chiudi</button>
+      <button class="btn btn-dark" @click="emit('focus')"><AppIcon name="focus" :size="16" />{{ t.audio.nowPlaying.focus }}</button>
+      <button class="btn btn-danger" @click="emit('close')"><AppIcon name="power" :size="16" />{{ t.audio.nowPlaying.close }}</button>
     </div>
   </section>
 </template>

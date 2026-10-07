@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { t } from '../i18n'
 import type { Controller } from '../types'
 
 // The Xbox-style pads connected to the PC and their battery, four bars like Windows' own.
@@ -6,7 +7,7 @@ defineProps<{ controllers: Controller[]; onColor?: boolean }>()
 
 const bars = { empty: 0, low: 1, medium: 2, full: 3 } as const
 const label = (c: Controller) =>
-  c.wired ? `Controller ${c.slot}, via cavo` : c.battery ? `Controller ${c.slot}, batteria ${({ empty: 'scarica', low: 'bassa', medium: 'a metà', full: 'carica' })[c.battery]}` : `Controller ${c.slot}`
+  c.wired ? t.control.controller.wired(c.slot) : c.battery ? t.control.controller.battery(c.slot, c.battery) : t.control.controller.plain(c.slot)
 </script>
 
 <template>
@@ -16,7 +17,7 @@ const label = (c: Controller) =>
         <path d="M6 12h4M8 10v4M15 13h.01M18 11h.01" /><rect x="2" y="6" width="20" height="12" rx="6" />
       </svg>
       <span class="slot tabular">{{ c.slot }}</span>
-      <span v-if="c.wired" class="wired">cavo</span>
+      <span v-if="c.wired" class="wired">{{ t.control.controller.cable }}</span>
       <span v-else-if="c.battery" class="battery" aria-hidden="true">
         <i v-for="n in 3" :key="n" :class="{ lit: n <= bars[c.battery] }" />
       </span>

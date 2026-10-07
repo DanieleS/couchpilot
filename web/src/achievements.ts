@@ -2,6 +2,7 @@ import { computed, effectScope, ref, watch, type Ref } from 'vue'
 import { api } from './api'
 import { onChanged } from './live'
 import { Topic } from './protocol'
+import { lang, locale, t } from './i18n'
 import { serialized, useCouchPilot } from './store'
 import type { GameAchievements, RecentAchievement } from './types'
 
@@ -85,24 +86,26 @@ export function useGameAchievements(gameId: Ref<string | null | undefined>) {
 // «Raro», «Rarissimo»: SuccessStory's own bands, for the few that deserve a word.
 export function rarity(percent: number | null) {
   if (percent === null) return null
-  if (percent < 2) return 'Rarissimo'
-  if (percent < 10) return 'Raro'
-  if (percent < 30) return 'Non comune'
+  if (percent < 2) return t.achievements.rarity.ultraRare
+  if (percent < 10) return t.achievements.rarity.rare
+  if (percent < 30) return t.achievements.rarity.uncommon
   return null
 }
 
 export function percentLabel(percent: number | null) {
   if (percent === null) return ''
-  const text = percent < 10 ? percent.toLocaleString('it-IT', { maximumFractionDigits: 1 }) : Math.round(percent).toLocaleString('it-IT')
-  return `${text}% dei giocatori`
+  const text = percent < 10 ? percent.toLocaleString(locale, { maximumFractionDigits: 1 }) : Math.round(percent).toLocaleString(locale)
+  return t.achievements.ofPlayers(text)
 }
 
-export function unlockedLabel(iso: string | null) {
-  if (!iso) return 'Sbloccato'
+// "Today at 14:30", "Yesterday at 9:05", or the date. `lower` for the middle of a sentence:
+// only the relative words are lowered, so an English month keeps its capital.
+export function unlockedLabel(iso: string | null, lower = false) {
+  if (!iso) return t.achievements.unlocked
   const d = new Date(iso)
   const days = Math.round((new Date().setHours(0, 0, 0, 0) - new Date(d).setHours(0, 0, 0, 0)) / 86400000)
-  const time = d.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })
-  if (days === 0) return `Oggi alle ${time}`
-  if (days === 1) return `Ieri alle ${time}`
-  return d.toLocaleDateString('it-IT', { day: 'numeric', month: 'long', year: days > 300 ? 'numeric' : undefined })
+  const time = d.toLocaleTimeString(locale, { hour: lang === 'it' ? '2-digit' : 'numeric', minute: '2-digit' })
+  const relative = days === 0 ? t.achievements.today(time) : days === 1 ? t.achievements.yesterday(time) : null
+  if (relative) return lower ? relative.charAt(0).toLowerCase() + relative.slice(1) : relative
+  return d.toLocaleDateString(locale, { day: 'numeric', month: 'long', year: days > 300 ? 'numeric' : undefined })
 }

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { t } from '../i18n'
 import { useCountdown } from '../store'
 import type { Displays } from '../types'
 import AppIcon from './AppIcon.vue'
@@ -14,9 +15,9 @@ const isPending = (id: string) => props.displays.pending?.presetId === id
 
 const describe = (id: string) => {
   const p = props.displays.presets.find((x) => x.id === id)!
-  if (isPending(id)) return `In prova · ${secondsLeft.value} s`
+  if (isPending(id)) return t.displays.testingFor(secondsLeft.value)
   const primary = p.monitors.find((m) => m.primary) ?? p.monitors[0]
-  if (p.monitors.length > 1) return `${p.monitors.length} schermi`
+  if (p.monitors.length > 1) return t.displays.screens(p.monitors.length)
   if (!primary) return ''
   const res = primary.height >= 2160 ? '4K' : `${primary.height}p`
   return `${res} · ${primary.refreshHz} Hz`
@@ -40,7 +41,7 @@ const describe = (id: string) => {
       <span class="name truncate">{{ p.name }}</span>
       <span class="sub truncate tabular">{{ describe(p.id) }}</span>
     </button>
-    <button class="add" aria-label="Salva la configurazione attuale" :disabled="locked" @click="emit('add')">
+    <button class="add" :aria-label="t.displays.saveCurrent" :disabled="locked" @click="emit('add')">
       <AppIcon name="plus" :size="20" />
     </button>
   </div>

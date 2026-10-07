@@ -1,26 +1,28 @@
 <script setup lang="ts">
+import { t } from '../i18n'
+
 export type Tab = 'games' | 'displays' | 'audio' | 'control'
 
 const tab = defineModel<Tab>({ required: true })
 const tabs: { key: Tab; label: string; shape: 'circle' | 'square' | 'half' | 'triangle' }[] = [
-  { key: 'games', label: 'Giochi', shape: 'circle' },
-  { key: 'displays', label: 'Schermi', shape: 'square' },
-  { key: 'audio', label: 'Audio', shape: 'half' },
-  { key: 'control', label: 'Controllo', shape: 'triangle' },
+  { key: 'games', label: t.app.tabs.games, shape: 'circle' },
+  { key: 'displays', label: t.app.tabs.displays, shape: 'square' },
+  { key: 'audio', label: t.app.tabs.audio, shape: 'half' },
+  { key: 'control', label: t.app.tabs.control, shape: 'triangle' },
 ]
 </script>
 
 <template>
-  <nav class="tabbar" aria-label="Sezioni">
+  <nav class="tabbar" :aria-label="t.app.tabs.label">
     <button
-      v-for="t in tabs"
-      :key="t.key"
-      :class="{ on: tab === t.key }"
-      :aria-current="tab === t.key ? 'page' : undefined"
-      @click="tab = t.key"
+      v-for="item in tabs"
+      :key="item.key"
+      :class="{ on: tab === item.key }"
+      :aria-current="tab === item.key ? 'page' : undefined"
+      @click="tab = item.key"
     >
-      <span class="shape" :class="t.shape" aria-hidden="true" />
-      {{ t.label }}
+      <span class="shape" :class="item.shape" aria-hidden="true" />
+      {{ item.label }}
     </button>
   </nav>
 </template>

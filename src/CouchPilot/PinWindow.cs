@@ -4,6 +4,7 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Threading;
 using CouchPilot.Server;
+using static CouchPilot.Lang;
 
 namespace CouchPilot
 {
@@ -38,7 +39,7 @@ namespace CouchPilot
             var panel = new StackPanel { Margin = new Thickness(40, 32, 40, 28), MinWidth = 380 };
             panel.Children.Add(new TextBlock
             {
-                Text = "Un telefono chiede di collegarsi a CouchPilot",
+                Text = Pc("A phone wants to connect to CouchPilot", "Un telefono chiede di collegarsi a CouchPilot"),
                 FontSize = 15,
                 FontWeight = FontWeights.SemiBold,
                 HorizontalAlignment = HorizontalAlignment.Center,
@@ -63,14 +64,14 @@ namespace CouchPilot
             });
             panel.Children.Add(new TextBlock
             {
-                Text = "Scrivi questo PIN sul telefono.",
+                Text = Pc("Type this PIN on the phone.", "Scrivi questo PIN sul telefono."),
                 FontSize = 13,
                 HorizontalAlignment = HorizontalAlignment.Center,
             });
             panel.Children.Add(countdown);
             var refuse = new Button
             {
-                Content = "Rifiuta",
+                Content = Pc("Refuse", "Rifiuta"),
                 Padding = new Thickness(18, 6, 18, 6),
                 Margin = new Thickness(0, 20, 0, 0),
                 HorizontalAlignment = HorizontalAlignment.Center,
@@ -94,7 +95,7 @@ namespace CouchPilot
                 Close();
                 return;
             }
-            countdown.Text = $"Vale ancora {left.Minutes}:{left.Seconds:00}";
+            countdown.Text = Pc($"Valid for {left.Minutes}:{left.Seconds:00}", $"Vale ancora {left.Minutes}:{left.Seconds:00}");
             countdown.Margin = new Thickness(0, 4, 0, 0);
         }
     }

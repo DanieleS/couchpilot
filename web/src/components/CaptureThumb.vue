@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { captureThumbUrl, imageUrl } from '../api'
 import { clipLength, isGif } from '../captures'
+import { locale } from '../i18n'
 import { useCouchPilot } from '../store'
 import type { Capture } from '../types'
 import { placeholderGradient } from '../utils'
@@ -20,7 +21,7 @@ const cover = computed(() => {
   const g = props.capture.gameId ? games.value?.find((x) => x.id === props.capture.gameId) : null
   return g?.hasCover ? imageUrl(g.id, 'cover') : null
 })
-const clock = computed(() => new Date(props.capture.takenAt).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' }))
+const clock = computed(() => new Date(props.capture.takenAt).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' }))
 </script>
 
 <template>

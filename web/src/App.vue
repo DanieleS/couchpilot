@@ -24,6 +24,7 @@ import NamePrompt from './components/NamePrompt.vue'
 import StatsView from './components/StatsView.vue'
 import PresetAudioSheet from './components/PresetAudioSheet.vue'
 import TabBar, { type Tab } from './components/TabBar.vue'
+import { t } from './i18n'
 
 const { error, games, running, runningIds, act } = useCouchPilot()
 
@@ -229,13 +230,13 @@ const freshOpen = computed({
 const freshTitle = computed(() => {
   const c = captures.fresh.value
   if (!c) return ''
-  return c.edited ? (isGif(c) ? 'GIF pronta' : 'Clip tagliata') : c.kind === 'photo' ? 'Screenshot salvato' : c.replay ? 'Replay salvato' : 'Clip salvata'
+  return c.edited ? (isGif(c) ? t.app.fresh.gif : t.app.fresh.trimmed) : c.kind === 'photo' ? t.app.fresh.screenshot : c.replay ? t.app.fresh.replay : t.app.fresh.clip
 })
 const freshDetail = computed(() => {
   const c = captures.fresh.value
   if (!c) return ''
   const size = c.kind === 'photo' ? c.width && c.height && `${c.width}×${c.height}` : clipLength(c.seconds)
-  return [c.game, size, c.edited ? 'da una clip' : toolName(c.tool)].filter(Boolean).join(' · ')
+  return [c.game, size, c.edited ? t.app.fresh.fromClip : toolName(c.tool)].filter(Boolean).join(' · ')
 })
 const openFresh = () => {
   const c = captures.fresh.value
@@ -312,9 +313,9 @@ const toastOpen = computed({
     <ConfirmDialog
       v-model:open="removeCaptureOpen"
       icon="trash"
-      :title="removingCapture?.kind === 'video' ? 'Eliminare questa clip?' : 'Eliminare questo screenshot?'"
-      description="Finisce nel Cestino del PC: da lì puoi ancora recuperarlo."
-      confirm-label="Elimina"
+      :title="removingCapture?.kind === 'video' ? t.app.removeCapture.clip : t.app.removeCapture.screenshot"
+      :description="t.app.removeCapture.description"
+      :confirm-label="t.app.removeCapture.confirm"
       @confirm="confirmRemoveCapture"
     />
 
@@ -323,27 +324,27 @@ const toastOpen = computed({
     <ConfirmDialog
       v-model:open="uninstallOpen"
       icon="trash"
-      :title="`Disinstallare ${uninstalling?.name ?? ''}?`"
-      description="Lo disinstalla Playnite, col client della sua libreria se serve: potrebbe chiederti una conferma anche sul PC. Per giocarci di nuovo andrà riscaricato."
-      confirm-label="Disinstalla"
+      :title="t.app.uninstall.title(uninstalling?.name ?? '')"
+      :description="t.app.uninstall.description"
+      :confirm-label="t.app.uninstall.confirm"
       @confirm="confirmUninstall"
     />
 
     <ConfirmDialog
       v-model:open="closeOpen"
       icon="power"
-      :title="`Chiudere ${closing?.name ?? ''}?`"
-      description="Prima chiedo al gioco di uscire. Se non risponde entro 10 secondi lo chiudo forzatamente."
-      confirm-label="Chiudi"
+      :title="t.app.close.title(closing?.name ?? '')"
+      :description="t.app.close.description"
+      :confirm-label="t.app.close.confirm"
       @confirm="confirmClose"
     />
 
     <ConfirmDialog
       v-model:open="removeOpen"
       icon="trash"
-      :title="`Eliminare «${removing?.name ?? ''}»?`"
-      description="Il preset sparisce, gli schermi restano come sono adesso."
-      confirm-label="Elimina"
+      :title="t.app.removePreset.title(removing?.name ?? '')"
+      :description="t.app.removePreset.description"
+      :confirm-label="t.app.removePreset.confirm"
       @confirm="confirmRemove"
     />
 
@@ -351,10 +352,10 @@ const toastOpen = computed({
 
     <NamePrompt
       v-model:open="promptOpen"
-      :title="renaming ? 'Rinomina preset' : 'Salva questa configurazione'"
-      :description="renaming ? undefined : 'Salvo gli schermi così come sono adesso. Dagli un nome che riconosci al volo.'"
+      :title="renaming ? t.app.preset.rename : t.app.preset.save"
+      :description="renaming ? undefined : t.app.preset.saveDescription"
       :initial="renaming?.name"
-      :confirm-label="renaming ? 'Rinomina' : 'Salva'"
+      :confirm-label="renaming ? t.app.preset.renameConfirm : t.app.preset.saveConfirm"
       @submit="submitName"
     />
 
@@ -367,18 +368,18 @@ const toastOpen = computed({
         <ToastTitle class="fresh-title">{{ freshTitle }}</ToastTitle>
         <ToastDescription class="fresh-detail truncate">{{ freshDetail }}</ToastDescription>
       </div>
-      <ToastAction alt-text="Apri la cattura" as-child>
-        <button class="fresh-open" @click="openFresh">Apri</button>
+      <ToastAction :alt-text="t.app.fresh.openAlt" as-child>
+        <button class="fresh-open" @click="openFresh">{{ t.app.fresh.open }}</button>
       </ToastAction>
     </ToastRoot>
     <ToastRoot v-model:open="freshAchievementsOpen" :duration="8000" class="toast fresh">
       <AchievementIcon v-if="freshAchievement" :achievement="freshAchievement" :size="44" class="fresh-ach" />
       <div class="fresh-text">
-        <ToastTitle class="fresh-title">Obiettivo sbloccato<template v-if="freshAchievementsMore"> · +{{ freshAchievementsMore }}</template></ToastTitle>
+        <ToastTitle class="fresh-title">{{ t.app.fresh.achievement }}<template v-if="freshAchievementsMore"> · +{{ freshAchievementsMore }}</template></ToastTitle>
         <ToastDescription class="fresh-detail truncate">{{ freshAchievement?.name }} · {{ freshAchievement?.game }}</ToastDescription>
       </div>
-      <ToastAction alt-text="Apri gli obiettivi del gioco" as-child>
-        <button class="fresh-open" @click="openFreshAchievements">Vedi</button>
+      <ToastAction :alt-text="t.app.fresh.achievementsAlt" as-child>
+        <button class="fresh-open" @click="openFreshAchievements">{{ t.app.fresh.see }}</button>
       </ToastAction>
     </ToastRoot>
     <ToastViewport class="toast-viewport" />

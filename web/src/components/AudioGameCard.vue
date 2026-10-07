@@ -2,6 +2,7 @@
 import { computed, onScopeDispose, ref, watch } from 'vue'
 import { api, imageUrl } from '../api'
 import type { MixerChannel } from '../audio'
+import { t } from '../i18n'
 import { useCouchPilot } from '../store'
 import type { GameDetail, VolumeChange } from '../types'
 import { useNow } from '../useNow'
@@ -45,16 +46,16 @@ const playing = computed(() => {
   const started = session.value?.startedAt
   if (!started) return null
   const minutes = Math.max(0, Math.floor((now.value - new Date(started).getTime()) / 60000))
-  if (minutes < 1) return 'appena avviato'
-  return minutes < 60 ? `da ${minutes} min` : `da ${Math.floor(minutes / 60)} h ${String(minutes % 60).padStart(2, '0')}`
+  if (minutes < 1) return t.audio.game.justStarted
+  return minutes < 60 ? t.audio.game.forMinutes(minutes) : t.audio.game.forHours(Math.floor(minutes / 60), String(minutes % 60).padStart(2, '0'))
 })
 const hours = (m: number) => (m < 60 ? `${m} min` : `${Math.round(m / 60)} h`)
-const label = computed(() => ['In gioco', game.value?.source].filter(Boolean).join(' · '))
+const label = computed(() => [t.audio.game.inGame, game.value?.source].filter(Boolean).join(' · '))
 const credits = computed(() =>
   [detail.value?.developers[0], game.value?.releaseYear, game.value?.genres[0]].filter(Boolean).join(' · '),
 )
 const time = computed(() =>
-  [playing.value, game.value?.playtimeMinutes ? `${hours(game.value.playtimeMinutes)} in totale` : null].filter(Boolean).join(' · '),
+  [playing.value, game.value?.playtimeMinutes ? t.audio.game.total(hours(game.value.playtimeMinutes)) : null].filter(Boolean).join(' · '),
 )
 
 const volume = computed({
@@ -78,7 +79,7 @@ const zone = (i: number) => (i >= SEGMENTS - 2 ? 'hot' : i >= SEGMENTS - 6 ? 'wa
 </script>
 
 <template>
-  <section class="game" aria-label="Gioco in esecuzione">
+  <section class="game" :aria-label="t.audio.game.running">
     <div class="art" :style="art ? undefined : { background: placeholderGradient(channel.name, 40, 14) }" aria-hidden="true">
       <img v-if="art" :src="art.url!" alt="" :class="{ blur: art.blur }" @error="artFailed = true" />
     </div>
@@ -104,12 +105,12 @@ const zone = (i: number) => (i >= SEGMENTS - 2 ? 'hot' : i >= SEGMENTS - 6 ? 'wa
     </div>
 
     <div class="row">
-      <VolumeSlider v-model="volume" big tone="run" :label="`Volume di ${channel.name}`" :muted="channel.muted" />
-      <span class="pct tabular">{{ channel.muted ? 'Muto' : channel.volume }}</span>
+      <VolumeSlider v-model="volume" big tone="run" :label="t.audio.volumeOf(channel.name)" :muted="channel.muted" />
+      <span class="pct tabular">{{ channel.muted ? t.audio.muted : channel.volume }}</span>
       <button
         class="icon-btn mute"
         :class="{ on: channel.muted }"
-        :aria-label="channel.muted ? `Riattiva ${channel.name}` : `Silenzia ${channel.name}`"
+        :aria-label="channel.muted ? t.audio.unmute(channel.name) : t.audio.mute(channel.name)"
         :aria-pressed="channel.muted"
         @click="emit('change', { muted: !channel.muted })"
       >

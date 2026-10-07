@@ -6,6 +6,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Playnite.SDK;
+using static CouchPilot.Lang;
 
 namespace CouchPilot.Captures
 {
@@ -56,18 +57,18 @@ namespace CouchPilot.Captures
 
         public async Task<CaptureDto> Trim(string id, TrimBody body)
         {
-            if (!Available) throw new CaptureException("no-ffmpeg", "Questa versione di CouchPilot non include ffmpeg: non posso tagliare le clip.");
-            var source = library.ThumbnailOf(id) ?? throw new CaptureException("not-found", "Clip non trovata.");
-            if (!source.Video) throw new CaptureException("not-video", "Si tagliano solo le clip.");
+            if (!Available) throw new CaptureException("no-ffmpeg", Tr("This build of CouchPilot doesn't include ffmpeg: it can't cut clips.", "Questa versione di CouchPilot non include ffmpeg: non posso tagliare le clip."));
+            var source = library.ThumbnailOf(id) ?? throw new CaptureException("not-found", Tr("Clip not found.", "Clip non trovata."));
+            if (!source.Video) throw new CaptureException("not-video", Tr("Only clips can be cut.", "Si tagliano solo le clip."));
             var gif = string.Equals(body?.Format, "gif", StringComparison.OrdinalIgnoreCase);
-            if (gif && !Gif) throw new CaptureException("no-gif", "Questa versione di ffmpeg non sa fare GIF.");
+            if (gif && !Gif) throw new CaptureException("no-gif", Tr("This build of ffmpeg can't make GIFs.", "Questa versione di ffmpeg non sa fare GIF."));
             var from = Math.Max(0, body?.From ?? 0);
             var to = body?.To ?? source.Seconds ?? 0;
             if (source.Seconds != null) to = Math.Min(to, source.Seconds.Value);
-            if (to - from < MinSeconds) throw new CaptureException("too-short", "Scegli almeno mezzo secondo.");
-            if (gif && to - from > MaxGifSeconds) throw new CaptureException("too-long", $"Una GIF può durare al massimo {MaxGifSeconds:0} secondi.");
+            if (to - from < MinSeconds) throw new CaptureException("too-short", Tr("Pick at least half a second.", "Scegli almeno mezzo secondo."));
+            if (gif && to - from > MaxGifSeconds) throw new CaptureException("too-long", Tr($"A GIF can last {MaxGifSeconds:0} seconds at most.", $"Una GIF può durare al massimo {MaxGifSeconds:0} secondi."));
 
-            if (!await busy.WaitAsync(0)) throw new CaptureException("busy", "Sto ancora tagliando la clip di prima.");
+            if (!await busy.WaitAsync(0)) throw new CaptureException("busy", Tr("Still cutting the previous clip.", "Sto ancora tagliando la clip di prima."));
             try
             {
                 var target = TargetPath(source.Path, from, to, gif ? ".gif" : ".mp4");
@@ -78,7 +79,7 @@ namespace CouchPilot.Captures
                 {
                     TryDelete(target);
                     logger.Warn($"ffmpeg failed trimming {source.Path}: {Tail(errors)}");
-                    throw new CaptureException("trim-failed", "Il PC non è riuscito a tagliare la clip.");
+                    throw new CaptureException("trim-failed", Tr("The PC couldn't cut the clip.", "Il PC non è riuscito a tagliare la clip."));
                 }
                 // Dated like the moment it shows, so it sits with its clip in the gallery and under
                 // the same game; half a second later than the clip itself, to come after it.
@@ -92,7 +93,7 @@ namespace CouchPilot.Captures
                 {
                     logger.Warn(e, "Couldn't date the trimmed clip");
                 }
-                return library.Adopt(target, id) ?? throw new CaptureException("trim-failed", "La clip tagliata non compare nella cartella.");
+                return library.Adopt(target, id) ?? throw new CaptureException("trim-failed", Tr("The cut clip doesn't show up in the folder.", "La clip tagliata non compare nella cartella."));
             }
             finally
             {

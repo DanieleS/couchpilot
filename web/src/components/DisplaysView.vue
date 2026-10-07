@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { t } from '../i18n'
 import type { Preset } from '../types'
 import { useCouchPilot } from '../store'
 import AppIcon from './AppIcon.vue'
@@ -25,20 +26,20 @@ const state = (p: Preset) =>
 <template>
   <div class="page">
     <header class="page-header">
-      <h1>Schermi</h1>
+      <h1>{{ t.displays.title }}</h1>
       <PcChip :name="status?.pc ?? null" />
     </header>
 
     <template v-if="displays">
       <StreamNotice v-if="displays.streamActive" class="stream" />
       <section class="current card">
-        <p class="eyebrow first">Configurazione attuale</p>
+        <p class="eyebrow first">{{ t.displays.current }}</p>
         <div class="well">
           <MonitorLayout :monitors="displays.monitors" labels />
         </div>
         <ul class="monitors">
           <li v-for="m in displays.monitors" :key="m.devicePath + m.x" :class="{ primary: m.primary && !m.virtual, virtual: m.virtual }">
-            <span class="truncate">{{ m.name }}<template v-if="m.virtual"> · virtuale</template><template v-else-if="m.primary"> · principale</template></span>
+            <span class="truncate">{{ m.name }}<template v-if="m.virtual"> · {{ t.displays.virtual }}</template><template v-else-if="m.primary"> · {{ t.displays.primary }}</template></span>
             <span class="muted tabular">{{ m.width }}×{{ m.height }} · {{ m.refreshHz }} Hz</span>
           </li>
         </ul>
@@ -52,9 +53,9 @@ const state = (p: Preset) =>
         @revert="emit('revert')"
       />
 
-      <p class="eyebrow">Preset</p>
+      <p class="eyebrow">{{ t.displays.presets }}</p>
       <p v-if="displays.presets.length === 0" class="muted hint">
-        Sistema gli schermi come ti servono in Windows, poi salvali qui sotto: da quel momento li richiami con un tocco.
+        {{ t.displays.empty }}
       </p>
       <ul class="presets">
         <li v-for="p in displays.presets" :key="p.id" class="preset card" :class="state(p)">
@@ -67,16 +68,16 @@ const state = (p: Preset) =>
             </span>
             <span class="status">
               <template v-if="state(p) === 'active'"><AppIcon name="check" :size="16" /></template>
-              <template v-else-if="state(p) === 'pending'">In prova</template>
-              <template v-else-if="!displays.streamActive">Applica</template>
+              <template v-else-if="state(p) === 'pending'">{{ t.displays.testing }}</template>
+              <template v-else-if="!displays.streamActive">{{ t.displays.apply }}</template>
             </span>
           </button>
-          <button class="icon-btn tool" :class="{ set: p.audioOutputId }" aria-label="Audio con questo preset" @click="emit('audio', p)"><AppIcon name="speaker" :size="15" /></button>
-          <button class="icon-btn tool" aria-label="Rinomina" @click="emit('rename', p)"><AppIcon name="pencil" :size="15" /></button>
-          <button class="icon-btn tool" aria-label="Elimina" @click="emit('remove', p)"><AppIcon name="trash" :size="15" /></button>
+          <button class="icon-btn tool" :class="{ set: p.audioOutputId }" :aria-label="t.displays.presetAudio" @click="emit('audio', p)"><AppIcon name="speaker" :size="15" /></button>
+          <button class="icon-btn tool" :aria-label="t.displays.rename" @click="emit('rename', p)"><AppIcon name="pencil" :size="15" /></button>
+          <button class="icon-btn tool" :aria-label="t.displays.remove" @click="emit('remove', p)"><AppIcon name="trash" :size="15" /></button>
         </li>
       </ul>
-      <button class="save" :disabled="displays.streamActive" @click="emit('save')"><AppIcon name="plus" :size="16" />Salva la configurazione attuale</button>
+      <button class="save" :disabled="displays.streamActive" @click="emit('save')"><AppIcon name="plus" :size="16" />{{ t.displays.saveCurrent }}</button>
     </template>
   </div>
 </template>

@@ -1,5 +1,6 @@
 import { computed, onScopeDispose, ref } from 'vue'
 import { api, unpaired, type ApiError } from './api'
+import { t } from './i18n'
 
 // Pairing this phone with the PC: ask for a PIN (the PC puts it on its screen for two minutes),
 // type it, and the PC answers with a cookie that stands for this phone from then on. The
@@ -13,13 +14,13 @@ const NAME_KEY = 'couchpilot-device-name'
 // in its settings afterwards. The person can change it before pairing.
 export function guessDeviceName() {
   const ua = navigator.userAgent
-  let device = 'Telefono'
+  let device = t.app.pairing.phone
   const android = /Android [\d.]+; ([^;)]+?)(?: Build|\))/.exec(ua)
   if (android && !/^(K|Mobile)$/.test(android[1].trim())) device = android[1].trim()
   else if (/iPhone/.test(ua)) device = 'iPhone'
   else if (/iPad/.test(ua)) device = 'iPad'
   else if (/Android/.test(ua)) device = 'Android'
-  else if (/Windows/.test(ua)) device = 'PC Windows'
+  else if (/Windows/.test(ua)) device = t.app.pairing.windowsPc
   else if (/Macintosh/.test(ua)) device = 'Mac'
   const browser = /EdgA?\//.test(ua) ? 'Edge' : /SamsungBrowser/.test(ua) ? 'Samsung Internet' : /Firefox/.test(ua) ? 'Firefox' : /Chrome|CriOS/.test(ua) ? 'Chrome' : /Safari/.test(ua) ? 'Safari' : null
   return browser ? `${device} · ${browser}` : device

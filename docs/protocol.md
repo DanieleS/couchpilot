@@ -40,7 +40,7 @@ Change one, change this document and the others in the same commit.
 - **Size:** at most 16 KiB per message from the phone. Messages from the PC have no limit, but in practice the largest is an AUDIO STATE of a few hundred bytes.
 - **Lifetime:** the phone opens the socket while the page is on screen and closes it when the page goes to the background (`visibilitychange`). After an unexpected close it reconnects after 0.4 s, 0.8 s, 1.6 s, 3.2 s, then every 5 s.
 - **Offline:** the phone shows the PC as offline only after 3 s without a connection, so a brief drop doesn't flash.
-- **Authentication:** none by default: the port must not be exposed beyond the local network (see the README). With **Chiedi un PIN ai telefoni nuovi** on in the extension settings, the upgrade must carry the `couchpilot_device` cookie of a paired phone, like every request under `/api` (see [1.1](#11-pairing)); without it the PC closes the socket with status 1008 and the reason `unpaired`, and the phone shows its pairing screen instead of reconnecting.
+- **Authentication:** none by default: the port must not be exposed beyond the local network (see the README). With **Ask new phones for a PIN** on in the extension settings, the upgrade must carry the `couchpilot_device` cookie of a paired phone, like every request under `/api` (see [1.1](#11-pairing)); without it the PC closes the socket with status 1008 and the reason `unpaired`, and the phone shows its pairing screen instead of reconnecting.
 
 ### 1.1 Pairing
 
@@ -436,7 +436,7 @@ LEVELS are **lossy by design**: the PC sends one only when some level changed (s
 
 ### 6.1 Mouse and keyboard `0x01`–`0x0F`
 
-Acted on only while **Permetti al telefono di usare mouse e tastiera del PC** is on in the extension settings (`input` in `/api/status`). Otherwise the PC drops them silently: the socket stays up for audio and state.
+Acted on only while **Let the phone use the PC's mouse and keyboard** is on in the extension settings (`input` in `/api/status`). Otherwise the PC drops them silently: the socket stays up for audio and state.
 
 | Op | Name | Fields | |
 |---|---|---|---|

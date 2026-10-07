@@ -4,6 +4,7 @@ using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Data;
 using CouchPilot.Server;
+using static CouchPilot.Lang;
 
 namespace CouchPilot
 {
@@ -18,19 +19,19 @@ namespace CouchPilot
         {
             this.settings = settings;
 
-            Heading("Telefono");
-            Field("Porta del server", nameof(CouchPilotSettings.Port), 120);
+            Heading(Pc("Phone", "Telefono"));
+            Field(Pc("Server port", "Porta del server"), nameof(CouchPilotSettings.Port), 120);
             Hint(settings.Addresses.Count > 0
-                ? "Apri uno di questi indirizzi dal telefono (stessa rete):"
-                : "Il server non è attivo: il motivo è nelle notifiche di Playnite.");
+                ? Pc("Open one of these addresses on the phone (same network):", "Apri uno di questi indirizzi dal telefono (stessa rete):")
+                : Pc("The server isn't running: Playnite's notifications say why.", "Il server non è attivo: il motivo è nelle notifiche di Playnite."));
             foreach (var url in settings.Addresses)
             {
                 panel.Children.Add(new TextBox { Text = url, IsReadOnly = true, BorderThickness = new Thickness(0), Background = null });
             }
 
-            panel.Children.Add(new TextBlock { Text = "Certificato HTTPS (.pfx)", Margin = new Thickness(0, 14, 0, 4) });
+            panel.Children.Add(new TextBlock { Text = Pc("HTTPS certificate (.pfx)", "Certificato HTTPS (.pfx)"), Margin = new Thickness(0, 14, 0, 4) });
             var certificate = new DockPanel { Width = 420, HorizontalAlignment = HorizontalAlignment.Left, LastChildFill = true };
-            var browse = new Button { Content = "Sfoglia…", Padding = new Thickness(10, 2, 10, 2), Margin = new Thickness(6, 0, 0, 0) };
+            var browse = new Button { Content = Pc("Browse…", "Sfoglia…"), Padding = new Thickness(10, 2, 10, 2), Margin = new Thickness(6, 0, 0, 0) };
             browse.Click += (s, e) => settings.PickCertificate();
             DockPanel.SetDock(browse, Dock.Right);
             certificate.Children.Add(browse);
@@ -39,26 +40,27 @@ namespace CouchPilot
             certificate.Children.Add(certificatePath);
             panel.Children.Add(certificate);
 
-            panel.Children.Add(new TextBlock { Text = "Password del certificato", Margin = new Thickness(0, 8, 0, 4) });
+            panel.Children.Add(new TextBlock { Text = Pc("Certificate password", "Password del certificato"), Margin = new Thickness(0, 8, 0, 4) });
             var certificatePassword = new PasswordBox { Width = 260, HorizontalAlignment = HorizontalAlignment.Left, Password = settings.CertificatePassword ?? "" };
             certificatePassword.PasswordChanged += (s, e) => settings.CertificatePassword = certificatePassword.Password;
             panel.Children.Add(certificatePassword);
             panel.Children.Add(new TextBlock
             {
-                Text = "Vuoto: il server parla HTTP. Con un certificato parla solo HTTPS, sulla stessa porta, e il telefono può installare l'app. Come crearne uno con una tua CA è spiegato nel README.",
+                Text = Pc("Empty: the server speaks HTTP. With a certificate it speaks HTTPS only, on the same port, and the phone can install the app. The README explains how to make one with a CA of your own.", "Vuoto: il server parla HTTP. Con un certificato parla solo HTTPS, sulla stessa porta, e il telefono può installare l'app. Come crearne uno con una tua CA è spiegato nel README."),
                 TextWrapping = TextWrapping.Wrap,
                 Margin = new Thickness(0, 6, 0, 0),
                 Opacity = 0.7,
             });
 
-            Heading("Telefoni");
-            var pairing = new CheckBox { Content = "Chiedi un PIN ai telefoni nuovi" };
+            Heading(Pc("Phones", "Telefoni"));
+            var pairing = new CheckBox { Content = Pc("Ask new phones for a PIN", "Chiedi un PIN ai telefoni nuovi") };
             pairing.SetBinding(ToggleButton.IsCheckedProperty, Bind(nameof(CouchPilotSettings.RequirePairing)));
             panel.Children.Add(pairing);
             panel.Children.Add(new TextBlock
             {
-                Text = "Un telefono che apre CouchPilot per la prima volta deve scrivere un PIN di sei cifre che compare qui sullo schermo del PC: entra solo chi può leggerlo. "
-                    + "Spento, entra chiunque sia sulla rete, come prima. Qui sotto decidi cosa può fare ciascun telefono; le modifiche valgono subito.",
+                Text = Pc("A phone opening CouchPilot for the first time has to type a six-digit PIN that shows up here on the PC's screen: only who can read it gets in. "
+                    + "Off, anyone on the network gets in. Below you choose what each phone may do; changes apply at once.", "Un telefono che apre CouchPilot per la prima volta deve scrivere un PIN di sei cifre che compare qui sullo schermo del PC: entra solo chi può leggerlo. "
+                    + "Spento, entra chiunque sia sulla rete, come prima. Qui sotto decidi cosa può fare ciascun telefono; le modifiche valgono subito."),
                 TextWrapping = TextWrapping.Wrap,
                 Margin = new Thickness(0, 6, 0, 0),
                 Opacity = 0.7,
@@ -72,31 +74,31 @@ namespace CouchPilot
                 Unloaded += (s, e) => settings.Pairing.Changed -= onChanged;
             }
 
-            Heading("Touchpad e tastiera");
-            var input = new CheckBox { Content = "Permetti al telefono di usare mouse e tastiera del PC" };
+            Heading(Pc("Touchpad and keyboard", "Touchpad e tastiera"));
+            var input = new CheckBox { Content = Pc("Let the phone use the PC's mouse and keyboard", "Permetti al telefono di usare mouse e tastiera del PC") };
             input.SetBinding(ToggleButton.IsCheckedProperty, Bind(nameof(CouchPilotSettings.RemoteInput)));
             panel.Children.Add(input);
             panel.Children.Add(new TextBlock
             {
-                Text = "Chiunque raggiunga la porta del server può muovere il mouse e scrivere sul PC: attivalo solo su una rete di cui ti fidi, o chiedi il PIN ai telefoni e scegli sopra quali possono farlo.",
+                Text = Pc("Anyone who reaches the server's port can move the mouse and type on the PC: turn it on only on a network you trust, or ask phones for the PIN and choose above which ones may.", "Chiunque raggiunga la porta del server può muovere il mouse e scrivere sul PC: attivalo solo su una rete di cui ti fidi, o chiedi il PIN ai telefoni e scegli sopra quali possono farlo."),
                 TextWrapping = TextWrapping.Wrap,
                 Margin = new Thickness(0, 6, 0, 0),
                 Opacity = 0.7,
             });
 
-            Heading("Screenshot e clip");
-            var captures = new CheckBox { Content = "Mostra screenshot e clip sul telefono, e permetti di farne di nuovi", Margin = new Thickness(0, 0, 0, 10) };
+            Heading(Pc("Screenshots and clips", "Screenshot e clip"));
+            var captures = new CheckBox { Content = Pc("Show screenshots and clips on the phone, and let it take new ones", "Mostra screenshot e clip sul telefono, e permetti di farne di nuovi"), Margin = new Thickness(0, 0, 0, 10) };
             captures.SetBinding(ToggleButton.IsCheckedProperty, Bind(nameof(CouchPilotSettings.Captures)));
             panel.Children.Add(captures);
 
             var capture = new StackPanel();
             capture.SetBinding(IsEnabledProperty, Bind(nameof(CouchPilotSettings.Captures)));
             panel.Children.Add(capture);
-            capture.Children.Add(new TextBlock { Text = "Cattura con", Margin = new Thickness(0, 0, 0, 4) });
+            capture.Children.Add(new TextBlock { Text = Pc("Capture with", "Cattura con"), Margin = new Thickness(0, 0, 0, 4) });
             foreach (var (tool, label) in new[]
             {
-                (Captures.CaptureTool.GameBar, "Game Bar di Windows (Win+Alt+Stamp, Win+Alt+R, Win+Alt+G)"),
-                (Captures.CaptureTool.Nvidia, "NVIDIA: GeForce Experience o app NVIDIA (Alt+F1, Alt+F9, Alt+F10)"),
+                (Captures.CaptureTool.GameBar, Pc("Windows Game Bar (Win+Alt+PrtScn, Win+Alt+R, Win+Alt+G)", "Game Bar di Windows (Win+Alt+Stamp, Win+Alt+R, Win+Alt+G)")),
+                (Captures.CaptureTool.Nvidia, Pc("NVIDIA: GeForce Experience or the NVIDIA app (Alt+F1, Alt+F9, Alt+F10)", "NVIDIA: GeForce Experience o app NVIDIA (Alt+F1, Alt+F9, Alt+F10)")),
             })
             {
                 var option = new RadioButton { Content = label, GroupName = "CaptureTool", IsChecked = settings.CaptureTool == tool, Margin = new Thickness(0, 2, 0, 2) };
@@ -104,9 +106,9 @@ namespace CouchPilot
                 capture.Children.Add(option);
             }
 
-            capture.Children.Add(new TextBlock { Text = "Un'altra cartella da mostrare (facoltativa)", Margin = new Thickness(0, 12, 0, 4) });
+            capture.Children.Add(new TextBlock { Text = Pc("Another folder to show (optional)", "Un'altra cartella da mostrare (facoltativa)"), Margin = new Thickness(0, 12, 0, 4) });
             var folder = new DockPanel { Width = 420, HorizontalAlignment = HorizontalAlignment.Left, LastChildFill = true };
-            var pickFolder = new Button { Content = "Sfoglia…", Padding = new Thickness(10, 2, 10, 2), Margin = new Thickness(6, 0, 0, 0) };
+            var pickFolder = new Button { Content = Pc("Browse…", "Sfoglia…"), Padding = new Thickness(10, 2, 10, 2), Margin = new Thickness(6, 0, 0, 0) };
             pickFolder.Click += (s, e) => settings.PickCaptureFolder();
             DockPanel.SetDock(pickFolder, Dock.Right);
             folder.Children.Add(pickFolder);
@@ -116,25 +118,27 @@ namespace CouchPilot
             capture.Children.Add(folder);
             capture.Children.Add(new TextBlock
             {
-                Text = "La galleria mostra già la cartella Acquisizioni di Game Bar e quella di NVIDIA. CouchPilot preme le scorciatoie predefinite del programma scelto: il gioco deve essere in primo piano. "
+                Text = Pc("The gallery already shows Game Bar's Captures folder and NVIDIA's. CouchPilot presses the chosen program's default shortcuts: the game must be in the foreground. "
+                    + "To save the last seconds, Game Bar must record in the background (Windows Settings → Gaming → Captures) and NVIDIA must have Instant Replay on. "
+                    + "Anyone who reaches the server's port can see the captures and bin them, unless you ask phones for the PIN and choose above which ones may.", "La galleria mostra già la cartella Acquisizioni di Game Bar e quella di NVIDIA. CouchPilot preme le scorciatoie predefinite del programma scelto: il gioco deve essere in primo piano. "
                     + "Per salvare gli ultimi secondi, Game Bar deve registrare in sottofondo (Impostazioni di Windows → Giochi → Acquisizioni) e NVIDIA deve avere il Replay istantaneo acceso. "
-                    + "Chiunque raggiunga la porta del server può vedere le catture e cestinarle, a meno di chiedere il PIN ai telefoni e scegliere sopra quali possono.",
+                    + "Chiunque raggiunga la porta del server può vedere le catture e cestinarle, a meno di chiedere il PIN ai telefoni e scegliere sopra quali possono."),
                 TextWrapping = TextWrapping.Wrap,
                 Margin = new Thickness(0, 6, 0, 0),
                 Opacity = 0.7,
             });
 
             Heading("Home Assistant (MQTT)");
-            var enabled = new CheckBox { Content = "Pubblica lo stato del PC su Home Assistant", Margin = new Thickness(0, 0, 0, 10) };
+            var enabled = new CheckBox { Content = Pc("Publish the PC's state to Home Assistant", "Pubblica lo stato del PC su Home Assistant"), Margin = new Thickness(0, 0, 0, 10) };
             enabled.SetBinding(ToggleButton.IsCheckedProperty, Bind(nameof(CouchPilotSettings.MqttEnabled)));
             panel.Children.Add(enabled);
 
             var mqtt = new StackPanel();
             mqtt.SetBinding(IsEnabledProperty, Bind(nameof(CouchPilotSettings.MqttEnabled)));
             panel.Children.Add(mqtt);
-            Field("Broker (indirizzo)", nameof(CouchPilotSettings.MqttHost), 260, mqtt);
-            Field("Porta", nameof(CouchPilotSettings.MqttPort), 120, mqtt);
-            Field("Utente", nameof(CouchPilotSettings.MqttUsername), 260, mqtt);
+            Field(Pc("Broker (address)", "Broker (indirizzo)"), nameof(CouchPilotSettings.MqttHost), 260, mqtt);
+            Field(Pc("Port", "Porta"), nameof(CouchPilotSettings.MqttPort), 120, mqtt);
+            Field(Pc("User", "Utente"), nameof(CouchPilotSettings.MqttUsername), 260, mqtt);
 
             mqtt.Children.Add(new TextBlock { Text = "Password", Margin = new Thickness(0, 8, 0, 4) });
             var password = new PasswordBox { Width = 260, HorizontalAlignment = HorizontalAlignment.Left, Password = settings.MqttPassword ?? "" };
@@ -143,17 +147,17 @@ namespace CouchPilot
 
             var commands = new CheckBox
             {
-                Content = "Permetti a Home Assistant di comandare il PC (preset schermo, chiudere e avviare giochi)",
+                Content = Pc("Let Home Assistant control the PC (display presets, closing and starting games)", "Permetti a Home Assistant di comandare il PC (preset schermo, chiudere e avviare giochi)"),
                 Margin = new Thickness(0, 14, 0, 0),
             };
             commands.SetBinding(ToggleButton.IsCheckedProperty, Bind(nameof(CouchPilotSettings.MqttCommands)));
             mqtt.Children.Add(commands);
 
-            Field("Topic di base", nameof(CouchPilotSettings.MqttBaseTopic), 260, mqtt);
-            Field("Prefisso discovery", nameof(CouchPilotSettings.MqttDiscoveryPrefix), 260, mqtt);
+            Field(Pc("Base topic", "Topic di base"), nameof(CouchPilotSettings.MqttBaseTopic), 260, mqtt);
+            Field(Pc("Discovery prefix", "Prefisso discovery"), nameof(CouchPilotSettings.MqttDiscoveryPrefix), 260, mqtt);
             mqtt.Children.Add(new TextBlock
             {
-                Text = "Il PC compare in Home Assistant come dispositivo con gioco in esecuzione, preset schermo e stream Vibepollo.",
+                Text = Pc("The PC shows up in Home Assistant as a device with the running game, the display preset and the Vibepollo stream.", "Il PC compare in Home Assistant come dispositivo con gioco in esecuzione, preset schermo e stream Vibepollo."),
                 TextWrapping = TextWrapping.Wrap,
                 Margin = new Thickness(0, 10, 0, 0),
                 Opacity = 0.7,
@@ -171,7 +175,7 @@ namespace CouchPilot
             var list = pairing.Devices;
             if (list.Count == 0)
             {
-                devices.Children.Add(new TextBlock { Text = "Nessun telefono abbinato finora.", Opacity = 0.7 });
+                devices.Children.Add(new TextBlock { Text = Pc("No phone paired yet.", "Nessun telefono abbinato finora."), Opacity = 0.7 });
                 return;
             }
             foreach (var device in list)
@@ -188,23 +192,23 @@ namespace CouchPilot
                 var seen = device.LastSeenAt.ToLocalTime();
                 who.Children.Add(new TextBlock
                 {
-                    Text = seen.Date == DateTime.Today ? $"Visto oggi alle {seen:HH:mm}" : $"Visto il {seen:d}",
+                    Text = seen.Date == DateTime.Today ? Pc($"Seen today at {seen:HH:mm}", $"Visto oggi alle {seen:HH:mm}") : Pc($"Seen on {seen:d}", $"Visto il {seen:d}"),
                     FontSize = 11,
                     Opacity = 0.6,
                 });
                 row.Children.Add(who);
 
-                var input = new CheckBox { Content = "Mouse e tastiera", IsChecked = device.AllowInput, Margin = new Thickness(16, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
+                var input = new CheckBox { Content = Pc("Mouse and keyboard", "Mouse e tastiera"), IsChecked = device.AllowInput, Margin = new Thickness(16, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
                 input.Click += (s, e) => pairing.SetPermissions(id, input.IsChecked == true, null);
                 Grid.SetColumn(input, 1);
                 row.Children.Add(input);
 
-                var captures = new CheckBox { Content = "Catture", IsChecked = device.AllowCaptures, Margin = new Thickness(12, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
+                var captures = new CheckBox { Content = Pc("Captures", "Catture"), IsChecked = device.AllowCaptures, Margin = new Thickness(12, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
                 captures.Click += (s, e) => pairing.SetPermissions(id, null, captures.IsChecked == true);
                 Grid.SetColumn(captures, 2);
                 row.Children.Add(captures);
 
-                var remove = new Button { Content = "Rimuovi", Padding = new Thickness(10, 2, 10, 2), Margin = new Thickness(16, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
+                var remove = new Button { Content = Pc("Remove", "Rimuovi"), Padding = new Thickness(10, 2, 10, 2), Margin = new Thickness(16, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
                 remove.Click += (s, e) => pairing.Forget(id);
                 Grid.SetColumn(remove, 3);
                 row.Children.Add(remove);

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { t } from '../i18n'
 import { useCountdown } from '../store'
 import type { Displays } from '../types'
 
@@ -18,13 +19,13 @@ const { seconds: left, fraction } = useCountdown()
       <b class="tabular">{{ left }}</b>
     </div>
     <div>
-      <p class="q">Si vede tutto?</p>
+      <p class="q">{{ t.displays.confirm.question }}</p>
       <p class="s">
-        Se non confermi torno {{ previousName ? `a «${previousName}»` : 'alla configurazione di prima' }} da solo.
+        {{ previousName ? t.displays.confirm.toPreset(previousName) : t.displays.confirm.toPrevious }}
       </p>
       <div class="actions">
-        <button class="btn btn-ghost" @click="emit('revert')">Annulla</button>
-        <button class="btn btn-wait" @click="emit('keep')">Tieni</button>
+        <button class="btn btn-ghost" @click="emit('revert')">{{ t.displays.confirm.revert }}</button>
+        <button class="btn btn-wait" @click="emit('keep')">{{ t.displays.confirm.keep }}</button>
       </div>
     </div>
   </div>
