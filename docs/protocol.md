@@ -277,7 +277,7 @@ The artwork is at `GET /api/media/art?v=<artVersion>`; the version changes with 
 }
 ```
 
-The thumbnail is at `GET /api/captures/{id}/thumb?v=<version>` (a JPEG up to 480 px, cacheable for good; 404 when the PC can't make one, a damaged clip say), the file at `GET /api/captures/{id}/file`, which honours `Range` so the player can seek. `DELETE /api/captures/{id}` moves it to the PC's Recycle Bin.
+The thumbnail is at `GET /api/captures/{id}/thumb?v=<version>` (a JPEG up to 480 px, cacheable for good; 404 when the PC can't make one, a damaged clip say), the file at `GET /api/captures/{id}/file`, which honours `Range` so the player can seek. Screenshots also have a preview at `GET /api/captures/{id}/preview?v=<version>`, a JPEG up to 1920 px for the viewer, so a 4K PNG of tens of MB isn't fetched just to look at it (cacheable for good; 404 for clips, GIFs, and a file the PC can't read, where the viewer falls back to the file); saving and sharing still take the file. `DELETE /api/captures/{id}` moves it to the PC's Recycle Bin.
 
 Each item also carries `edited` (cut out of another clip on the phone) and `sourceId` (that clip's id, while it's still there). GIFs the editor made are listed as photos (`kind: "photo"`, a `.gif` file name).
 

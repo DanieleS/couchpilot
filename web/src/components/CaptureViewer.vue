@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { DialogContent, DialogDescription, DialogOverlay, DialogPortal, DialogRoot, DialogTitle, VisuallyHidden } from 'reka-ui'
 import { computed, nextTick, ref, watch } from 'vue'
-import { captureFileUrl, captureThumbUrl, imageUrl } from '../api'
+import { captureFileUrl, capturePreviewUrl, captureThumbUrl, imageUrl } from '../api'
 import { clipLength, dayLabel, fileSize, isGif, playDayKey, toolName } from '../captures'
 import { locale, t } from '../i18n'
 import { useCouchPilot } from '../store'
@@ -22,6 +22,34 @@ const { games, error, status } = useCouchPilot()
 const canTrim = computed(() => !!status.value?.capture?.editing)
 const current = computed(() => props.items[index.value] ?? null)
 const file = computed(() => (current.value ? captureFileUrl(current.value) : null))
+
+// A screenshot shows as its preview, a fraction of the PNG's weight, over its thumbnail while it
+// loads; the file itself only when the PC has no preview to give. Save and share keep the file.
+const previewFailed = ref<string | null>(null)
+const shown = computed(() => {
+  const c = current.value
+  if (!c || c.kind === 'video') return null
+  return (previewFailed.value !== c.id && capturePreviewUrl(c)) || file.value
+})
+const stillStyle = computed(() => {
+  const c = current.value
+  if (!c) return undefined
+  return {
+    backgroundImage: `url("${captureThumbUrl(c)}")`,
+    aspectRatio: c.width && c.height ? `${c.width} / ${c.height}` : undefined,
+  }
+})
+const onPreviewError = () => {
+  if (current.value && shown.value !== file.value) previewFailed.value = current.value.id
+}
+// The screenshots either side are fetched ahead, so a swipe lands on a picture already there.
+watch([index, open], () => {
+  if (!open.value) return
+  for (const c of [props.items[index.value + 1], props.items[index.value - 1]]) {
+    const url = c && capturePreviewUrl(c)
+    if (url) new Image().src = url
+  }
+}, { immediate: true })
 
 const go = (to: number) => {
   if (to >= 0 && to < props.items.length) index.value = to
@@ -116,7 +144,7 @@ watch([index, open], async () => {
             playsinline
             preload="metadata"
           />
-          <img v-else-if="file" :key="current.id" class="media" :src="file" :alt="current.game ?? ''" />
+          <img v-else-if="shown" :key="current.id" class="media still" :src="shown" :style="stillStyle" :alt="current.game ?? ''" @error="onPreviewError" />
           <CaptureThumb v-else class="media" :capture="current" />
           <button v-if="index > 0" class="step prev" :aria-label="t.captures.viewer.prev" @click="go(index - 1)"><AppIcon name="chevron-left" :size="20" /></button>
           <button v-if="index < items.length - 1" class="step next" :aria-label="t.captures.viewer.next" @click="go(index + 1)"><AppIcon name="chevron-right" :size="20" /></button>
@@ -182,6 +210,8 @@ watch([index, open], async () => {
 .stage { position: relative; flex: 1; min-block-size: 0; display: grid; place-items: center; }
 .media { max-inline-size: 100%; max-block-size: 100%; inline-size: 100%; object-fit: contain; background: #000; }
 img.media, video.media { block-size: auto; }
+/* The thumbnail under the preview, laid out like it, until the preview covers it. */
+.still { background: #000 center / contain no-repeat; }
 .step {
   position: absolute;
   top: 50%;

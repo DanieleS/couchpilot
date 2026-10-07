@@ -101,5 +101,9 @@ export const mediaArtUrl = (version: string) => (useMock ? null : `/api/media/ar
 
 export const captureThumbUrl = (c: Capture) => (useMock ? mockCaptureArt(c) : `/api/captures/${c.id}/thumb?v=${c.version}`)
 export const captureFileUrl = (c: Capture) => (useMock ? (c.kind === 'photo' ? mockCaptureArt(c) : null) : `/api/captures/${c.id}/file?v=${c.version}`)
+// What the viewer shows of a screenshot: a JPEG sized for the screen, the file itself staying for
+// saving and sharing. Clips and GIFs have none (a GIF's still wouldn't move).
+export const capturePreviewUrl = (c: Capture) =>
+  c.kind !== 'photo' || /\.gif$/i.test(c.fileName) ? null : useMock ? mockCaptureArt(c) : `/api/captures/${c.id}/preview?v=${c.version}`
 // The trimmer's strip of frames across a clip.
 export const captureStripUrl = (c: Capture) => (useMock ? mockCaptureArt(c) : `/api/captures/${c.id}/strip?v=${c.version}`)
