@@ -158,7 +158,7 @@ const open = (id: string) => {
       </template>
 
       <template v-if="stats.achievements">
-        <p class="eyebrow"><span>{{ t.stats.achievements }}</span><span class="aside">{{ t.stats.fromSuccessStory }}</span></p>
+        <p class="eyebrow">{{ t.stats.achievements }}</p>
         <div class="ach card">
           <p class="ach-count tabular"><b>{{ number(stats.achievements.unlocked) }}</b> {{ stats.achievements.unlocked === 1 ? t.stats.unlockedOne : t.stats.unlockedMany }}</p>
           <div v-if="stats.achievements.recent.length" class="ach-list">
@@ -174,7 +174,7 @@ const open = (id: string) => {
         </div>
       </template>
 
-      <p class="eyebrow"><span>{{ t.stats.library }}</span><span class="aside">{{ t.stats.fromPlaynite }}</span></p>
+      <p class="eyebrow">{{ t.stats.library }}</p>
       <div class="tiles">
         <div class="tile card"><span class="n tabular">{{ hoursTotal(stats.library.playtimeSeconds) }}</span><span class="l">{{ t.stats.playedTotal }}</span></div>
         <div class="tile card"><span class="n tabular">{{ number(stats.library.games) }}</span><span class="l">{{ t.stats.games(number(stats.library.installed)) }}</span></div>

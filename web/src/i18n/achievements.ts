@@ -8,12 +8,11 @@ const en = {
     unlocked: 'Unlocked',
     locked: 'To do',
   },
-  none: 'SuccessStory doesn\'t have this game\'s achievements yet.',
+  none: 'No achievements for this game yet.',
   allDone: 'Nothing left: you have them all.',
   noneYet: 'None yet: the next session is the one.',
   hidden: 'Hidden achievement',
   reveal: 'Show anyway',
-  refreshed: (when: string) => `From SuccessStory, updated ${when}.`,
   // SuccessStory's own bands, for the few that deserve a word.
   rarity: {
     ultraRare: 'Ultra rare',
@@ -36,12 +35,11 @@ const it: typeof en = {
     unlocked: 'Sbloccati',
     locked: 'Da fare',
   },
-  none: 'SuccessStory non ha ancora gli obiettivi di questo gioco.',
+  none: 'Ancora nessun obiettivo per questo gioco.',
   allDone: 'Niente da fare: li hai tutti.',
   noneYet: 'Ancora nessuno: la prossima partita è quella buona.',
   hidden: 'Obiettivo nascosto',
   reveal: 'Mostra lo stesso',
-  refreshed: (when: string) => `Da SuccessStory, aggiornato ${when}.`,
   rarity: {
     ultraRare: 'Rarissimo',
     rare: 'Raro',

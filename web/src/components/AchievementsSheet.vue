@@ -86,9 +86,6 @@ const isHidden = (a: Achievement) => a.hidden && !a.unlocked && !revealed.value.
           </div>
         </li>
       </ul>
-      <p v-if="data?.lastRefresh" class="foot muted">
-        {{ t.achievements.refreshed(unlockedLabel(data.lastRefresh, true)) }}
-      </p>
     </template>
   </BottomSheet>
 </template>
@@ -122,5 +119,4 @@ const isHidden = (a: Achievement) => a.hidden && !a.unlocked && !revealed.value.
 .rare.ultra { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); }
 .empty { padding: var(--size-6) 0; text-align: center; font-size: 0.8125rem; }
 .skeleton { margin-top: var(--size-3); block-size: 10rem; border-radius: var(--r-inner); background: var(--well); animation: var(--animation-blink); }
-.foot { margin: var(--size-3) 0 var(--size-2); font-size: 0.6875rem; text-align: center; }
 </style>

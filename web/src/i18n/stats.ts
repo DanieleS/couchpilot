@@ -17,9 +17,9 @@ const en = {
   next: 'Next period',
   untracked: (since: string | null) =>
     since
-      ? `GameActivity has sessions from ${since}: there are none for this period. Playnite keeps only the totals, which you'll find below.`
-      : 'GameActivity has no sessions yet. Playnite keeps only the totals, which you\'ll find below.',
-  noActivity: 'Install GameActivity in Playnite to see when you play: Playnite itself keeps only totals, which you find below.',
+      ? `Sessions are recorded from ${since}: there are none for this period. You'll find the totals below.`
+      : 'No sessions recorded yet. You\'ll find the totals below.',
+  noActivity: 'Install GameActivity in Playnite to see when you play. You\'ll find the totals below.',
   played: 'Played',
   // Compared with the period before: "+2 h 10 min vs last week at this point".
   than: {
@@ -34,12 +34,10 @@ const en = {
   average: (time: string) => `average ${time}`,
   top: 'Most played',
   achievements: 'Achievements',
-  fromSuccessStory: 'from SuccessStory',
   unlockedOne: 'unlocked',
   unlockedMany: 'unlocked',
   noAchievements: 'Nothing in this period.',
   library: 'Library',
-  fromPlaynite: 'from Playnite',
   hours: (h: string) => `${h} h`,
   playedTotal: 'played in total',
   games: (installed: string) => `games, ${installed} installed`,
@@ -75,9 +73,9 @@ const it: typeof en = {
   next: 'Periodo successivo',
   untracked: (since: string | null) =>
     since
-      ? `GameActivity ha sessioni dal ${since}: per questo periodo non ce ne sono. Playnite tiene solo i totali, che trovi qui sotto.`
-      : 'GameActivity non ha ancora sessioni. Playnite tiene solo i totali, che trovi qui sotto.',
-  noActivity: 'Installa GameActivity in Playnite per vedere quando giochi: Playnite tiene solo i totali, che trovi qui sotto.',
+      ? `Le sessioni sono registrate dal ${since}: per questo periodo non ce ne sono. I totali li trovi qui sotto.`
+      : 'Ancora nessuna sessione registrata. I totali li trovi qui sotto.',
+  noActivity: 'Installa GameActivity in Playnite per vedere quando giochi. I totali li trovi qui sotto.',
   played: 'Giocate',
   than: {
     week: { running: 'della settimana scorsa a questo punto', done: 'della settimana prima' },
@@ -91,12 +89,10 @@ const it: typeof en = {
   average: (time: string) => `media ${time}`,
   top: 'Più giocati',
   achievements: 'Obiettivi',
-  fromSuccessStory: 'da SuccessStory',
   unlockedOne: 'sbloccato',
   unlockedMany: 'sbloccati',
   noAchievements: 'Niente in questo periodo.',
   library: 'Libreria',
-  fromPlaynite: 'da Playnite',
   hours: (h: string) => `${h} h`,
   playedTotal: 'giocate in tutto',
   games: (installed: string) => `giochi, ${installed} installati`,
