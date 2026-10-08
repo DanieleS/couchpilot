@@ -85,9 +85,12 @@ export const api = {
   // Answers once ffmpeg is done, with the new clip or GIF.
   trimCapture: (id: string, body: TrimRequest) => request<Capture>('POST', `/captures/${id}/trim`, body),
   // Pairing: these work before the phone is paired.
-  pairing: () => request<{ required: boolean; device: PairedDevice | null }>('GET', '/pair'),
+  // `token` is this phone's own, for it to keep a copy (see pairing.ts); null when not paired.
+  pairing: () => request<{ required: boolean; device: PairedDevice | null; token: string | null }>('GET', '/pair'),
   requestPin: (name: string) => request<{ expiresAt: string; seconds: number }>('POST', '/pair/request', { name }),
-  pair: (pin: string, name: string) => request<PairedDevice>('POST', '/pair', { pin, name }),
+  pair: (pin: string, name: string) => request<PairedDevice & { token: string }>('POST', '/pair', { pin, name }),
+  // The browser lost the cookie: the kept token gets it back, no PIN needed.
+  resume: (token: string) => request<PairedDevice>('POST', '/pair/resume', { token }),
   unpair: () => request<void>('DELETE', '/pair'),
   // Achievements, from SuccessStory; 404 for a game it has nothing on.
   achievements: (id: string) => request<GameAchievements>('GET', `/games/${id}/achievements`),

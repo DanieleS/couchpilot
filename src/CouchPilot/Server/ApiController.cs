@@ -101,13 +101,36 @@ namespace CouchPilot.Server
             }
         }
 
-        // Pairing. These three are open to every phone: they're how a phone gets in.
+        // Pairing. These are open to every phone: they're how a phone gets in.
+        // A paired phone also gets its token back, to keep a copy of its own: see Resume.
         [Route(HttpVerbs.Get, "/pair")]
-        public object Pairing() => new
+        public object Pairing()
         {
-            required = pairing.Required,
-            device = PairingService.ToDto(pairing.Required ? pairing.Authenticate(Request.Cookies[PairingService.CookieName]?.Value) : null),
-        };
+            var token = Request.Cookies[PairingService.CookieName]?.Value;
+            var device = pairing.Required ? pairing.Authenticate(token) : null;
+            return new
+            {
+                required = pairing.Required,
+                device = PairingService.ToDto(device),
+                token = device != null ? token : null,
+            };
+        }
+
+        // { "token": "…" }: a paired phone whose browser dropped the cookie shows the copy it
+        // kept, and gets the cookie again instead of a PIN. Browsers drop cookies on their own
+        // (storage cleanup, a home-screen app with its own cookie jar), and having to read the
+        // TV again each time would undo the point of pairing.
+        [Route(HttpVerbs.Post, "/pair/resume")]
+        public async Task<object> Resume()
+        {
+            if (!pairing.Required) throw new HttpException(HttpStatusCode.Conflict, Tr("Pairing isn't required: the phone is already in.", "L'abbinamento non è richiesto: il telefono è già dentro."));
+            var body = await ReadBody<PairBody>();
+            var device = pairing.Authenticate(body?.Token);
+            if (device == null) throw new PairingException("forgotten", Tr("The PC doesn't know this phone any more: pair it again.", "Il PC non conosce più questo telefono: abbinalo di nuovo."));
+            gate.SetCookie(HttpContext, body.Token);
+            live.Nudge();
+            return PairingService.ToDto(device);
+        }
 
         // { "name": "Pixel 8 · Chrome" }: a PIN goes up on the PC's screen for two minutes.
         [Route(HttpVerbs.Post, "/pair/request")]
@@ -128,7 +151,7 @@ namespace CouchPilot.Server
             var device = pairing.Complete(body?.Pin, body?.Name, out var token);
             gate.SetCookie(HttpContext, token);
             live.Nudge();
-            return PairingService.ToDto(device);
+            return new { device.Id, device.Name, Input = device.AllowInput, Captures = device.AllowCaptures, Unlock = device.AllowUnlock, Token = token };
         }
 
         // This phone forgets the PC, and the PC forgets it.
@@ -495,6 +518,7 @@ namespace CouchPilot.Server
         {
             public string Pin { get; set; }
             public string Name { get; set; }
+            public string Token { get; set; }
         }
 
         public class PresetAudioBody

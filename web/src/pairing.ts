@@ -5,10 +5,59 @@ import { t } from './i18n'
 // Pairing this phone with the PC: ask for a PIN (the PC puts it on its screen for two minutes),
 // type it, and the PC answers with a cookie that stands for this phone from then on. The
 // pairing screen drives this; `unpaired` in api.ts says when it has to show.
+//
+// Browsers drop cookies on their own: storage cleanup, a home-screen app with a cookie jar of its
+// own. So the phone also keeps the token in localStorage, and when the PC says «unpaired» it first
+// shows it back (POST /api/pair/resume) to get the cookie again; the PIN only if that fails too.
 
-export type PairingStep = 'start' | 'requesting' | 'pin' | 'checking'
+export type PairingStep = 'resuming' | 'start' | 'requesting' | 'pin' | 'checking'
 
 const NAME_KEY = 'couchpilot-device-name'
+const TOKEN_KEY = 'couchpilot-device-token'
+
+function readToken() {
+  try {
+    return localStorage.getItem(TOKEN_KEY)
+  } catch {
+    return null
+  }
+}
+
+function keepToken(token: string | null) {
+  try {
+    if (token) localStorage.setItem(TOKEN_KEY, token)
+    else localStorage.removeItem(TOKEN_KEY)
+  } catch {}
+}
+
+// At start: a phone paired before it kept a copy of its token gets one now. Pairing off, or
+// the PC unreachable, leaves whatever was kept alone.
+export async function keepPairing() {
+  try {
+    const r = await api.pairing()
+    if (r.token) keepToken(r.token)
+  } catch {}
+}
+
+// When the token was last shown: a browser that won't keep the cookie at all would otherwise
+// bounce between the app and this screen forever.
+let resumedAt = 0
+const canResume = () => !!readToken() && Date.now() - resumedAt > 30000
+
+// Back in with the kept token, if there is one and the PC still knows it.
+async function resume() {
+  const token = readToken()
+  if (!token) return false
+  resumedAt = Date.now()
+  try {
+    await api.resume(token)
+    return true
+  } catch (e) {
+    // Only a PC that answered «I don't know it» makes the copy worthless; a network hiccup doesn't.
+    if ((e as ApiError).code === 'forgotten') keepToken(null)
+    return false
+  }
+}
 
 // «Pixel 8 · Chrome», «iPhone · Safari», «Telefono»: what the PC shows while asking, and lists
 // in its settings afterwards. The person can change it before pairing.
@@ -27,7 +76,7 @@ export function guessDeviceName() {
 }
 
 export function usePairing() {
-  const step = ref<PairingStep>('start')
+  const step = ref<PairingStep>(canResume() ? 'resuming' : 'start')
   const name = ref(readName())
   const pin = ref('')
   const error = ref<string | null>(null)
@@ -78,7 +127,8 @@ export function usePairing() {
     step.value = 'checking'
     error.value = null
     try {
-      await api.pair(pin.value, name.value.trim())
+      const device = await api.pair(pin.value, name.value.trim())
+      keepToken(device.token)
       unpaired.value = false
       step.value = 'start'
       pin.value = ''
@@ -103,6 +153,13 @@ export function usePairing() {
     pin.value = ''
     deadline.value = null
     error.value = null
+  }
+
+  if (step.value === 'resuming') {
+    resume().then((ok) => {
+      if (ok) unpaired.value = false
+      step.value = 'start'
+    })
   }
 
   return { step, name, pin, error, attemptsLeft, secondsLeft, expired, requestPin, submit, reset }

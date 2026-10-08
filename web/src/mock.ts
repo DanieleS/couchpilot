@@ -567,7 +567,7 @@ async function handle(method: string, path: string, body?: any): Promise<unknown
   const [, a, b, c, d] = path.split('/')
   // Pairing comes first: like PairingGate.cs, everything else is 401 until the phone has typed the PIN.
   if (a === 'pair') {
-    if (method === 'GET' && !b) return { required: pairingRequired, device: pairedDevice }
+    if (method === 'GET' && !b) return { required: pairingRequired, device: pairedDevice, token: pairedDevice ? 'mock-token' : null }
     if (method === 'POST' && b === 'request') {
       pinPending = true
       pinAttempts = 5
@@ -585,6 +585,11 @@ async function handle(method: string, path: string, body?: any): Promise<unknown
       }
       pinPending = false
       pairedDevice = { id: 'dev1', name: body?.name || 'Telefono', input: true, captures: true, unlock: false }
+      return { ...pairedDevice, token: 'mock-token' }
+    }
+    if (method === 'POST' && b === 'resume') {
+      if (body?.token !== 'mock-token') throw fail('Il PC non conosce più questo telefono: abbinalo di nuovo.', 'forgotten')
+      pairedDevice ??= { id: 'dev1', name: 'Telefono', input: true, captures: true, unlock: false }
       return pairedDevice
     }
     if (method === 'DELETE') return void (pairedDevice = null)

@@ -50,6 +50,7 @@ namespace CouchPilot.Server
         // wrong-pin: not the PIN on the screen; AttemptsLeft says how many more tries.
         // expired: no PIN is pending (it expired, was refused, or too many wrong tries).
         // too-soon: a PIN was asked for a moment ago; wait before asking again.
+        // forgotten: the token a phone kept is no device's any more (removed in the settings).
         public string Code { get; }
         public int AttemptsLeft { get; }
 
