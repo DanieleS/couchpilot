@@ -50,6 +50,8 @@ namespace CouchPilot.Server
         private const int RescanEveryTicks = 25;  // 1 s
 
         private readonly RemoteInput input;
+        // The PC is on the lock screen: mouse, keyboard and volume are dropped, like the API's commands.
+        private readonly Func<bool> locked;
         private readonly AudioService audio;
         private readonly StatusSource status;
         private readonly PairingService pairing;
@@ -76,8 +78,9 @@ namespace CouchPilot.Server
             public Task Queue = Task.CompletedTask;
         }
 
-        public LiveSocket(string path, RemoteInput input, AudioService audio, StatusSource status, PairingService pairing) : base(path, true)
+        public LiveSocket(string path, RemoteInput input, AudioService audio, StatusSource status, PairingService pairing, Func<bool> locked) : base(path, true)
         {
+            this.locked = locked;
             this.input = input;
             this.audio = audio;
             this.status = status;
@@ -156,7 +159,11 @@ namespace CouchPilot.Server
             var op = buffer[0];
             try
             {
-                if (op >= OpInputFirst && op <= OpInputLast)
+                if (op >= OpInputFirst && op <= OpAudioLast && locked())
+                {
+                    // Dropped while the PC is locked: the phone may look, not act.
+                }
+                else if (op >= OpInputFirst && op <= OpInputLast)
                 {
                     // Dropped, not refused, when mouse and keyboard are off, or not for this phone:
                     // the socket is for audio too.

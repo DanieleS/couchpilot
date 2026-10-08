@@ -2,12 +2,17 @@ import { ref } from 'vue'
 import type { AudioChannel } from './protocol'
 import type { AudioOutput, Capture, Captures, Game, GameAchievements, GameDetail, GameStats, NowPlaying, PairedDevice, Preset, RecentAchievement, Stats, StatsRangeName, Status, TrimRequest } from './types'
 import { mockCaptureArt, mockRequest } from './mock'
+import { t } from './i18n'
 
 const useMock = import.meta.env.VITE_MOCK === '1'
 
 // The PC wants a PIN from this phone before it answers anything: the pairing screen takes over
 // until it has one. Set by a 401 here, or by the live socket closing with 1008.
 export const unpaired = ref(false)
+
+// The PC is on the lock screen: the phone may look but not act, so every command but the unlock
+// is refused here, before it leaves (the PC refuses them too). Kept in step with the status.
+export const pcLocked = ref(false)
 
 // What the PC answered when it refused; `code` says what's wrong when it can (see CaptureService.cs).
 export class ApiError extends Error {
@@ -17,6 +22,9 @@ export class ApiError extends Error {
 }
 
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  if (pcLocked.value && method !== 'GET' && path !== '/unlock' && !path.startsWith('/pair')) {
+    throw new ApiError(t.app.locked.refused, 'locked', 0)
+  }
   if (useMock) {
     return (mockRequest(method, path, body) as Promise<T>).catch((e) => {
       if ((e as ApiError).code === 'unpaired') unpaired.value = true

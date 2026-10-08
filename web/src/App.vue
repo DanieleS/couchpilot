@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ToastAction, ToastDescription, ToastProvider, ToastRoot, ToastTitle, ToastViewport } from 'reka-ui'
 import { computed, ref, watch } from 'vue'
-import { api, unpaired } from './api'
+import { api, pcLocked, unpaired } from './api'
 import type { AudioOutput, Capture, Game, Preset, RecentAchievement, RunningGame } from './types'
 import { useCouchPilot } from './store'
 import { useAchievements } from './achievements'
@@ -286,7 +286,8 @@ const toastOpen = computed({
         @keep="keepDisplays"
         @revert="revertDisplays"
       />
-      <AudioView v-else-if="tab === 'audio'" />
+      <!-- Volume and devices are all commands: greyed out while the PC is locked. -->
+      <AudioView v-else-if="tab === 'audio'" :inert="pcLocked" :class="{ 'locked-off': pcLocked }" />
       <ControlView v-else />
     </main>
 
@@ -393,6 +394,7 @@ const toastOpen = computed({
    doesn't take it again. */
 .lock-notice { margin: var(--safe-top) var(--gutter) 0; }
 main.locked > .page { padding-top: 0; }
+.locked-off { opacity: 0.45; }
 
 .toast-viewport {
   position: fixed;

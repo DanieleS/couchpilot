@@ -13,7 +13,8 @@ const { status } = useCouchPilot()
 const input = useRemoteInput()
 const viewport = useVisualViewport()
 const turnedOff = computed(() => status.value?.input === false)
-const disabled = computed(() => input.link.value !== 'open')
+const locked = computed(() => status.value?.locked === true)
+const disabled = computed(() => input.link.value !== 'open' || locked.value)
 
 const shortcuts: { label: string; vk: number; mods?: Mod[] }[] = [
   { label: 'Alt+Tab', vk: Vk.tab, mods: ['alt'] },
@@ -56,7 +57,11 @@ watch(
     <TouchPad ref="pad" class="pad" :input="input" :disabled="disabled" :height="padHeight" :compact="keyboardOpen">
       <template #disabled>
         <div class="off">
-          <template v-if="turnedOff">
+          <template v-if="locked">
+            <p class="title">{{ t.app.locked.title }}</p>
+            <p class="muted">{{ t.app.locked.padOff }}</p>
+          </template>
+          <template v-else-if="turnedOff">
             <p class="title">{{ t.control.off.title }}</p>
             <p class="muted">
               {{ t.control.off.before }}<template v-if="status?.pairing">{{ t.control.off.pairing }}</template>{{ t.control.off.after }}

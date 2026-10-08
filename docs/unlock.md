@@ -212,7 +212,7 @@ The status (`GET /api/status`, and so the live socket's CHANGED) gains:
 - `locked` — the PC is on the lock screen right now;
 - `unlock` — this phone may unlock (enabled, registered, and permitted for this device).
 
-While `locked` is true the phone says so above every tab; the Unlock button is there only when `unlock` is true too.
+While `locked` is true the phone says so above every tab and stays read-only: it can browse, but every command except the unlock is refused (`409 { code: "locked" }`, and the live socket drops mouse, keyboard and volume). The Unlock button shows only when `unlock` is true too.
 
 ## Security
 

@@ -62,6 +62,8 @@ const en = {
     cannotUnlock: "To unlock it from this phone, turn on Unlock the PC in CouchPilot's settings in Playnite and tick Unlock for this phone.",
     button: 'Unlock',
     unlocking: 'Unlocking…',
+    refused: 'The PC is locked: unlock it first.',
+    padOff: 'Touchpad and keyboard come back once it is unlocked.',
   },
   stream: {
     title: 'Vibepollo stream on',
@@ -148,6 +150,8 @@ const it: typeof en = {
     cannotUnlock: 'Per sbloccarlo da questo telefono, attiva Sblocca il PC nelle impostazioni di CouchPilot in Playnite e spunta Sblocco per questo telefono.',
     button: 'Sblocca',
     unlocking: 'Sblocco…',
+    refused: 'Il PC è bloccato: prima sbloccalo.',
+    padOff: 'Touchpad e tastiera tornano quando lo sblocchi.',
   },
   stream: {
     title: 'Stream Vibepollo in corso',

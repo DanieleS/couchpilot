@@ -1,5 +1,5 @@
 import { computed, onScopeDispose, ref, watch } from 'vue'
-import { api } from './api'
+import { api, pcLocked } from './api'
 import { onChanged, useLive } from './live'
 import { Topic } from './protocol'
 import type { Game, Status } from './types'
@@ -36,6 +36,7 @@ const refreshStatus = serialized(() =>
     pendingDeadline.value = left === undefined ? null : Date.now() + left * 1000
   }).catch(() => {}),
 )
+watch(status, (s) => (pcLocked.value = s?.locked === true))
 const refreshGames = serialized(() => api.games().then((g) => (games.value = g)).catch(() => {}))
 
 // Status and library are JSON over HTTP, fetched again whenever the live socket says they
