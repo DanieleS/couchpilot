@@ -142,6 +142,8 @@ Playnite keeps only totals per game: how long, how many launches, when last. Whe
 
 Without GameActivity the statistics still show the library, the games to pick up again and the achievements, and each game's sheet its total hours and launches; the week, month and year say to install GameActivity, and there's no top and no 12 weeks. The gallery then puts a capture under the game running when it was taken, if it still is, and otherwise under the game the capture tool named it after, instead of the one whose session it falls in.
 
+The extension settings list GameActivity and SuccessStory under **Compatible extensions**, with whether each is on this PC and a link to it, and let you turn either off: CouchPilot then acts as if it weren't installed, at once, without restarting Playnite.
+
 Earlier versions of CouchPilot logged sessions themselves, in `sessions.jsonl` in the extension's data folder. That file is no longer read or written, and is left where it is.
 
 ## Achievements

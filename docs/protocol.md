@@ -185,7 +185,7 @@ Right after HELLO the PC sends CHANGED with every topic set (`81 3F`), so a phon
 
 **Achievements.** Sent on the next tick after SuccessStory (if installed) writes a game's achievements file, which it does at the end of a session, or during one if it's set to refresh while you play. The phone fetches the latest unlocked and announces the ones it hadn't seen. The phone fetches them only while `achievements` in the status is true.
 
-**Stats.** Sent on the next tick after GameActivity (if installed) writes, renames or deletes a game's file in its data folder, once its writes have been quiet for about a second. It writes a session down when the game closes, a few seconds after Playnite's own update of the playtime (the library above), so the statistics catch the session that just ended. The captures topic goes out with it: a capture saved in those seconds belongs to the game whose session has just been written. The statistics' JSON carries `activity: false` when GameActivity's data isn't there: then there are no sessions, only Playnite's totals.
+**Stats.** Sent on the next tick after GameActivity (if installed) writes, renames or deletes a game's file in its data folder, once its writes have been quiet for about a second. It writes a session down when the game closes, a few seconds after Playnite's own update of the playtime (the library above), so the statistics catch the session that just ended. The captures topic goes out with it: a capture saved in those seconds belongs to the game whose session has just been written. The statistics' JSON carries `activity: false` when GameActivity's data isn't there, or GameActivity is turned off in the settings: then there are no sessions, only Playnite's totals. Turning SuccessStory or GameActivity on or off in the settings sends status, stats and captures.
 
 **The phone** keeps at most one fetch per topic in flight. A CHANGED arriving during a fetch queues exactly one more, so a burst of changes costs two requests at most.
 
@@ -230,7 +230,7 @@ Right after HELLO the PC sends CHANGED with every topic set (`81 3F`), so a phon
   ],
   "pairing": true,                        // phones have to type a PIN (see 1.1)
   "device": { "id": "a1b2c3d4e5f6", "name": "Pixel 8 · Chrome", "input": true, "captures": true },  // this phone; null while pairing is off
-  "achievements": true                    // SuccessStory is installed and has data
+  "achievements": true                    // SuccessStory is installed, has data and isn't turned off in the settings
 }
 ```
 

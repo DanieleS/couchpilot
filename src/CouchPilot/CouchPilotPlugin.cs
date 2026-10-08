@@ -66,6 +66,8 @@ namespace CouchPilot
             audio = new AudioService(gameControl);
             activity = new GameActivityReader(api);
             achievements = new AchievementsService(api);
+            achievements.Enabled = Settings.SuccessStory;
+            activity.Enabled = Settings.GameActivity;
             stats = new StatsService(api, activity, sessions, achievements);
             displays = new DisplayService(Path.Combine(GetPluginUserDataPath(), "display-presets.json"));
             new AudioFollowsDisplays(displays, audio);
@@ -202,6 +204,41 @@ namespace CouchPilot
                 pinWindow = null;
             }));
         }
+
+        // SuccessStory and GameActivity turned on or off: takes effect at once. The status says
+        // whether there are achievements; the statistics and the gallery's games follow the sessions.
+        internal void ApplyExtensionSettings()
+        {
+            var changed = achievements.Enabled != Settings.SuccessStory || activity.Enabled != Settings.GameActivity;
+            achievements.Enabled = Settings.SuccessStory;
+            activity.Enabled = Settings.GameActivity;
+            if (!changed) return;
+            server?.Nudge();
+            server?.StatsChanged();
+            server?.CapturesChanged();
+        }
+
+        internal List<CompatibleExtension> Compatible() => new List<CompatibleExtension>
+        {
+            new CompatibleExtension
+            {
+                Name = "SuccessStory",
+                Purpose = Pc("achievements", "obiettivi"),
+                Url = "https://github.com/Lacro59/playnite-successstory-plugin",
+                Setting = nameof(CouchPilotSettings.SuccessStory),
+                Installed = achievements.Installed,
+                HasData = achievements.HasData,
+            },
+            new CompatibleExtension
+            {
+                Name = "GameActivity",
+                Purpose = Pc("play history", "storico delle partite"),
+                Url = "https://github.com/Lacro59/playnite-gameactivity-plugin",
+                Setting = nameof(CouchPilotSettings.GameActivity),
+                Installed = activity.Installed,
+                HasData = activity.HasData,
+            },
+        };
 
         // Takes effect at once: turning it off lets go of anything held, and phones hear about it.
         internal void ApplyInputSetting()

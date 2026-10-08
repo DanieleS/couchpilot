@@ -6,6 +6,19 @@ using static CouchPilot.Lang;
 
 namespace CouchPilot
 {
+    // One of the extensions CouchPilot reads, as the settings list it.
+    public class CompatibleExtension
+    {
+        public string Name { get; set; }
+        // What it brings: "achievements", "play history".
+        public string Purpose { get; set; }
+        public string Url { get; set; }
+        // The CouchPilotSettings property that turns it on and off.
+        public string Setting { get; set; }
+        public bool Installed { get; set; }
+        public bool HasData { get; set; }
+    }
+
     public class CouchPilotSettings : ObservableObject, ISettings
     {
         private readonly CouchPilotPlugin plugin;
@@ -43,6 +56,14 @@ namespace CouchPilot
         private string captureFolder = "";
         public string CaptureFolder { get => captureFolder; set => SetValue(ref captureFolder, value); }
 
+        // Achievements from SuccessStory's data and play sessions from GameActivity's, when they're
+        // installed. On unless you turn them off; off, CouchPilot acts as if they weren't there.
+        private bool successStory = true;
+        public bool SuccessStory { get => successStory; set => SetValue(ref successStory, value); }
+
+        private bool gameActivity = true;
+        public bool GameActivity { get => gameActivity; set => SetValue(ref gameActivity, value); }
+
         // Home Assistant over MQTT: off unless you turn it on.
         private bool mqttEnabled;
         public bool MqttEnabled { get => mqttEnabled; set => SetValue(ref mqttEnabled, value); }
@@ -71,6 +92,10 @@ namespace CouchPilot
 
         [DontSerialize]
         public IReadOnlyList<string> Addresses => plugin?.Addresses ?? Server.NetworkInfo.LanUrls(Port);
+
+        // SuccessStory and GameActivity: installed, and with data, for the settings view.
+        [DontSerialize]
+        public IReadOnlyList<CompatibleExtension> Compatible => plugin?.Compatible() ?? new List<CompatibleExtension>();
 
         // The paired phones, for the settings view. Changes to them are saved at once, not with the settings.
         [DontSerialize]
@@ -122,6 +147,7 @@ namespace CouchPilot
             plugin.ApplyInputSetting();
             plugin.ApplyCaptureSettings();
             plugin.ApplyPairingSetting();
+            plugin.ApplyExtensionSettings();
             if (MqttChanged(editing))
             {
                 plugin.RestartHomeAssistant();
@@ -178,6 +204,8 @@ namespace CouchPilot
             RequirePairing = other.RequirePairing;
             RemoteInput = other.RemoteInput;
             Captures = other.Captures;
+            SuccessStory = other.SuccessStory;
+            GameActivity = other.GameActivity;
             CaptureTool = other.CaptureTool;
             CaptureFolder = other.CaptureFolder;
             MqttEnabled = other.MqttEnabled;

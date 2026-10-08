@@ -1,8 +1,10 @@
 using System;
+using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Data;
+using System.Windows.Documents;
 using CouchPilot.Server;
 using static CouchPilot.Lang;
 
@@ -128,6 +130,17 @@ namespace CouchPilot
                 Opacity = 0.7,
             });
 
+            Heading(Pc("Compatible extensions", "Estensioni compatibili"));
+            foreach (var extension in settings.Compatible) Extension(extension);
+            panel.Children.Add(new TextBlock
+            {
+                Text = Pc("CouchPilot reads what these Playnite extensions keep, when they're installed. Turn one off and CouchPilot acts as if it weren't there.",
+                    "CouchPilot legge quello che tengono queste estensioni di Playnite, se sono installate. Se ne disattivi una, CouchPilot fa come se non ci fosse."),
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 6, 0, 0),
+                Opacity = 0.7,
+            });
+
             Heading("Home Assistant (MQTT)");
             var enabled = new CheckBox { Content = Pc("Publish the PC's state to Home Assistant", "Pubblica lo stato del PC su Home Assistant"), Margin = new Thickness(0, 0, 0, 10) };
             enabled.SetBinding(ToggleButton.IsCheckedProperty, Bind(nameof(CouchPilotSettings.MqttEnabled)));
@@ -215,6 +228,37 @@ namespace CouchPilot
 
                 devices.Children.Add(row);
             }
+        }
+
+        // A checkbox to use it, whether it's on this PC, and where to get it.
+        private void Extension(CompatibleExtension extension)
+        {
+            var use = new CheckBox { Content = $"{extension.Name} ({extension.Purpose})" };
+            use.SetBinding(ToggleButton.IsCheckedProperty, Bind(extension.Setting));
+            panel.Children.Add(use);
+
+            var state = !extension.Installed && !extension.HasData
+                ? Pc("Not found on this PC", "Non trovata su questo PC")
+                : !extension.HasData
+                    ? Pc("Installed, no data yet", "Installata, ancora senza dati")
+                    : Pc("Found on this PC", "Trovata su questo PC");
+            var line = new TextBlock { Margin = new Thickness(20, 2, 0, 10), Opacity = 0.8 };
+            line.Inlines.Add(new Run(state + " · "));
+            var link = new Hyperlink(new Run("GitHub")) { NavigateUri = new Uri(extension.Url) };
+            link.RequestNavigate += (_, e) =>
+            {
+                try
+                {
+                    Process.Start(new ProcessStartInfo(e.Uri.AbsoluteUri) { UseShellExecute = true });
+                }
+                catch (Exception)
+                {
+                    // No browser to hand it to: nothing else to do.
+                }
+                e.Handled = true;
+            };
+            line.Inlines.Add(link);
+            panel.Children.Add(line);
         }
 
         private Binding Bind(string path) => new Binding(path) { Source = settings, UpdateSourceTrigger = UpdateSourceTrigger.PropertyChanged };
