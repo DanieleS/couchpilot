@@ -86,11 +86,13 @@ namespace CouchPilot.Server
                 Response.StatusCode = (int)HttpStatusCode.Forbidden;
                 return new { error = Tr("This phone may not unlock the PC: pair it and allow Unlock in CouchPilot's settings.", "Questo telefono non può sbloccare il PC: abbinalo e consenti lo Sblocco nelle impostazioni di CouchPilot."), code = "forbidden" };
             }
+            // Fully qualified: inside this method, the name "Unlock" binds to the method, not the
+            // namespace.
             switch (unlock.TryUnlock())
             {
-                case Unlock.UnlockResult.Ok:
+                case CouchPilot.Unlock.UnlockResult.Ok:
                     return new { ok = true };
-                case Unlock.UnlockResult.NotLocked:
+                case CouchPilot.Unlock.UnlockResult.NotLocked:
                     Response.StatusCode = (int)HttpStatusCode.Conflict;
                     return new { error = Tr("The PC isn't locked.", "Il PC non è bloccato."), code = "not-locked" };
                 default:
