@@ -14,6 +14,7 @@ namespace CouchPilot
         private readonly CouchPilotSettings settings;
         private readonly StackPanel panel = new StackPanel { Margin = new Thickness(20) };
         private readonly StackPanel devices = new StackPanel { Margin = new Thickness(0, 10, 0, 0) };
+        private readonly StackPanel unlockPanel = new StackPanel { Margin = new Thickness(0, 10, 0, 0) };
 
         public CouchPilotSettingsView(CouchPilotSettings settings)
         {
@@ -72,6 +73,27 @@ namespace CouchPilot
                 Action onChanged = () => Dispatcher.BeginInvoke(new Action(RebuildDevices));
                 settings.Pairing.Changed += onChanged;
                 Unloaded += (s, e) => settings.Pairing.Changed -= onChanged;
+            }
+
+            Heading(Pc("Unlock the PC", "Sblocca il PC"));
+            panel.Children.Add(new TextBlock
+            {
+                Text = Pc("Let a paired phone get past the lock screen — the couch case: the PC woke from sleep, or you pressed Win+L, and you'd rather not reach for a keyboard. "
+                    + "It uses your Windows account password (not a Hello PIN), kept sealed on this PC and never sent to the phone. Grant it per phone with the Unlock box above. "
+                    + "It can't sign in after a reboot, only unlock a PC you'd already signed into. “Only allow Windows Hello sign-in” must be off in Windows' sign-in options. Read docs/unlock.md before turning it on.", "Permetti a un telefono abbinato di superare la schermata di blocco — il caso divano: il PC si è svegliato dalla sospensione, o hai premuto Win+L, e preferiresti non prendere la tastiera. "
+                    + "Usa la password dell'account Windows (non un PIN di Hello), tenuta cifrata su questo PC e mai inviata al telefono. Concedilo per telefono con la casella Sblocco qui sopra. "
+                    + "Non può accedere dopo un riavvio, solo sbloccare un PC a cui avevi già fatto l'accesso. «Consenti solo l'accesso con Windows Hello» deve essere spento nelle opzioni di accesso di Windows. Leggi docs/unlock.md prima di attivarlo."),
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 6, 0, 0),
+                Opacity = 0.7,
+            });
+            panel.Children.Add(unlockPanel);
+            RebuildUnlock();
+            if (settings.Unlock != null)
+            {
+                Action onUnlockChanged = () => Dispatcher.BeginInvoke(new Action(RebuildUnlock));
+                settings.Unlock.Changed += onUnlockChanged;
+                Unloaded += (s, e) => settings.Unlock.Changed -= onUnlockChanged;
             }
 
             Heading(Pc("Touchpad and keyboard", "Touchpad e tastiera"));
@@ -186,6 +208,7 @@ namespace CouchPilot
                 row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
                 row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
                 row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
                 var who = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
                 who.Children.Add(new TextBlock { Text = device.Name, FontWeight = FontWeights.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis });
@@ -208,13 +231,94 @@ namespace CouchPilot
                 Grid.SetColumn(captures, 2);
                 row.Children.Add(captures);
 
+                var unlock = new CheckBox { Content = Pc("Unlock", "Sblocco"), IsChecked = device.AllowUnlock, Margin = new Thickness(12, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
+                unlock.Click += (s, e) => pairing.SetPermissions(id, null, null, unlock.IsChecked == true);
+                Grid.SetColumn(unlock, 3);
+                row.Children.Add(unlock);
+
                 var remove = new Button { Content = Pc("Remove", "Rimuovi"), Padding = new Thickness(10, 2, 10, 2), Margin = new Thickness(16, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
                 remove.Click += (s, e) => pairing.Forget(id);
-                Grid.SetColumn(remove, 3);
+                Grid.SetColumn(remove, 4);
                 row.Children.Add(remove);
 
                 devices.Children.Add(row);
             }
+        }
+
+        // The unlock section's body: a note when the native component is missing, an on/off state
+        // once it's there. Rebuilt whenever the feature is turned on or off.
+        private void RebuildUnlock()
+        {
+            unlockPanel.Children.Clear();
+            var service = settings.Unlock;
+            if (service == null) return;
+
+            if (!service.Available)
+            {
+                unlockPanel.Children.Add(new TextBlock
+                {
+                    Text = Pc("The unlock component isn't in this build of CouchPilot.", "Il componente di sblocco non è presente in questa versione di CouchPilot."),
+                    Opacity = 0.7,
+                });
+                return;
+            }
+
+            // The helper runs elevated and blocks on the UAC prompt, so Enable/Disable go on a
+            // background thread: the settings stay responsive and "Setting up…" actually paints.
+            if (service.Enabled)
+            {
+                var on = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 4, 0, 0) };
+                on.Children.Add(new TextBlock
+                {
+                    Text = Pc($"On, for {service.Account}.", $"Attivo, per {service.Account}."),
+                    FontWeight = FontWeights.SemiBold,
+                    VerticalAlignment = VerticalAlignment.Center,
+                });
+                var off = new Button { Content = Pc("Turn off", "Disattiva"), Padding = new Thickness(10, 2, 10, 2), Margin = new Thickness(16, 0, 0, 0) };
+                var offStatus = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 0), Opacity = 0.8 };
+                off.Click += async (s, e) =>
+                {
+                    off.IsEnabled = false;
+                    offStatus.Text = "";
+                    string error = null;
+                    var ok = await System.Threading.Tasks.Task.Run(() => service.Disable(out error));
+                    if (!ok) { offStatus.Text = error; off.IsEnabled = true; }
+                    // On success the service raises Changed and this section is rebuilt.
+                };
+                on.Children.Add(off);
+                unlockPanel.Children.Add(on);
+                unlockPanel.Children.Add(offStatus);
+                return;
+            }
+
+            unlockPanel.Children.Add(new TextBlock { Text = Pc("Windows account", "Account Windows"), Margin = new Thickness(0, 8, 0, 4) });
+            var account = new TextBox { Width = 260, HorizontalAlignment = HorizontalAlignment.Left };
+            try { account.Text = Environment.UserDomainName + "\\" + Environment.UserName; } catch { }
+            unlockPanel.Children.Add(account);
+
+            unlockPanel.Children.Add(new TextBlock { Text = Pc("Account password", "Password dell'account"), Margin = new Thickness(0, 8, 0, 4) });
+            var password = new PasswordBox { Width = 260, HorizontalAlignment = HorizontalAlignment.Left };
+            unlockPanel.Children.Add(password);
+
+            var status = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 0), Opacity = 0.8 };
+            var enable = new Button { Content = Pc("Enable (asks for admin)", "Attiva (chiede i permessi di amministratore)"), Padding = new Thickness(12, 3, 12, 3), Margin = new Thickness(0, 10, 0, 0), HorizontalAlignment = HorizontalAlignment.Left };
+            enable.Click += async (s, e) =>
+            {
+                enable.IsEnabled = false;
+                status.Text = Pc("Setting up…", "Configurazione…");
+                var acct = account.Text;
+                var pwd = password.Password;
+                string error = null;
+                var ok = await System.Threading.Tasks.Task.Run(() => service.Enable(acct, pwd, out error));
+                if (!ok)
+                {
+                    status.Text = error;
+                    enable.IsEnabled = true;
+                }
+                // On success the service raises Changed and this whole section is rebuilt.
+            };
+            unlockPanel.Children.Add(enable);
+            unlockPanel.Children.Add(status);
         }
 
         private Binding Bind(string path) => new Binding(path) { Source = settings, UpdateSourceTrigger = UpdateSourceTrigger.PropertyChanged };

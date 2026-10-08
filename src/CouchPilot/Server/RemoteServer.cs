@@ -27,11 +27,11 @@ namespace CouchPilot.Server
 
         // With a certificate the port speaks HTTPS only: one port can't carry both, and the
         // phone's browser needs HTTPS to install the app.
-        public RemoteServer(int port, X509Certificate2 certificate, string webRoot, LibraryService library, GameControl games, DisplayService displays, RemoteInput input, AudioService audio, MediaService media, StatsService stats, CaptureService captures, CaptureLibrary captureLibrary, Thumbnails thumbnails, ClipEditor clips, PairingService pairing, Achievements.AchievementsService achievements)
+        public RemoteServer(int port, X509Certificate2 certificate, string webRoot, LibraryService library, GameControl games, DisplayService displays, RemoteInput input, AudioService audio, MediaService media, StatsService stats, CaptureService captures, CaptureLibrary captureLibrary, Thumbnails thumbnails, ClipEditor clips, PairingService pairing, Achievements.AchievementsService achievements, Unlock.UnlockService unlock)
         {
             this.certificate = certificate;
             Swan.Logging.Logger.NoLogging();
-            var status = new StatusSource(library, displays, input, captures, clips, pairing, achievements);
+            var status = new StatusSource(library, displays, input, captures, clips, pairing, achievements, unlock);
             live = new LiveSocket("/ws", input, audio, status, pairing);
             // In front of everything: while pairing is on, /api answers only phones that typed the PIN.
             var gate = new PairingGate(pairing, certificate != null);
@@ -46,7 +46,7 @@ namespace CouchPilot.Server
                 })
                 .WithModule(gate)
                 .WithCors()
-                .WithWebApi("/api", SerializeJson, m => m.WithController(() => new ApiController(library, games, displays, audio, media, stats, status, live, captures, captureLibrary, thumbnails, clips, pairing, gate, achievements)))
+                .WithWebApi("/api", SerializeJson, m => m.WithController(() => new ApiController(library, games, displays, audio, media, stats, status, live, captures, captureLibrary, thumbnails, clips, pairing, gate, achievements, unlock)))
                 .WithModule(live);
 
             if (Directory.Exists(webRoot))

@@ -35,9 +35,11 @@ namespace CouchPilot.Server
         private readonly PairingService pairing;
         private readonly PairingGate gate;
         private readonly AchievementsService achievements;
+        private readonly Unlock.UnlockService unlock;
 
-        public ApiController(LibraryService library, GameControl games, DisplayService displays, AudioService audio, MediaService media, StatsService stats, StatusSource status, LiveSocket live, CaptureService captures, CaptureLibrary captureLibrary, Thumbnails thumbnails, ClipEditor clips, PairingService pairing, PairingGate gate, AchievementsService achievements)
+        public ApiController(LibraryService library, GameControl games, DisplayService displays, AudioService audio, MediaService media, StatsService stats, StatusSource status, LiveSocket live, CaptureService captures, CaptureLibrary captureLibrary, Thumbnails thumbnails, ClipEditor clips, PairingService pairing, PairingGate gate, AchievementsService achievements, Unlock.UnlockService unlock)
         {
+            this.unlock = unlock;
             this.captures = captures;
             this.captureLibrary = captureLibrary;
             this.thumbnails = thumbnails;
@@ -68,6 +70,36 @@ namespace CouchPilot.Server
         // The phone fetches it again whenever the live socket says it changed.
         [Route(HttpVerbs.Get, "/status")]
         public object Status() => status.Snapshot(Device);
+
+        // The PC is on the lock screen and this phone may unlock it: hand the credentials to the
+        // lock screen's credential provider. Reports the handoff, not whether the password was
+        // right — that shows on the PC a moment later. See docs/unlock.md.
+        [Route(HttpVerbs.Post, "/unlock")]
+        public object Unlock()
+        {
+            // A specific paired phone with the Unlock permission, and nothing else. With pairing
+            // off Device is null — so unlocking is simply unavailable without pairing, the same
+            // way enabling it requires pairing to be on.
+            var device = Device;
+            if (device == null || !device.AllowUnlock)
+            {
+                Response.StatusCode = (int)HttpStatusCode.Forbidden;
+                return new { error = Tr("This phone may not unlock the PC: pair it and allow Unlock in CouchPilot's settings.", "Questo telefono non può sbloccare il PC: abbinalo e consenti lo Sblocco nelle impostazioni di CouchPilot."), code = "forbidden" };
+            }
+            // Fully qualified: inside this method, the name "Unlock" binds to the method, not the
+            // namespace.
+            switch (unlock.TryUnlock())
+            {
+                case CouchPilot.Unlock.UnlockResult.Ok:
+                    return new { ok = true };
+                case CouchPilot.Unlock.UnlockResult.NotLocked:
+                    Response.StatusCode = (int)HttpStatusCode.Conflict;
+                    return new { error = Tr("The PC isn't locked.", "Il PC non è bloccato."), code = "not-locked" };
+                default:
+                    Response.StatusCode = (int)HttpStatusCode.Conflict;
+                    return new { error = Tr("Unlocking isn't set up, or the lock screen didn't answer.", "Lo sblocco non è configurato, o la schermata di blocco non ha risposto."), code = "unavailable" };
+            }
+        }
 
         // Pairing. These three are open to every phone: they're how a phone gets in.
         [Route(HttpVerbs.Get, "/pair")]

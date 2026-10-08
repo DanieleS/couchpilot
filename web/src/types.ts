@@ -85,6 +85,10 @@ export type Status = {
   device: PairedDevice | null
   // SuccessStory is installed and has data: games can show their achievements.
   achievements: boolean
+  // The PC is on the lock screen right now.
+  locked: boolean
+  // This phone may unlock the PC: set up on the PC, locked, and permitted for this phone.
+  unlock: boolean
 }
 
 // A phone the PC paired with, and what it may do.
@@ -93,6 +97,7 @@ export type PairedDevice = {
   name: string
   input: boolean
   captures: boolean
+  unlock: boolean
 }
 
 export type CaptureTool = 'gamebar' | 'nvidia'

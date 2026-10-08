@@ -25,6 +25,8 @@
   <ItemGroup>
     <Reference Include="PresentationCore" />
     <Reference Include="PresentationFramework" />
+    <!-- DPAPI (ProtectedData) for the sealed unlock password; SystemEvents lives in System. -->
+    <Reference Include="System.Security" />
     <!-- Sends deleted captures to the Recycle Bin. -->
     <Reference Include="Microsoft.VisualBasic" />
     <Reference Include="System.Drawing" />
@@ -41,6 +43,11 @@
          checkout, where clips fall back to Windows' own thumbnails. -->
     <None Include="ffmpeg\ffmpeg.exe" Link="ffmpeg.exe" CopyToOutputDirectory="PreserveNewest" Condition="Exists('ffmpeg\ffmpeg.exe')" />
     <None Include="ffmpeg\ffmpeg-readme.txt" Link="ffmpeg-readme.txt" CopyToOutputDirectory="PreserveNewest" Condition="Exists('ffmpeg\ffmpeg-readme.txt')" />
+    <!-- The lock-screen unlock: the credential provider and its elevated setup helper, built by
+         CMake/MSVC in the build workflow. Absent from a plain checkout, where unlocking reports
+         itself unavailable, like the gallery without ffmpeg. -->
+    <None Include="native\CouchPilotUnlock.dll" Link="CouchPilotUnlock.dll" CopyToOutputDirectory="PreserveNewest" Condition="Exists('native\CouchPilotUnlock.dll')" />
+    <None Include="native\CouchPilotUnlockSetup.exe" Link="CouchPilotUnlockSetup.exe" CopyToOutputDirectory="PreserveNewest" Condition="Exists('native\CouchPilotUnlockSetup.exe')" />
     <!-- The PWA, built by `pnpm build` in /web. -->
     <None Include="wwwroot\**\*" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>

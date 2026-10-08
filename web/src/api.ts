@@ -86,6 +86,8 @@ export const api = {
   recentAchievements: () => request<RecentAchievement[]>('GET', '/achievements/recent'),
   confirmDisplays: () => request<void>('POST', '/displays/confirm'),
   revertDisplays: () => request<void>('POST', '/displays/revert'),
+  // Get past the lock screen; only offered when status.unlock is true. See docs/unlock.md.
+  unlock: () => request<{ ok: boolean }>('POST', '/unlock'),
 }
 
 export const imageUrl = (id: string, kind: 'cover' | 'background') =>

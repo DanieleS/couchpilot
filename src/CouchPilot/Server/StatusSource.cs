@@ -20,8 +20,9 @@ namespace CouchPilot.Server
         private readonly Captures.ClipEditor clips;
         private readonly PairingService pairing;
         private readonly Achievements.AchievementsService achievements;
+        private readonly Unlock.UnlockService unlock;
 
-        public StatusSource(LibraryService library, DisplayService displays, RemoteInput input, CaptureService captures, Captures.ClipEditor clips, PairingService pairing, Achievements.AchievementsService achievements)
+        public StatusSource(LibraryService library, DisplayService displays, RemoteInput input, CaptureService captures, Captures.ClipEditor clips, PairingService pairing, Achievements.AchievementsService achievements, Unlock.UnlockService unlock)
         {
             this.library = library;
             this.displays = displays;
@@ -30,6 +31,7 @@ namespace CouchPilot.Server
             this.clips = clips;
             this.pairing = pairing;
             this.achievements = achievements;
+            this.unlock = unlock;
         }
 
         // The status as this phone sees it: what the settings allow, narrowed to what this
@@ -44,6 +46,10 @@ namespace CouchPilot.Server
             Pairing = pairing.Required,
             Device = PairingService.ToDto(device),
             Achievements = achievements.Available,
+            Locked = unlock.Locked,
+            // Only a paired phone with the Unlock permission; with pairing off (device null) the
+            // button never shows, matching the API, which refuses it.
+            Unlock = unlock.OfferToPhones && device != null && device.AllowUnlock,
             Controllers = Native.XInput.Pads().Select(p => new ControllerDto
             {
                 Slot = p.Slot + 1,
@@ -90,6 +96,10 @@ namespace CouchPilot.Server
         public PairedDeviceDto Device { get; set; }
         // SuccessStory is installed and has data: games can show their achievements.
         public bool Achievements { get; set; }
+        // The PC is on the lock screen right now.
+        public bool Locked { get; set; }
+        // This phone may unlock the PC: set up, locked, and permitted for this device.
+        public bool Unlock { get; set; }
     }
 
     // An Xbox-style controller connected to the PC.
