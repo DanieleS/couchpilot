@@ -61,8 +61,9 @@ namespace CouchPilot.Captures
     // Every screenshot and clip in the capture tools' folders, newest first. The folders are
     // watched: a new file shows up once its writer has let go of it, and phones are told.
     //
-    // A capture belongs to the game whose session it falls in (CouchPilot's session log, and the
-    // game running now); older ones go by the name the tool gave them or their folder.
+    // A capture belongs to the game whose session it falls in (GameActivity's sessions, and the
+    // game running now); others, and all of them without GameActivity, go by the name the tool
+    // gave them or their folder.
     public class CaptureLibrary : IDisposable
     {
         private static readonly ILogger logger = LogManager.GetLogger();
@@ -77,7 +78,7 @@ namespace CouchPilot.Captures
         private static readonly TimeSpan Settle = TimeSpan.FromMilliseconds(800);
 
         private readonly Func<IEnumerable<Game>> library;
-        private readonly SessionLog sessionLog;
+        private readonly GameActivityReader activity;
         private readonly GameSessions sessions;
         private readonly string metaPath;
         private readonly object gate = new object();
@@ -140,10 +141,10 @@ namespace CouchPilot.Captures
         }
 
         // `library`: Playnite's games, for naming captures by the session or the name they belong to.
-        public CaptureLibrary(Func<IEnumerable<Game>> library, SessionLog sessionLog, GameSessions sessions, string dataPath)
+        public CaptureLibrary(Func<IEnumerable<Game>> library, GameActivityReader activity, GameSessions sessions, string dataPath)
         {
             this.library = library;
-            this.sessionLog = sessionLog;
+            this.activity = activity;
             this.sessions = sessions;
             metaPath = Path.Combine(dataPath, "captures.json");
             timer = new Timer(_ => Rescan(), null, Timeout.Infinite, Timeout.Infinite);
@@ -211,7 +212,7 @@ namespace CouchPilot.Captures
                 all = entries.Values.ToList();
                 folders = roots.Where(r => Directory.Exists(r.Path)).Select(r => r.Path).ToList();
             }
-            var names = new Names(library(), sessionLog, sessions);
+            var names = new Names(library(), activity, sessions);
             return new CapturesDto
             {
                 Items = all.OrderByDescending(e => e.TakenUtc).Select(e => ToDto(e, names)).ToList(),
@@ -267,7 +268,7 @@ namespace CouchPilot.Captures
             }
             SaveMeta();
             Changed?.Invoke();
-            return ToDto(entry, new Names(library(), sessionLog, sessions));
+            return ToDto(entry, new Names(library(), activity, sessions));
         }
 
         private Entry Find(string id)
@@ -492,7 +493,7 @@ namespace CouchPilot.Captures
                 fresh = entries.Values.Where(e => !waiter.Known.Contains(e.Id)).OrderByDescending(e => e.TakenUtc).ToList();
             }
             if (fresh.Count == 0) return;
-            var names = new Names(library(), sessionLog, sessions);
+            var names = new Names(library(), activity, sessions);
             var match = fresh.Select(e => ToDto(e, names)).FirstOrDefault(waiter.Wanted);
             if (match != null) waiter.Done.TrySetResult(match);
         }
@@ -686,9 +687,9 @@ namespace CouchPilot.Captures
             private readonly Dictionary<Guid, string> titles = new Dictionary<Guid, string>();
             private readonly Dictionary<string, Guid> byName = new Dictionary<string, Guid>();
 
-            public Names(IEnumerable<Game> library, SessionLog log, GameSessions running)
+            public Names(IEnumerable<Game> library, GameActivityReader activity, GameSessions running)
             {
-                foreach (var s in log.All()) spans.Add((s.Game, s.Start - Before, s.Start.AddSeconds(s.Seconds) + After));
+                foreach (var s in activity.All() ?? new List<SessionRecord>()) spans.Add((s.Game, s.Start - Before, s.Start.AddSeconds(s.Seconds) + After));
                 var now = DateTime.UtcNow;
                 foreach (var s in running.All.Where(s => s.StartedAt != null)) spans.Add((s.GameId, s.StartedAt.Value - Before, now + After));
                 foreach (var g in library)

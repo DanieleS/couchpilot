@@ -100,6 +100,8 @@ namespace CouchPilot.Server
 
         public void AchievementsChanged() => live.AchievementsChanged();
 
+        public void StatsChanged() => live.StatsChanged();
+
         // Pairing was just switched on: phones connected without a token are let go.
         public void DropUnpaired() => live.DropUnpaired();
 

@@ -4,6 +4,8 @@ import { useGameAchievements } from '../achievements'
 import { api } from '../api'
 import { useCaptures } from '../captures'
 import { locale, t } from '../i18n'
+import { onChanged } from '../live'
+import { Topic } from '../protocol'
 import type { Capture, Game, GameDetail, GameStats } from '../types'
 import { duration, stripHtml } from '../utils'
 import AchievementIcon from './AchievementIcon.vue'
@@ -33,17 +35,24 @@ const captureCounts = computed(() => {
 
 const detail = ref<GameDetail | null>(null)
 const stats = ref<GameStats | null>(null)
+const loadStats = (id: string) =>
+  api.gameStats(id).then((s) => props.game?.id === id && (stats.value = s)).catch(() => {})
 watch(
   () => props.game?.id,
   (id) => {
     detail.value = null
     stats.value = null
     if (id) api.game(id).then((d) => (detail.value = d)).catch(() => {})
-    if (id) api.gameStats(id).then((s) => (stats.value = s)).catch(() => {})
+    if (id) loadStats(id)
   },
   { immediate: true },
 )
-// Sessions only exist since CouchPilot started logging them; Playnite's totals always do.
+// The game just closed: Playnite's totals, then GameActivity's session.
+const stopStats = onChanged((topics) => topics & (Topic.library | Topic.stats) && open.value && props.game && loadStats(props.game.id))
+onScopeDispose(stopStats)
+// Sessions come from GameActivity, when it's installed and has them; Playnite's totals always
+// exist. Without sessions the sheet shows launches instead, and no weeks.
+const sessions = computed(() => (stats.value?.activity ? stats.value.sessions : 0))
 const weeksMax = computed(() => Math.max(1, ...(stats.value?.weeks ?? [1])))
 const lastPlayed = computed(() => {
   const s = stats.value
@@ -92,12 +101,12 @@ const description = computed(() => (detail.value?.description ? stripHtml(detail
       <section v-if="stats && stats.playtimeSeconds > 0" class="stats" :aria-label="t.games.sheet.stats">
         <div class="figures">
           <div><span class="n tabular">{{ duration(stats.playtimeSeconds) }}</span><span class="l">{{ t.games.sheet.total }}</span></div>
-          <div v-if="stats.sessions"><span class="n tabular">{{ stats.sessions }}</span><span class="l">{{ stats.sessions === 1 ? t.games.sheet.session : t.games.sheet.sessions }}</span></div>
+          <div v-if="sessions"><span class="n tabular">{{ sessions }}</span><span class="l">{{ sessions === 1 ? t.games.sheet.session : t.games.sheet.sessions }}</span></div>
           <div v-else><span class="n tabular">{{ stats.playCount }}</span><span class="l">{{ t.games.sheet.launches }}</span></div>
-          <div v-if="stats.sessions"><span class="n tabular">{{ duration(stats.averageSeconds) }}</span><span class="l">{{ t.games.sheet.perSession }}</span></div>
+          <div v-if="sessions"><span class="n tabular">{{ duration(stats.averageSeconds) }}</span><span class="l">{{ t.games.sheet.perSession }}</span></div>
           <div v-else-if="stats.playCount"><span class="n tabular">{{ duration(stats.playtimeSeconds / stats.playCount) }}</span><span class="l">{{ t.games.sheet.perLaunch }}</span></div>
         </div>
-        <div v-if="stats.sessions" class="weeks">
+        <div v-if="sessions" class="weeks">
           <p class="weeks-head"><span>{{ t.games.sheet.last12Weeks }}</span><span>{{ t.games.sheet.thisWeek(duration(stats.weeks[11])) }}</span></p>
           <div class="spark" role="img" :aria-label="t.games.sheet.weeksLabel(duration(stats.weeks[11]))">
             <i v-for="(w, i) in stats.weeks" :key="i" :class="{ cur: i === 11 }" :style="{ height: `${(w / weeksMax) * 100}%` }" />

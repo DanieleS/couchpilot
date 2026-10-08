@@ -7,7 +7,7 @@ CouchPilot is a Playnite extension that serves a small web app on your local net
 ## What it does
 
 - **Library**: your Playnite games with covers, search, and filters (installed, recent, favourites).
-- **Statistics**: behind the chart icon in Games, how much you played this week, month or year, day by day, the most played games, the library at large and the installed games you left months ago; each game's sheet shows its own hours, sessions and last 12 weeks. Playnite keeps only totals, so CouchPilot logs every session from the day it's installed (`sessions.jsonl` in the extension's data folder). A day of play runs from 5:00 to 5:00: a session past midnight counts for the evening it started.
+- **Statistics**: behind the chart icon in Games, how much you played this week, month or year, day by day, the most played games, the library at large and the installed games you left months ago; each game's sheet shows its own hours, sessions and last 12 weeks. Playnite keeps only totals, so the sessions come from [GameActivity](https://github.com/Lacro59/playnite-gameactivity-plugin), see [Statistics](#statistics). A day of play runs from 5:00 to 5:00: a session past midnight counts for the evening it started.
 - **Install and uninstall**: install a game from the phone, or uninstall it after a confirmation; Playnite hands the job to the game's library (Steam, Epic, GOG…), whose client may open on the PC.
 - **Launch and close**: start a game; close it gracefully (every window is asked to close first, forced only after 10 s); bring it back to the foreground.
 - **Controllers**: the Xbox-style pads connected to the PC, with their battery, on the running game's card and in the Control tab; a low battery turns red. PlayStation and Switch pads don't speak XInput, so they show up only through Steam Input.
@@ -152,6 +152,16 @@ The gallery shows Game Bar's *Captures* folder (wherever you moved it), NVIDIA's
 
 Thumbnails are made once, on the PC, and kept with the extension's data (`thumbnails`); the newest are made as soon as a capture lands. Clips go through a small ffmpeg shipped with the extension (`ffmpeg.exe`, built by `scripts/build-ffmpeg.sh`): it decodes H.264, HEVC and AV1 whatever codecs Windows has, tone-maps HDR clips so they don't come out grey, and encodes the cut pieces (x264, AAC, GIF). A clip it can't read shows its game's cover. Screenshots open in the viewer as a JPEG up to 1920 px made on the PC (a few hundred kB instead of the PNG's tens of MB), over their thumbnail while it arrives; the ones either side are fetched ahead. Videos stream with seeking; **Condividi** hands the file to the phone's apps (it needs HTTPS, see above), **Salva** downloads it, **Elimina** moves it to the PC's Recycle Bin.
 
+## Statistics
+
+Playnite keeps only totals per game: how long, how many launches, when last. When you played comes from [GameActivity](https://github.com/Lacro59/playnite-gameactivity-plugin), by the author of SuccessStory, which writes down every session (when it started, how long it lasted) in one JSON file per game in its data folder. CouchPilot reads those files, re-reading one only when it changes, and watches the folder, so the phone's statistics take in a session a few seconds after the game closes, when GameActivity writes it down. The game being played counts too, up to now, once: if GameActivity already has the run, the live one takes its place. Your history goes as far back as GameActivity's.
+
+Without GameActivity the statistics still show the library, the games to pick up again and the achievements, and each game's sheet its total hours and launches; the week, month and year say to install GameActivity, and there's no top and no 12 weeks. The gallery then puts a capture under the game running when it was taken, if it still is, and otherwise under the game the capture tool named it after, instead of the one whose session it falls in.
+
+The extension settings list GameActivity and SuccessStory under **Compatible extensions**, with whether each is on this PC and a link to it, and let you turn either off: CouchPilot then acts as if it weren't installed, at once, without restarting Playnite.
+
+Earlier versions of CouchPilot logged sessions themselves, in `sessions.jsonl` in the extension's data folder. That file is no longer read or written, and is left where it is.
+
 ## Achievements
 
 Nothing to set up: if [SuccessStory](https://github.com/Lacro59/playnite-successstory-plugin) is installed, CouchPilot reads the files it keeps (one JSON per game in its data folder) and watches them. It never logs into Steam, Xbox or the rest itself: what SuccessStory knows, the phone shows; what it doesn't, it doesn't. So the list is as fresh as SuccessStory's last refresh, which by default happens when a game closes (it can refresh while you play too, in its own settings), and that's when the phone announces the achievements you've just unlocked.
@@ -209,6 +219,7 @@ src/CouchPilot/      Playnite generic extension (C#, .NET Framework 4.6.2)
   Displays/          Display presets on top of the Windows CCD API
   Captures/          Screenshots and clips through Game Bar or NVIDIA, the gallery's index and thumbnails, the clip editor
   Achievements/      Achievements read from SuccessStory's data
+  Stats/             Statistics: GameActivity's sessions and Playnite's totals
   Server/Pairing*    The PIN, the paired phones and the gate in front of /api
 ```
 
@@ -226,7 +237,7 @@ COUCHPILOT_HOST=http://<pc-address>:8642 pnpm dev     # or https:// if the PC ha
 
 The extension builds with the .NET SDK on Windows or Linux (`pnpm build` in `web/` first, then `dotnet build src/CouchPilot`); CI does both and packages the `.pext` on every push. The gallery's `ffmpeg.exe` is cross-built on Linux by `scripts/build-ffmpeg.sh` (mingw-w64, nasm, meson, autotools) into `src/CouchPilot/ffmpeg/`; without it the extension still builds, clips get Windows' own thumbnails and can't be cut. Tag `vX.Y.Z` to publish a release.
 
-The mock PC (`pnpm dev:mock`) takes a few query strings to try things out: `?pair=1` wants a PIN (it's 123456), `?unlock=1` unlocks an achievement a few seconds in, `?noach=1` has no SuccessStory, `?nvidia=1`, `?noreplay=1`, `?nocapture=1`, `?noffmpeg=1`, `?stream=1`, `?noinput=1`, `?nopads=1`.
+The mock PC (`pnpm dev:mock`) takes a few query strings to try things out: `?pair=1` wants a PIN (it's 123456), `?unlock=1` unlocks an achievement a few seconds in, `?noach=1` has no SuccessStory, `?noactivity=1` no GameActivity, `?nvidia=1`, `?noreplay=1`, `?nocapture=1`, `?noffmpeg=1`, `?stream=1`, `?noinput=1`, `?nopads=1`.
 
 ## Credits
 

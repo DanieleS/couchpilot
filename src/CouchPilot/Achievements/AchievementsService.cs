@@ -55,6 +55,9 @@ namespace CouchPilot.Achievements
     //
     // The folder is watched: when SuccessStory refreshes a game (at the end of a session, or
     // while you play if it's set to), the phone is told and shows what was just unlocked.
+    //
+    // Turned off in the settings (Enabled false), it reads and watches nothing, as if
+    // SuccessStory weren't installed.
     public class AchievementsService : IDisposable
     {
         public static readonly Guid SuccessStoryId = Guid.Parse("cebe6d32-8c46-4459-b993-5a5189d60788");
@@ -68,12 +71,14 @@ namespace CouchPilot.Achievements
         private readonly string dataPath;
         private readonly string folder;
         private readonly object gate = new object();
+        private readonly object loadGate = new object();
         private readonly Dictionary<Guid, Cached> cache = new Dictionary<Guid, Cached>();
         private readonly HashSet<string> dirty = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private readonly Timer timer;
         private FileSystemWatcher watcher;
         private bool loaded;
         private bool disposed;
+        private volatile bool enabled = true;
         // The status asks twice a second; the folder is looked at every half minute.
         private bool available;
         private DateTime availableCheckedAt = DateTime.MinValue;
@@ -126,22 +131,61 @@ namespace CouchPilot.Achievements
             timer = new Timer(_ => Reload(), null, Timeout.Infinite, Timeout.Infinite);
         }
 
-        // SuccessStory has written something: there are achievements to show.
+        // Whether CouchPilot reads SuccessStory's data at all (the settings). Takes effect at once:
+        // off, the cache and the watcher go; on again, everything is read afresh.
+        public bool Enabled
+        {
+            get => enabled;
+            set
+            {
+                if (enabled == value) return;
+                enabled = value;
+                availableCheckedAt = DateTime.MinValue;
+                if (value)
+                {
+                    Start();
+                    return;
+                }
+                lock (gate)
+                {
+                    watcher?.Dispose();
+                    watcher = null;
+                    cache.Clear();
+                    dirty.Clear();
+                    loaded = false;
+                }
+            }
+        }
+
+        // SuccessStory is among Playnite's extensions, for the settings.
+        public bool Installed => api.Addons.Plugins.Any(p => p.Id == SuccessStoryId);
+
+        // SuccessStory has written something, whether CouchPilot reads it or not, for the settings.
+        public bool HasData
+        {
+            get
+            {
+                try
+                {
+                    return Directory.Exists(folder) && Directory.EnumerateFiles(folder, "*.json").Any();
+                }
+                catch (Exception)
+                {
+                    return false;
+                }
+            }
+        }
+
+        // SuccessStory has written something, and CouchPilot reads it: there are achievements to show.
         public bool Available
         {
             get
             {
+                if (!enabled) return false;
                 var now = DateTime.UtcNow;
                 if (now - availableCheckedAt < TimeSpan.FromSeconds(30)) return available;
                 availableCheckedAt = now;
-                try
-                {
-                    available = Directory.Exists(folder) && Directory.EnumerateFiles(folder, "*.json").Any();
-                }
-                catch (Exception)
-                {
-                    available = false;
-                }
+                available = HasData;
                 return available;
             }
         }
@@ -149,6 +193,7 @@ namespace CouchPilot.Achievements
         // Reads everything once, in the background, and starts watching. Called after Playnite is up.
         public void Start()
         {
+            if (!enabled) return;
             Task.Run(() =>
             {
                 try
@@ -165,6 +210,7 @@ namespace CouchPilot.Achievements
 
         public GameAchievementsDto Game(Guid id)
         {
+            if (!enabled) return null;
             var data = Load(id);
             if (data?.Items == null || data.Items.Count == 0 || data.IsIgnored) return null;
             var game = api.Database.Games.Get(id);
@@ -189,6 +235,7 @@ namespace CouchPilot.Achievements
         // Unlocked between two moments (UTC, `to` exclusive), newest first.
         public List<RecentAchievementDto> Unlocked(DateTime fromUtc, DateTime toUtc)
         {
+            if (!enabled) return new List<RecentAchievementDto>();
             EnsureLoaded();
             List<Cached> all;
             lock (gate)
@@ -220,6 +267,7 @@ namespace CouchPilot.Achievements
         // Where an icon SuccessStory keeps on disk is, or null when the achievement's icon is on the web.
         public string IconPath(Guid game, int index, bool locked)
         {
+            if (!enabled) return null;
             var data = Load(game);
             if (data?.Items == null || index < 0 || index >= data.Items.Count) return null;
             var url = locked ? data.Items[index].UrlLocked : data.Items[index].UrlUnlocked;
@@ -326,22 +374,26 @@ namespace CouchPilot.Achievements
             }
         }
 
+        // Whoever comes while the first read is under way waits for it.
         private void EnsureLoaded()
         {
-            lock (gate)
+            lock (loadGate)
             {
-                if (loaded) return;
-                loaded = true;
+                lock (gate)
+                {
+                    if (loaded || !enabled) return;
+                    loaded = true;
+                }
+                if (!Directory.Exists(folder)) return;
+                foreach (var file in Directory.EnumerateFiles(folder, "*.json").ToList()) Read(file);
             }
-            if (!Directory.Exists(folder)) return;
-            foreach (var file in Directory.EnumerateFiles(folder, "*.json").ToList()) Read(file);
         }
 
         private void Watch()
         {
             lock (gate)
             {
-                if (disposed || watcher != null || !Directory.Exists(folder)) return;
+                if (disposed || !enabled || watcher != null || !Directory.Exists(folder)) return;
                 try
                 {
                     watcher = new FileSystemWatcher(folder, "*.json") { NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.Size };
@@ -381,6 +433,7 @@ namespace CouchPilot.Achievements
         // The files that changed, re-read once things are quiet; gone ones dropped.
         private void Reload()
         {
+            if (!enabled) return;
             List<string> paths;
             lock (gate)
             {

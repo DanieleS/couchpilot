@@ -164,25 +164,28 @@ Some structured data on the PC changed: the phone should fetch it again over HTT
 | 4 | media | `GET /api/media` |
 | 8 | captures | `GET /api/captures` |
 | 16 | achievements | `GET /api/achievements/recent` |
+| 32 | stats | `GET /api/stats`, `GET /api/games/{id}/stats` (whichever is on screen) |
 
 ```
 81 01      the status changed
 81 03      the status and the library changed
 ```
 
-Right after HELLO the PC sends CHANGED with every topic set (`81 1F`), so a phone that just connected, or reconnected after missing changes, refreshes everything.
+Right after HELLO the PC sends CHANGED with every topic set (`81 3F`), so a phone that just connected, or reconnected after missing changes, refreshes everything.
 
 **Why not send the data itself.** Status and library are nested, vary in shape and change a few times a minute at most. As JSON on HTTP they keep one schema, readable with a browser or `curl`, and need no binary layout to keep in step with it. The socket only carries what has to be immediate or compact. One round trip after a CHANGED costs a few milliseconds on a home network.
 
 **Status.** The PC compares the status about twice a second, and on the next tick after anything it knows changes it: a game starting or stopping, a preset applied, kept, reverted, saved, renamed or deleted, the input setting toggled. A controller connecting, disconnecting or changing battery level shows up at the next twice-a-second check. CHANGED goes out only if the status differs from the last one announced, **ignoring `displays.pending.secondsLeft`**: the countdown alone isn't news, and the phone counts down by itself from the value it fetched.
 
-**Library.** Sent when Playnite adds, removes or updates a game: an import, an install, the playtime after a session, a cover downloaded. The statistics (`GET /api/stats`, `GET /api/games/{id}/stats`) refresh on it too: a session ending updates the game's playtime. An import can update hundreds of games in a row, so the PC announces the library at most twice a second.
+**Library.** Sent when Playnite adds, removes or updates a game: an import, an install, the playtime after a session, a cover downloaded. The statistics (`GET /api/stats`, `GET /api/games/{id}/stats`) refresh on it too: a session ending updates the game's playtime, and the game that stopped no longer counts as running. An import can update hundreds of games in a row, so the PC announces the library at most twice a second.
 
 **Media.** Sent on the next tick after Windows reports that what plays changed: another track, play or pause, another app taking over. Not for the position moving on: `/api/media` gives the position as of when it answered, and the phone moves the bar from there while playing.
 
 **Captures.** Sent on the next tick after a screenshot or clip appears in, or leaves, the capture folders: made from the phone or with the PC's own keys, or deleted. A file being written (a clip being encoded, a recording under way) counts once its writer lets go of it. The phone fetches the list only while captures are on (`capture` in the status isn't null).
 
 **Achievements.** Sent on the next tick after SuccessStory (if installed) writes a game's achievements file, which it does at the end of a session, or during one if it's set to refresh while you play. The phone fetches the latest unlocked and announces the ones it hadn't seen. The phone fetches them only while `achievements` in the status is true.
+
+**Stats.** Sent on the next tick after GameActivity (if installed) writes, renames or deletes a game's file in its data folder, once its writes have been quiet for about a second. It writes a session down when the game closes, a few seconds after Playnite's own update of the playtime (the library above), so the statistics catch the session that just ended. The captures topic goes out with it: a capture saved in those seconds belongs to the game whose session has just been written. The statistics' JSON carries `activity: false` when GameActivity's data isn't there, or GameActivity is turned off in the settings: then there are no sessions, only Playnite's totals. Turning SuccessStory or GameActivity on or off in the settings sends status, stats and captures.
 
 **The phone** keeps at most one fetch per topic in flight. A CHANGED arriving during a fetch queues exactly one more, so a burst of changes costs two requests at most.
 
@@ -227,7 +230,7 @@ Right after HELLO the PC sends CHANGED with every topic set (`81 1F`), so a phon
   ],
   "pairing": true,                        // phones have to type a PIN (see 1.1)
   "device": { "id": "a1b2c3d4e5f6", "name": "Pixel 8 · Chrome", "input": true, "captures": true },  // this phone; null while pairing is off
-  "achievements": true                    // SuccessStory is installed and has data
+  "achievements": true                    // SuccessStory is installed, has data and isn't turned off in the settings
 }
 ```
 
@@ -265,7 +268,7 @@ The artwork is at `GET /api/media/art?v=<artVersion>`; the version changes with 
       "bytes": 48213004,
       "width": 2560, "height": 1440,       // null when the file doesn't say
       "seconds": 30.02,                    // clips only
-      "gameId": "6de22bd5-…",              // the session it falls in, else the game its name matches, else null
+      "gameId": "6de22bd5-…",              // the GameActivity session (or the game running) it falls in, else the game its name matches, else null
       "game": "Elden Ring",                // that game's name, else what the tool called the window, else null
       "tool": "gamebar",                   // "nvidia", or null for the extra folder
       "fileName": "Elden Ring 2026-10-05 21-42-13.mp4",
@@ -557,6 +560,7 @@ The PC serves every phone from one loop, which runs every **40 ms** while at lea
 | CHANGED status | checked every ~0.5 s (12 ticks), and on the next tick after a change the PC knows about; sent only if the status differs |
 | CHANGED library | at most every ~0.5 s, if Playnite changed a game since the last one |
 | CHANGED media | on the next tick after Windows reports a change |
+| CHANGED achievements, stats | on the next tick after SuccessStory's or GameActivity's files settle (~1.2 s without writes) |
 | AUDIO STATE | to a phone that just subscribed; to every subscribed phone when the generation changes |
 | Device and session scan | every 1 s (25 ticks), on the next tick after a DEFAULT, after a subscription, after a failed read |
 | AUDIO VOLUMES | checked every tick; sent if any volume or mute differs from the last sent |

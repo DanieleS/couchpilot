@@ -112,9 +112,11 @@ const playDay = (t = Date.now()) => {
 }
 const seed = (text: string) => [...text].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 17)
 const trackingSince = new Date(playDay().getTime() - 60 * DAY)
+// `?noactivity=1` pretends GameActivity isn't installed: no sessions, only Playnite's totals.
+const activity = !new URLSearchParams(location.search).has('noactivity')
 // [gameIndex, seconds] played on a day.
 function playedOn(day: Date): [number, number][] {
-  if (day < trackingSince || day > playDay()) return []
+  if (!activity || day < trackingSince || day > playDay()) return []
   const h = seed(dayKey(day))
   if (h % 10 < 3) return []
   const main = [0, 7, 2, 13][h % 4]
@@ -157,7 +159,7 @@ function mockStats(range: string, offset: number) {
     }
   }
   return {
-    range, offset, from: dayKey(from), to: dayKey(to), today: dayKey(today), trackingSince: dayKey(trackingSince),
+    range, offset, from: dayKey(from), to: dayKey(to), today: dayKey(today), activity, trackingSince: activity ? dayKey(trackingSince) : null,
     totalSeconds: total, previousTotalSeconds: previous, previousFrom: dayKey(prev), sessions,
     buckets: [...buckets].map(([date, seconds]) => ({ date, seconds })),
     top: [...perGame].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([g, seconds]) => ({ id: games[g].id, name: games[g].name, seconds, hasCover: false })),
@@ -190,7 +192,7 @@ function mockGameStats(index: number) {
   }
   return {
     playtimeSeconds: g.playtimeMinutes * 60, playCount: 20 + index, lastActivity: g.lastActivity, completionStatus: index % 3 ? 'In corso' : 'Completato',
-    sessions, averageSeconds: sessions ? Math.round(seconds / sessions) : 0, weeks, lastSession: last, trackingSince: dayKey(trackingSince),
+    activity, sessions, averageSeconds: sessions ? Math.round(seconds / sessions) : 0, weeks, lastSession: last, trackingSince: activity ? dayKey(trackingSince) : null,
   }
 }
 
@@ -498,7 +500,7 @@ export function createMockLink(receive: (m: ServerMessage) => void, onClose: () 
   deliver(Uint8Array.of(0x80, 1))
   // Everything counts as changed on a new connection.
   lastStatus = statusKey()
-  deliver(Uint8Array.of(0x81, 1 | 2 | 4 | 8 | 16))
+  deliver(Uint8Array.of(0x81, 1 | 2 | 4 | 8 | 16 | 32))
   let tick = 0
   const timer = setInterval(() => {
     if (tick % 12 === 0 && libraryRevision !== lastLibrary) {

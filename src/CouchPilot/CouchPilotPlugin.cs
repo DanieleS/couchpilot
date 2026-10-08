@@ -33,7 +33,7 @@ namespace CouchPilot
         private readonly DisplayService displays;
         private readonly AudioService audio;
         private readonly MediaService media = new MediaService();
-        private readonly SessionLog sessionLog;
+        private readonly GameActivityReader activity;
         private readonly StatsService stats;
         private readonly RemoteInput input = new RemoteInput();
         private readonly CaptureLibrary captureLibrary;
@@ -69,16 +69,25 @@ namespace CouchPilot
             library = new LibraryService(api, sessions);
             gameControl = new GameControl(api, sessions);
             audio = new AudioService(gameControl);
-            sessionLog = new SessionLog(Path.Combine(GetPluginUserDataPath(), "sessions.jsonl"));
+            activity = new GameActivityReader(api);
             achievements = new AchievementsService(api);
-            stats = new StatsService(api, sessionLog, sessions, achievements);
+            achievements.Enabled = Settings.SuccessStory;
+            activity.Enabled = Settings.GameActivity;
+            stats = new StatsService(api, activity, sessions, achievements);
             displays = new DisplayService(Path.Combine(GetPluginUserDataPath(), "display-presets.json"));
             new AudioFollowsDisplays(displays, audio);
-            captureLibrary = new CaptureLibrary(() => api.Database.Games, sessionLog, sessions, GetPluginUserDataPath());
+            captureLibrary = new CaptureLibrary(() => api.Database.Games, activity, sessions, GetPluginUserDataPath());
             captures = new CaptureService(captureLibrary);
             thumbnails = new Thumbnails(Path.Combine(GetPluginUserDataPath(), "thumbnails"));
             clips = new ClipEditor(captureLibrary);
             achievements.Changed += () => server?.AchievementsChanged();
+            // A session landed in GameActivity, a few seconds after the game closed: the statistics
+            // have it now, and captures saved in between belong to its game.
+            activity.Changed += () =>
+            {
+                server?.StatsChanged();
+                server?.CapturesChanged();
+            };
             Pairing = new PairingService(Path.Combine(GetPluginUserDataPath(), "devices.json")) { Required = Settings.RequirePairing };
             Pairing.Changed += () => server?.Nudge();
             Pairing.PinRequested += ShowPin;
@@ -118,6 +127,7 @@ namespace CouchPilot
             media.Start();
             ApplyCaptureSettings();
             achievements.Start();
+            activity.Start();
             StartServer();
             StartHomeAssistant();
         }
@@ -133,6 +143,7 @@ namespace CouchPilot
             captureLibrary.Dispose();
             thumbnails.Dispose();
             achievements.Dispose();
+            activity.Dispose();
             lockState.Dispose();
         }
 
@@ -146,7 +157,6 @@ namespace CouchPilot
         public override void OnGameStopped(OnGameStoppedEventArgs args)
         {
             sessions.Stopped(args.Game);
-            sessionLog.Add(args.Game.Id, DateTime.UtcNow, (long)args.ElapsedSeconds);
             captures.GameStopped();
             server?.Nudge();
             homeAssistant?.Nudge();
@@ -209,6 +219,41 @@ namespace CouchPilot
                 pinWindow = null;
             }));
         }
+
+        // SuccessStory and GameActivity turned on or off: takes effect at once. The status says
+        // whether there are achievements; the statistics and the gallery's games follow the sessions.
+        internal void ApplyExtensionSettings()
+        {
+            var changed = achievements.Enabled != Settings.SuccessStory || activity.Enabled != Settings.GameActivity;
+            achievements.Enabled = Settings.SuccessStory;
+            activity.Enabled = Settings.GameActivity;
+            if (!changed) return;
+            server?.Nudge();
+            server?.StatsChanged();
+            server?.CapturesChanged();
+        }
+
+        internal List<CompatibleExtension> Compatible() => new List<CompatibleExtension>
+        {
+            new CompatibleExtension
+            {
+                Name = "SuccessStory",
+                Purpose = Pc("achievements", "obiettivi"),
+                Url = "https://github.com/Lacro59/playnite-successstory-plugin",
+                Setting = nameof(CouchPilotSettings.SuccessStory),
+                Installed = achievements.Installed,
+                HasData = achievements.HasData,
+            },
+            new CompatibleExtension
+            {
+                Name = "GameActivity",
+                Purpose = Pc("play history", "storico delle partite"),
+                Url = "https://github.com/Lacro59/playnite-gameactivity-plugin",
+                Setting = nameof(CouchPilotSettings.GameActivity),
+                Installed = activity.Installed,
+                HasData = activity.HasData,
+            },
+        };
 
         // Takes effect at once: turning it off lets go of anything held, and phones hear about it.
         internal void ApplyInputSetting()
