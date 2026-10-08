@@ -41,6 +41,7 @@ namespace CouchPilot.Unlock
         private static extern bool LogonUser(string user, string domain, string password, int logonType, int logonProvider, out IntPtr token);
         [DllImport("kernel32.dll", SetLastError = true)]
         private static extern bool CloseHandle(IntPtr handle);
+        private const int LOGON32_LOGON_INTERACTIVE = 2;
         private const int LOGON32_LOGON_NETWORK = 3;
         private const int LOGON32_PROVIDER_DEFAULT = 0;
         private const int ERROR_LOGON_FAILURE = 1326;
@@ -213,10 +214,12 @@ namespace CouchPilot.Unlock
             return true;
         }
 
-        // True if the account and password really sign in. A network logon touches no session and
-        // leaves nothing behind. A plain wrong password (or wrong account) is rejected; a less
-        // usual failure (an account barred from network logon, say) is allowed through with a log
-        // line rather than blocking a valid setup.
+        // True if the account and password really sign in. A network logon is tried first: it
+        // touches no session and leaves nothing behind. A Microsoft account may only take an
+        // interactive logon, so a refusal is checked that way too before the password is called
+        // wrong (the token is closed at once; no session is left). A plain wrong password (or
+        // wrong account) is rejected; a less usual failure (an account barred from these logon
+        // types, say) is allowed through with a log line rather than blocking a valid setup.
         private bool ValidatePassword(string account, string password, out string error)
         {
             error = null;
@@ -225,12 +228,17 @@ namespace CouchPilot.Unlock
             if (slash >= 0) { domain = account.Substring(0, slash); user = account.Substring(slash + 1); }
             else { domain = "."; user = account; }
 
-            if (LogonUser(user, domain, password, LOGON32_LOGON_NETWORK, LOGON32_PROVIDER_DEFAULT, out var token))
+            var err = 0;
+            foreach (var logonType in new[] { LOGON32_LOGON_NETWORK, LOGON32_LOGON_INTERACTIVE })
             {
-                CloseHandle(token);
-                return true;
+                if (LogonUser(user, domain, password, logonType, LOGON32_PROVIDER_DEFAULT, out var token))
+                {
+                    CloseHandle(token);
+                    return true;
+                }
+                err = Marshal.GetLastWin32Error();
+                if (err != ERROR_LOGON_FAILURE && err != ERROR_ACCOUNT_RESTRICTION) break;
             }
-            var err = Marshal.GetLastWin32Error();
             if (err == ERROR_LOGON_FAILURE || err == ERROR_ACCOUNT_RESTRICTION)
             {
                 error = "Windows didn't accept that account and password. For a Microsoft account use MicrosoftAccount\\your@email.";
@@ -256,8 +264,9 @@ namespace CouchPilot.Unlock
             try
             {
                 // Identification level: a hostile server that squatted the pipe can't impersonate
-                // us beyond identifying who we are.
-                using (var pipe = new NamedPipeClientStream(".", PipeName, PipeDirection.InOut, PipeOptions.None, TokenImpersonationLevel.Identification))
+                // us beyond identifying who we are. Asynchronous, so a read can be given up on
+                // (see ReadMessage): a server that never answers mustn't hang this request.
+                using (var pipe = new NamedPipeClientStream(".", PipeName, PipeDirection.InOut, PipeOptions.Asynchronous, TokenImpersonationLevel.Identification))
                 {
                     try
                     {
@@ -279,7 +288,7 @@ namespace CouchPilot.Unlock
                     // 2. The provider proves it holds the secret over our nonce. If the proof is
                     //    wrong or missing, something other than the real provider answered: stop,
                     //    don't send the password.
-                    var challenge = ReadMessage(pipe) ?? "";
+                    var challenge = ReadMessage(pipe, ReplyTimeoutMs) ?? "";
                     if (!ProofValid(challenge, store.Secret, nonce)) return UnlockResult.Unavailable;
 
                     // 3. Now send the credentials.
@@ -289,7 +298,7 @@ namespace CouchPilot.Unlock
                     pipe.Flush();
                     Array.Clear(bytes, 0, bytes.Length);
 
-                    var reply = ReadMessage(pipe) ?? "";
+                    var reply = ReadMessage(pipe, ReplyTimeoutMs) ?? "";
                     // { "ok": true } is the only success; everything else is a refusal.
                     return reply.Replace(" ", "").Contains("\"ok\":true") ? UnlockResult.Ok : UnlockResult.Failed;
                 }
@@ -344,14 +353,33 @@ namespace CouchPilot.Unlock
             return json.Substring(q + 1, end - q - 1);
         }
 
-        private static string ReadMessage(NamedPipeClientStream pipe)
+        // How long the provider gets to answer each message. It replies to the hello at once and
+        // to the credentials as soon as it has armed the tile, so this only ever fires on a
+        // server that isn't the provider (a squatted name) or one that's wedged.
+        private const int ReplyTimeoutMs = 5000;
+
+        // Reads one message, giving the server a bounded time to send it. On a timeout the pipe
+        // is closed, which cancels the pending read, and the request fails as unavailable rather
+        // than sitting on the API thread for good. Needs the pipe opened Asynchronous: a
+        // synchronous read holds the handle and can't be abandoned.
+        private static string ReadMessage(NamedPipeClientStream pipe, int timeoutMs)
+        {
+            var read = ReadMessageAsync(pipe);
+            if (read.Wait(timeoutMs)) return read.Result;
+            // Observe whatever the abandoned read ends with, so it isn't an unobserved fault.
+            read.ContinueWith(t => { var _ = t.Exception; }, System.Threading.Tasks.TaskContinuationOptions.OnlyOnFaulted);
+            pipe.Dispose();
+            throw new TimeoutException("The lock screen didn't answer in time.");
+        }
+
+        private static async System.Threading.Tasks.Task<string> ReadMessageAsync(NamedPipeClientStream pipe)
         {
             var buffer = new byte[1024];
             using (var ms = new MemoryStream())
             {
                 do
                 {
-                    int read = pipe.Read(buffer, 0, buffer.Length);
+                    int read = await pipe.ReadAsync(buffer, 0, buffer.Length).ConfigureAwait(false);
                     if (read <= 0) break;
                     ms.Write(buffer, 0, read);
                 } while (!pipe.IsMessageComplete);
