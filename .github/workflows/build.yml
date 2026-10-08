@@ -52,7 +52,7 @@ jobs:
           $yaml = (Select-String -Path src/CouchPilot/extension.yaml -Pattern '^Version:\s*(.+)$').Matches[0].Groups[1].Value.Trim()
           $csproj = (Select-String -Path src/CouchPilot/CouchPilot.csproj -Pattern '<Version>(.+)</Version>').Matches[0].Groups[1].Value.Trim()
           if ($yaml -ne $tag -or $csproj -ne $tag) {
-            Write-Error "Tag v$tag, extension.yaml $yaml, CouchPilot.csproj $csproj: bump both before tagging"
+            Write-Error "Tag v$tag, extension.yaml $yaml, CouchPilot.csproj ${csproj}: bump both before tagging"
             exit 1
           }
 
