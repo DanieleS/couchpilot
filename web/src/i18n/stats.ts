@@ -16,7 +16,10 @@ const en = {
   previous: 'Previous period',
   next: 'Next period',
   untracked: (since: string | null) =>
-    `CouchPilot logs sessions since it was updated${since ? ` (on ${since})` : ''}, so there are none for this period. Playnite keeps only the totals, which you'll find below.`,
+    since
+      ? `GameActivity has sessions from ${since}: there are none for this period. Playnite keeps only the totals, which you'll find below.`
+      : 'GameActivity has no sessions yet. Playnite keeps only the totals, which you\'ll find below.',
+  noActivity: 'Install GameActivity in Playnite to see when you play: Playnite itself keeps only totals, which you find below.',
   played: 'Played',
   // Compared with the period before: "+2 h 10 min vs last week at this point".
   than: {
@@ -71,7 +74,10 @@ const it: typeof en = {
   previous: 'Periodo precedente',
   next: 'Periodo successivo',
   untracked: (since: string | null) =>
-    `CouchPilot registra le partite da quando è stato aggiornato${since ? ` (dal ${since})` : ''}: per questo periodo non ci sono sessioni. Playnite tiene solo i totali, che trovi qui sotto.`,
+    since
+      ? `GameActivity ha sessioni dal ${since}: per questo periodo non ce ne sono. Playnite tiene solo i totali, che trovi qui sotto.`
+      : 'GameActivity non ha ancora sessioni. Playnite tiene solo i totali, che trovi qui sotto.',
+  noActivity: 'Installa GameActivity in Playnite per vedere quando giochi: Playnite tiene solo i totali, che trovi qui sotto.',
   played: 'Giocate',
   than: {
     week: { running: 'della settimana scorsa a questo punto', done: 'della settimana prima' },

@@ -42,6 +42,7 @@ namespace CouchPilot.Server
         private const byte TopicMedia = 4;
         private const byte TopicCaptures = 8;
         private const byte TopicAchievements = 16;
+        private const byte TopicStats = 32;
 
         private static readonly ILogger logger = LogManager.GetLogger();
         private static readonly TimeSpan Tick = TimeSpan.FromMilliseconds(40);
@@ -60,6 +61,7 @@ namespace CouchPilot.Server
         private volatile bool mediaChanged;
         private volatile bool capturesChanged;
         private volatile bool achievementsChanged;
+        private volatile bool statsChanged;
         private volatile bool rescanWanted;
         private string lastStatusShape;
         private byte[] lastVolumes;
@@ -100,6 +102,9 @@ namespace CouchPilot.Server
         // SuccessStory wrote a game's achievements. Announced on the next tick.
         public void AchievementsChanged() => achievementsChanged = true;
 
+        // GameActivity wrote a game's sessions. Announced on the next tick.
+        public void StatsChanged() => statsChanged = true;
+
         // Pairing was switched on: phones that connected without a token are closed, and come
         // back through the pairing screen.
         public void DropUnpaired()
@@ -138,7 +143,7 @@ namespace CouchPilot.Server
             clients[context] = client;
             Enqueue(context, client, new[] { OpHello, ProtocolVersion });
             // Whatever the phone had may be stale after a disconnect: everything counts as changed.
-            Enqueue(context, client, new[] { OpChanged, (byte)(TopicStatus | TopicLibrary | TopicMedia | TopicCaptures | TopicAchievements) });
+            Enqueue(context, client, new[] { OpChanged, (byte)(TopicStatus | TopicLibrary | TopicMedia | TopicCaptures | TopicAchievements | TopicStats) });
             if (Interlocked.Exchange(ref looping, 1) == 0) _ = Task.Run(LoopAsync);
         }
 
@@ -245,6 +250,11 @@ namespace CouchPilot.Server
             {
                 achievementsChanged = false;
                 topics |= TopicAchievements;
+            }
+            if (statsChanged)
+            {
+                statsChanged = false;
+                topics |= TopicStats;
             }
             if (topics == 0) return;
             var message = new[] { OpChanged, topics };

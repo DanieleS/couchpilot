@@ -183,7 +183,10 @@ export type Stats = {
   // Exclusive.
   to: string
   today: string
-  // The first day CouchPilot logged a session, or null: before it, only Playnite's totals exist.
+  // GameActivity's data was found on the PC. Without it there are no sessions: totals, buckets
+  // and top are empty, and only `library`, `resume` and `achievements` say anything.
+  activity: boolean
+  // The day of GameActivity's first session, or null: before it, only Playnite's totals exist.
   trackingSince: string | null
   totalSeconds: number
   // The previous period, up to the same point when this one is under way.
@@ -239,6 +242,9 @@ export type GameStats = {
   playCount: number
   lastActivity: string | null
   completionStatus: string | null
+  // GameActivity's data was found on the PC: without it sessions, averageSeconds, weeks and
+  // lastSession are empty, and only Playnite's totals above are there.
+  activity: boolean
   sessions: number
   averageSeconds: number
   // The last 12 weeks, oldest first, this week last.

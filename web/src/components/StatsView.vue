@@ -38,8 +38,9 @@ async function load() {
 }
 watch([range, offset], load, { immediate: true })
 watch(range, () => (offset.value = 0))
-// A session ends → Playnite updates the game's playtime → CHANGED library.
-const stop = onChanged((topics) => topics & Topic.library && load())
+// A session ends → Playnite updates the game's playtime → CHANGED library; a few seconds later
+// GameActivity writes the session down → CHANGED stats.
+const stop = onChanged((topics) => topics & (Topic.library | Topic.stats) && load())
 onScopeDispose(stop)
 
 const ranges: { key: StatsRangeName; label: string }[] = [
@@ -71,13 +72,14 @@ const delta = computed(() => {
   if (Math.abs(diff) < 60) return t.stats.same(than)
   return t.stats.diff(`${diff > 0 ? '+' : '−'}${duration(Math.abs(diff))}`, than)
 })
-// Before CouchPilot started logging there's nothing to show by day; say so instead of zeros.
+// Before GameActivity's first session, or without GameActivity, there's nothing to show by day;
+// say so instead of zeros.
 const untracked = computed(() => {
   const s = stats.value
-  return !!s && (!s.trackingSince || s.trackingSince >= s.to)
+  return !!s && (!s.activity || !s.trackingSince || s.trackingSince >= s.to)
 })
 const trackingSinceLabel = computed(() =>
-  stats.value?.trackingSince ? parseDay(stats.value.trackingSince).toLocaleDateString(locale, { day: 'numeric', month: 'long' }) : null,
+  stats.value?.trackingSince ? parseDay(stats.value.trackingSince).toLocaleDateString(locale, { day: 'numeric', month: 'long', year: 'numeric' }) : null,
 )
 const topMax = computed(() => Math.max(1, ...(stats.value?.top.map((g) => g.seconds) ?? [1])))
 const number = (n: number) => n.toLocaleString(locale)
@@ -119,7 +121,7 @@ const open = (id: string) => {
         </div>
 
         <template v-if="untracked">
-          <p class="untracked">{{ t.stats.untracked(trackingSinceLabel) }}</p>
+          <p class="untracked">{{ stats.activity ? t.stats.untracked(trackingSinceLabel) : t.stats.noActivity }}</p>
         </template>
         <template v-else>
           <div class="headline">
@@ -137,7 +139,7 @@ const open = (id: string) => {
         </template>
       </section>
 
-      <template v-if="stats.top.length">
+      <template v-if="stats.activity && stats.top.length">
         <p class="eyebrow">{{ t.stats.top }}</p>
         <ol class="top">
           <li v-for="g in stats.top" :key="g.id">

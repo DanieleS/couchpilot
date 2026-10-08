@@ -9,8 +9,9 @@ using static CouchPilot.Lang;
 
 namespace CouchPilot.Stats
 {
-    // How much you play: by day, week, month and year from our own session log, and the library's
-    // totals from Playnite. All in the PC's local time.
+    // How much you play: by day, week, month and year from GameActivity's sessions, and the
+    // library's totals from Playnite. All in the PC's local time. Without GameActivity there is
+    // no history by day (`activity` is false): the totals still are.
     //
     // A day of play runs from 5:00 to 5:00: a session from 23:00 to 1:00 is all the evening's.
     public class StatsService
@@ -18,16 +19,18 @@ namespace CouchPilot.Stats
         public static readonly TimeSpan DayStartsAt = TimeSpan.FromHours(5);
         private static readonly TimeSpan ResumeAfter = TimeSpan.FromDays(90);
         private const int ResumeMinSeconds = 3600;
+        // GameActivity dates a session from its own start event, a moment apart from ours.
+        private static readonly TimeSpan SameRun = TimeSpan.FromMinutes(2);
 
         private readonly IPlayniteAPI api;
-        private readonly SessionLog log;
+        private readonly GameActivityReader activity;
         private readonly GameSessions running;
         private readonly Achievements.AchievementsService achievements;
 
-        public StatsService(IPlayniteAPI api, SessionLog log, GameSessions running, Achievements.AchievementsService achievements)
+        public StatsService(IPlayniteAPI api, GameActivityReader activity, GameSessions running, Achievements.AchievementsService achievements)
         {
             this.api = api;
-            this.log = log;
+            this.activity = activity;
             this.running = running;
             this.achievements = achievements;
         }
@@ -69,6 +72,8 @@ namespace CouchPilot.Stats
             }
 
             var sessions = Sessions(now);
+            var tracked = sessions != null;
+            sessions = sessions ?? new List<SessionRecord>();
             var days = Split(sessions);
 
             var buckets = new SortedDictionary<DateTime, long>();
@@ -97,6 +102,7 @@ namespace CouchPilot.Stats
                 from = Date(from),
                 to = Date(to),
                 today = Date(today),
+                activity = tracked,
                 trackingSince = sessions.Count == 0 ? null : Date(DayOf(sessions.Min(x => x.Start).ToLocalTime())),
                 totalSeconds = total,
                 previousTotalSeconds = previous,
@@ -123,13 +129,15 @@ namespace CouchPilot.Stats
             return new { unlocked = unlocked.Count, recent = unlocked.Take(8).ToList() };
         }
 
-        // One game: Playnite's totals, and what the log knows about its sessions.
+        // One game: Playnite's totals, and what GameActivity knows about its sessions.
         public object Game(Guid id)
         {
             var game = api.Database.Games.Get(id);
             if (game == null) return null;
             var now = DateTime.Now;
             var sessions = Sessions(now);
+            var tracked = sessions != null;
+            sessions = sessions ?? new List<SessionRecord>();
             var mine = sessions.Where(s => s.Game == id).ToList();
             var thisWeek = MondayOf(DayOf(now));
             var weeks = new long[12];
@@ -145,6 +153,7 @@ namespace CouchPilot.Stats
                 playCount = (long)game.PlayCount,
                 lastActivity = game.LastActivity?.ToUniversalTime().ToString("o"),
                 completionStatus = game.CompletionStatus?.Name,
+                activity = tracked,
                 sessions = mine.Count,
                 averageSeconds = mine.Count == 0 ? 0 : (long)mine.Average(s => s.Seconds),
                 weeks,
@@ -183,13 +192,18 @@ namespace CouchPilot.Stats
             })
             .ToList();
 
-        // The log, plus whatever is being played right now, up to now.
+        // GameActivity's sessions, plus whatever is being played right now, up to now; null
+        // without GameActivity. The run under way counts once: if GameActivity already wrote it
+        // down (with 0 seconds, or as far as it got), the live one takes its place.
         private List<SessionRecord> Sessions(DateTime now)
         {
-            var all = log.All();
+            var all = activity.All();
+            if (all == null) return null;
             foreach (var s in running.All)
             {
                 if (s.StartedAt == null) continue;
+                var since = s.StartedAt.Value - SameRun;
+                all.RemoveAll(r => r.Game == s.GameId && r.Start >= since);
                 var seconds = (long)(now.ToUniversalTime() - s.StartedAt.Value).TotalSeconds;
                 if (seconds > 0) all.Add(new SessionRecord { Game = s.GameId, Start = s.StartedAt.Value, Seconds = seconds });
             }

@@ -32,7 +32,7 @@ namespace CouchPilot
         private readonly DisplayService displays;
         private readonly AudioService audio;
         private readonly MediaService media = new MediaService();
-        private readonly SessionLog sessionLog;
+        private readonly GameActivityReader activity;
         private readonly StatsService stats;
         private readonly RemoteInput input = new RemoteInput();
         private readonly CaptureLibrary captureLibrary;
@@ -64,16 +64,23 @@ namespace CouchPilot
             library = new LibraryService(api, sessions);
             gameControl = new GameControl(api, sessions);
             audio = new AudioService(gameControl);
-            sessionLog = new SessionLog(Path.Combine(GetPluginUserDataPath(), "sessions.jsonl"));
+            activity = new GameActivityReader(api);
             achievements = new AchievementsService(api);
-            stats = new StatsService(api, sessionLog, sessions, achievements);
+            stats = new StatsService(api, activity, sessions, achievements);
             displays = new DisplayService(Path.Combine(GetPluginUserDataPath(), "display-presets.json"));
             new AudioFollowsDisplays(displays, audio);
-            captureLibrary = new CaptureLibrary(() => api.Database.Games, sessionLog, sessions, GetPluginUserDataPath());
+            captureLibrary = new CaptureLibrary(() => api.Database.Games, activity, sessions, GetPluginUserDataPath());
             captures = new CaptureService(captureLibrary);
             thumbnails = new Thumbnails(Path.Combine(GetPluginUserDataPath(), "thumbnails"));
             clips = new ClipEditor(captureLibrary);
             achievements.Changed += () => server?.AchievementsChanged();
+            // A session landed in GameActivity, a few seconds after the game closed: the statistics
+            // have it now, and captures saved in between belong to its game.
+            activity.Changed += () =>
+            {
+                server?.StatsChanged();
+                server?.CapturesChanged();
+            };
             Pairing = new PairingService(Path.Combine(GetPluginUserDataPath(), "devices.json")) { Required = Settings.RequirePairing };
             Pairing.Changed += () => server?.Nudge();
             Pairing.PinRequested += ShowPin;
@@ -104,6 +111,7 @@ namespace CouchPilot
             media.Start();
             ApplyCaptureSettings();
             achievements.Start();
+            activity.Start();
             StartServer();
             StartHomeAssistant();
         }
@@ -119,6 +127,7 @@ namespace CouchPilot
             captureLibrary.Dispose();
             thumbnails.Dispose();
             achievements.Dispose();
+            activity.Dispose();
         }
 
         public override void OnGameStarted(OnGameStartedEventArgs args)
@@ -131,7 +140,6 @@ namespace CouchPilot
         public override void OnGameStopped(OnGameStoppedEventArgs args)
         {
             sessions.Stopped(args.Game);
-            sessionLog.Add(args.Game.Id, DateTime.UtcNow, (long)args.ElapsedSeconds);
             captures.GameStopped();
             server?.Nudge();
             homeAssistant?.Nudge();
