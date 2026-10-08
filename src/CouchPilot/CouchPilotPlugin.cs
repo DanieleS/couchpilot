@@ -15,6 +15,7 @@ using CouchPilot.Library;
 using CouchPilot.Media;
 using CouchPilot.Server;
 using CouchPilot.Stats;
+using CouchPilot.Unlock;
 using Playnite.SDK;
 using Playnite.SDK.Events;
 using Playnite.SDK.Plugins;
@@ -40,6 +41,8 @@ namespace CouchPilot
         private readonly Thumbnails thumbnails;
         private readonly ClipEditor clips;
         private readonly AchievementsService achievements;
+        private readonly LockState lockState = new LockState();
+        private readonly UnlockService unlock;
         // The extra folder the gallery was last set up with; null until it first is.
         private string capturesConfiguredFor;
         private RemoteServer server;
@@ -49,6 +52,8 @@ namespace CouchPilot
         public CouchPilotSettings Settings { get; }
 
         internal PairingService Pairing { get; }
+
+        internal UnlockService Unlock => unlock;
 
         // Where the running server answers, for the settings page.
         internal IReadOnlyList<string> Addresses { get; private set; } = new string[0];
@@ -87,6 +92,15 @@ namespace CouchPilot
             Pairing.Changed += () => server?.Nudge();
             Pairing.PinRequested += ShowPin;
             Pairing.PinDone += HidePin;
+            // The setup helper rides in the .pext beside this assembly; absent from a checkout that
+            // skipped the native build, and then unlocking just reports itself unavailable.
+            unlock = new UnlockService(
+                GetPluginUserDataPath(),
+                Path.Combine(Path.GetDirectoryName(typeof(CouchPilotPlugin).Assembly.Location), "CouchPilotUnlockSetup.exe"),
+                lockState,
+                () => Pairing.Required);
+            lockState.Changed += () => server?.Nudge();
+            unlock.Changed += () => server?.Nudge();
             captureLibrary.Changed += () =>
             {
                 server?.CapturesChanged();
@@ -130,6 +144,7 @@ namespace CouchPilot
             thumbnails.Dispose();
             achievements.Dispose();
             activity.Dispose();
+            lockState.Dispose();
         }
 
         public override void OnGameStarted(OnGameStartedEventArgs args)
@@ -321,7 +336,7 @@ namespace CouchPilot
                             NotificationType.Error));
                     }
                 }
-                server = new RemoteServer(Settings.Port, certificate, webRoot, library, gameControl, displays, input, audio, media, stats, captures, captureLibrary, thumbnails, clips, Pairing, achievements);
+                server = new RemoteServer(Settings.Port, certificate, webRoot, library, gameControl, displays, input, audio, media, stats, captures, captureLibrary, thumbnails, clips, Pairing, achievements, unlock);
                 server.Start();
                 PlayniteApi.Notifications.Remove("couchpilot-server");
                 Addresses = NetworkInfo.LanUrls(Settings.Port, certificate != null, certificate == null ? null : ServerCertificate.HostName(certificate));

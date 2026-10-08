@@ -1,0 +1,4 @@
+LIBRARY CouchPilotUnlock
+EXPORTS
+    DllGetClassObject   PRIVATE
+    DllCanUnloadNow     PRIVATE

@@ -22,6 +22,7 @@ CouchPilot is a Playnite extension that serves a small web app on your local net
 - **Achievements**: with [SuccessStory](https://github.com/Lacro59/playnite-successstory-plugin) installed, each game's sheet shows how many you have and the latest ones, with the full list a tap away (hidden ones stay hidden until you ask); the statistics count what you unlocked in the period; and the phone tells you what you've just unlocked when SuccessStory refreshes, typically at the end of a session.
 - **PIN pairing (optional)**: ask new phones for a six-digit PIN that CouchPilot shows on the PC's screen, so only who can read the TV gets in; then choose, phone by phone, which may use mouse and keyboard and which may see the captures.
 - **Touchpad and keyboard (optional)**: drive the PC's mouse and keyboard from the phone. One finger moves, a tap clicks, two fingers scroll or right-click, tap and hold drags. The phone's own keyboard types on the PC, with a Termux-style bar of extra keys above it (Esc, Tab, Ctrl/Alt/Win/Shift, arrows, F1–F12), plus shortcuts.
+- **Unlock the PC (optional)**: get past the Windows lock screen from the couch, no keyboard needed. CouchPilot installs a credential provider that signs in with your account password (kept sealed on the PC, never sent to the phone); you grant it phone by phone. It only unlocks a PC you'd already signed into, not a fresh boot, and uses the account password rather than a Windows Hello PIN. See [Unlocking the PC](#unlocking-the-pc).
 
 ## Install
 
@@ -112,6 +113,21 @@ Off by default: whoever reaches the port could type on the PC. Turn it on in the
 - Windows ignores synthetic input aimed at windows running as administrator, and at the UAC prompt or the lock screen: those need a real mouse.
 
 Input travels over the phone's live WebSocket, a few bytes per command. Connections from pages on other sites are refused, and a button held down is let go if the phone drops.
+
+## Unlocking the PC
+
+The touchpad and keyboard can't touch the lock screen — Windows keeps synthetic input off its secure desktop. So getting past the lock screen from the phone takes a *credential provider*: a small component Windows itself loads into the lock screen, which CouchPilot installs for you.
+
+Turn it on in the extension settings under **Unlock the PC**: enter your Windows account password and press **Enable**. Windows asks for administrator rights once (to register the component), then the password is sealed on the PC with DPAPI — tied to your Windows account, unreadable by anyone else, and never sent to the phone. Under **Phones**, tick **Unlock** for each phone you want to allow. On an allowed phone the Control tab shows an **Unlock the PC** button whenever the PC is locked.
+
+Worth knowing before you turn it on:
+
+- **It only unlocks a PC you'd already signed into** (woken from sleep, or Win+L) — not a fresh boot or a signed-out PC, where CouchPilot isn't running yet and the phone has nothing to reach. For the PC to come back reachable after a reboot, set up Windows' own automatic sign-in (for example [Autologon](https://learn.microsoft.com/sysinternals/downloads/autologon)).
+- **It uses your account password, not your Windows Hello PIN.** Windows won't let an outside provider sign in with the Hello PIN. For a Microsoft account, that's the Microsoft-account password; change it and you re-enter it here.
+- **"For improved security, only allow Windows Hello sign-in" must be off** (Settings → Accounts → Sign-in options), or Windows hides every password method, this one included.
+- It fails safe: the normal password and PIN tiles are always right there, so a half-set-up or broken install never locks you out.
+
+Keep the port off the internet, as above — behind the PIN, unlocking is one more thing a phone that got in could reach. The full design, the credential-provider and the pipe between it and the extension, is in [docs/unlock.md](docs/unlock.md).
 
 ## Screenshots and clips
 

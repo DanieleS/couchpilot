@@ -101,6 +101,11 @@ namespace CouchPilot
         [DontSerialize]
         public Server.PairingService Pairing => plugin?.Pairing;
 
+        // Unlocking the PC from the phone. Its own on/off state (the sealed password, the
+        // registered provider) lives outside the settings JSON; the view drives it directly.
+        [DontSerialize]
+        public Unlock.UnlockService Unlock => plugin?.Unlock;
+
         [DontSerialize]
         public MqttConfig Mqtt => new MqttConfig
         {

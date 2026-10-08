@@ -20,3 +20,6 @@ dist/
 # ffmpeg for the gallery: built by scripts/build-ffmpeg.sh
 build/
 src/CouchPilot/ffmpeg/
+
+# Native unlock binaries: built by CMake/MSVC in CI, copied in before the extension build
+src/CouchPilot/native/

@@ -66,6 +66,9 @@ function status(): Status {
     device: pairingRequired ? pairedDevice : null,
     // `?noach=1` pretends SuccessStory isn't installed.
     achievements: !new URLSearchParams(location.search).has('noach'),
+    // `?locked=1` pretends the PC is on the lock screen with unlocking set up and allowed here.
+    locked: lockedPc,
+    unlock: lockedPc,
     // `?nopads=1` pretends no controller is connected.
     controllers: new URLSearchParams(location.search).has('nopads')
       ? []
@@ -219,6 +222,7 @@ function mockCapture(gameIndex: number | null, at: Date, kind: Capture['kind'], 
 // Pairing: `?pair=1` pretends the PC wants a PIN (it's 123456) from this phone.
 const pairingRequired = new URLSearchParams(location.search).has('pair')
 let pairedDevice: PairedDevice | null = null
+let lockedPc = new URLSearchParams(location.search).has('locked')
 let pinPending = false
 let pinAttempts = 5
 const fail = (message: string, code: string, extra: Record<string, unknown> = {}) => Object.assign(new Error(message), { code, ...extra })
@@ -578,13 +582,20 @@ async function handle(method: string, path: string, body?: any): Promise<unknown
         throw fail(`PIN sbagliato, ${pinAttempts} tentativi rimasti.`, 'wrong-pin', { attemptsLeft: pinAttempts })
       }
       pinPending = false
-      pairedDevice = { id: 'dev1', name: body?.name || 'Telefono', input: true, captures: true }
+      pairedDevice = { id: 'dev1', name: body?.name || 'Telefono', input: true, captures: true, unlock: false }
       return pairedDevice
     }
     if (method === 'DELETE') return void (pairedDevice = null)
   }
   if (pairingRequired && !pairedDevice) throw fail('Questo telefono non è abbinato al PC.', 'unpaired')
   if (method === 'GET' && a === 'status') return status()
+
+  // The lock screen: pretend the handoff worked and the PC unlocks a moment later.
+  if (method === 'POST' && a === 'unlock') {
+    if (!lockedPc) throw fail('Il PC non è bloccato.', 'not-locked')
+    setTimeout(() => (lockedPc = false), 400)
+    return { ok: true }
+  }
   if (method === 'GET' && a === 'achievements' && b === 'recent') {
     scheduleMockUnlock()
     return mockRecentAchievements().slice(0, 40)
