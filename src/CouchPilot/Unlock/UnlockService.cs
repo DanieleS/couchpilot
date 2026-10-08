@@ -93,11 +93,15 @@ namespace CouchPilot.Unlock
         // and file look-ups only happen while the PC is actually locked.
         public bool OfferToPhones => lockState.Locked && Enabled;
 
+        // Playnite 10 is a 32-bit process, so a plain Registry.LocalMachine read lands in
+        // WOW6432Node and never sees the key the (64-bit) setup helper wrote: ask for the 64-bit
+        // view, where Windows' lock screen looks too.
         private static bool ProviderRegistered()
         {
             try
             {
-                using (var key = Registry.LocalMachine.OpenSubKey(CredentialProviderKey))
+                using (var hklm = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Registry64))
+                using (var key = hklm.OpenSubKey(CredentialProviderKey))
                 {
                     return key != null;
                 }

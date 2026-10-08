@@ -15,12 +15,6 @@ const en = {
   keyboard: 'Keyboard',
   controllers: 'Controllers',
   shortcuts: 'Shortcuts',
-  unlock: {
-    title: 'The PC is locked',
-    text: 'Unlock it from here, no keyboard needed.',
-    button: 'Unlock the PC',
-    unlocking: 'Unlocking…',
-  },
   pad: {
     move: 'One finger moves, a tap clicks',
     scroll: 'Two fingers scroll, a tap right-clicks',
@@ -65,12 +59,6 @@ const it: typeof en = {
   keyboard: 'Tastiera',
   controllers: 'Controller',
   shortcuts: 'Scorciatoie',
-  unlock: {
-    title: 'Il PC è bloccato',
-    text: 'Sbloccalo da qui, senza tastiera.',
-    button: 'Sblocca il PC',
-    unlocking: 'Sblocco…',
-  },
   pad: {
     move: 'Un dito muove, un tocco clicca',
     scroll: 'Due dita scorrono, toccando fai clic destro',

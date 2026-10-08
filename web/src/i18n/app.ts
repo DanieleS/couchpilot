@@ -56,6 +56,13 @@ const en = {
     description: "Give it a name you'll recognise at a glance.",
     placeholder: 'E.g. TV only',
   },
+  locked: {
+    title: 'The PC is locked',
+    canUnlock: 'Unlock it from here, no keyboard needed.',
+    cannotUnlock: "To unlock it from this phone, turn on Unlock the PC in CouchPilot's settings in Playnite and tick Unlock for this phone.",
+    button: 'Unlock',
+    unlocking: 'Unlocking…',
+  },
   stream: {
     title: 'Vibepollo stream on',
     text: 'Vibepollo is managing the displays. Presets come back when the stream ends.',
@@ -134,6 +141,13 @@ const it: typeof en = {
   namePrompt: {
     description: 'Dagli un nome che riconosci al volo.',
     placeholder: 'Es. Solo TV',
+  },
+  locked: {
+    title: 'Il PC è bloccato',
+    canUnlock: 'Sbloccalo da qui, senza tastiera.',
+    cannotUnlock: 'Per sbloccarlo da questo telefono, attiva Sblocca il PC nelle impostazioni di CouchPilot in Playnite e spunta Sblocco per questo telefono.',
+    button: 'Sblocca',
+    unlocking: 'Sblocco…',
   },
   stream: {
     title: 'Stream Vibepollo in corso',

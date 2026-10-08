@@ -66,9 +66,10 @@ function status(): Status {
     device: pairingRequired ? pairedDevice : null,
     // `?noach=1` pretends SuccessStory isn't installed.
     achievements: !new URLSearchParams(location.search).has('noach'),
-    // `?locked=1` pretends the PC is on the lock screen with unlocking set up and allowed here.
+    // `?locked=1` pretends the PC is on the lock screen with unlocking set up and allowed here;
+    // `?locked=view`, locked but this phone may not unlock it.
     locked: lockedPc,
-    unlock: lockedPc,
+    unlock: lockedPc && new URLSearchParams(location.search).get('locked') !== 'view',
     // `?nopads=1` pretends no controller is connected.
     controllers: new URLSearchParams(location.search).has('nopads')
       ? []
