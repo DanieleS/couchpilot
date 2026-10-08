@@ -42,6 +42,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # A tag must match the version in extension.yaml and the .csproj, or the release ships a
+      # .pext that calls itself something else (v0.4.0 went out as 0.3.0).
+      - name: Check tag matches version
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}".TrimStart('v')
+          $yaml = (Select-String -Path src/CouchPilot/extension.yaml -Pattern '^Version:\s*(.+)$').Matches[0].Groups[1].Value.Trim()
+          $csproj = (Select-String -Path src/CouchPilot/CouchPilot.csproj -Pattern '<Version>(.+)</Version>').Matches[0].Groups[1].Value.Trim()
+          if ($yaml -ne $tag -or $csproj -ne $tag) {
+            Write-Error "Tag v$tag, extension.yaml $yaml, CouchPilot.csproj $csproj: bump both before tagging"
+            exit 1
+          }
+
       - uses: actions/download-artifact@v4
         with:
           name: ffmpeg
