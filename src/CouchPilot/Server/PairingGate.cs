@@ -21,12 +21,14 @@ namespace CouchPilot.Server
 
         private readonly PairingService pairing;
         private readonly bool secure;
+        private readonly Func<bool> locked;
         private readonly System.Collections.Concurrent.ConcurrentDictionary<string, DateTime> refreshed = new System.Collections.Concurrent.ConcurrentDictionary<string, DateTime>();
 
-        public PairingGate(PairingService pairing, bool secure) : base("/")
+        public PairingGate(PairingService pairing, bool secure, Func<bool> locked) : base("/")
         {
             this.pairing = pairing;
             this.secure = secure;
+            this.locked = locked;
         }
 
         public override bool IsFinalHandler => false;
@@ -55,6 +57,16 @@ namespace CouchPilot.Server
                     refreshed[device.Id] = now;
                     SetCookie(context, context.Request.Cookies[PairingService.CookieName].Value);
                 }
+            }
+
+            // While the PC is on the lock screen the phone may look but not act: anything but a
+            // read is refused, save unlocking itself (pairing never reaches here).
+            var verb = context.Request.HttpVerb;
+            if (verb != HttpVerbs.Get && verb != HttpVerbs.Head && path != "/api/unlock" && locked())
+            {
+                context.Response.StatusCode = (int)HttpStatusCode.Conflict;
+                await RemoteServer.SerializeJson(context, new { error = Tr("The PC is locked: unlock it first.", "Il PC è bloccato: prima sbloccalo."), code = "locked" });
+                context.SetHandled();
             }
         }
 

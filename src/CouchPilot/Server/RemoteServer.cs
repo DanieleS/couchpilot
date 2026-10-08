@@ -32,9 +32,10 @@ namespace CouchPilot.Server
             this.certificate = certificate;
             Swan.Logging.Logger.NoLogging();
             var status = new StatusSource(library, displays, input, captures, clips, pairing, achievements, unlock);
-            live = new LiveSocket("/ws", input, audio, status, pairing);
+            live = new LiveSocket("/ws", input, audio, status, pairing, () => unlock.Locked);
             // In front of everything: while pairing is on, /api answers only phones that typed the PIN.
-            var gate = new PairingGate(pairing, certificate != null);
+            // And while the PC is locked, it refuses every command but the unlock.
+            var gate = new PairingGate(pairing, certificate != null, () => unlock.Locked);
 
             // EmbedIO's own listener: unlike HttpListener it can bind every interface
             // without an admin-only `netsh http add urlacl`.

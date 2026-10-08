@@ -1,5 +1,5 @@
 import { ref, watch } from 'vue'
-import { unpaired } from './api'
+import { pcLocked, unpaired } from './api'
 import { createMockLink } from './mock'
 import { decode, encodeSubscribe, PROTOCOL_VERSION, Subscribe, type ServerMessage } from './protocol'
 
@@ -156,7 +156,9 @@ export function onChanged(listener: (topics: number) => void) {
 
 // Nothing is queued while the link is down: a burst of stale pointer moves or volume changes
 // landing seconds later would be worse than losing them.
+// Mouse, keyboard and volume (ops below 0x20) go nowhere while the PC is locked.
 export function send(bytes: Uint8Array) {
+  if (pcLocked.value && bytes[0] < 0x20) return
   if (open) socket?.send(bytes)
 }
 

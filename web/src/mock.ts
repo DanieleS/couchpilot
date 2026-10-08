@@ -66,9 +66,10 @@ function status(): Status {
     device: pairingRequired ? pairedDevice : null,
     // `?noach=1` pretends SuccessStory isn't installed.
     achievements: !new URLSearchParams(location.search).has('noach'),
-    // `?locked=1` pretends the PC is on the lock screen with unlocking set up and allowed here.
+    // `?locked=1` pretends the PC is on the lock screen with unlocking set up and allowed here;
+    // `?locked=view`, locked but this phone may not unlock it.
     locked: lockedPc,
-    unlock: lockedPc,
+    unlock: lockedPc && !lockedViewOnly,
     // `?nopads=1` pretends no controller is connected.
     controllers: new URLSearchParams(location.search).has('nopads')
       ? []
@@ -223,6 +224,7 @@ function mockCapture(gameIndex: number | null, at: Date, kind: Capture['kind'], 
 const pairingRequired = new URLSearchParams(location.search).has('pair')
 let pairedDevice: PairedDevice | null = null
 let lockedPc = new URLSearchParams(location.search).has('locked')
+const lockedViewOnly = new URLSearchParams(location.search).get('locked') === 'view'
 let pinPending = false
 let pinAttempts = 5
 const fail = (message: string, code: string, extra: Record<string, unknown> = {}) => Object.assign(new Error(message), { code, ...extra })

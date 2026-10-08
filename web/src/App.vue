@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ToastAction, ToastDescription, ToastProvider, ToastRoot, ToastTitle, ToastViewport } from 'reka-ui'
 import { computed, ref, watch } from 'vue'
-import { api, unpaired } from './api'
+import { api, pcLocked, unpaired } from './api'
 import type { AudioOutput, Capture, Game, Preset, RecentAchievement, RunningGame } from './types'
 import { useCouchPilot } from './store'
 import { useAchievements } from './achievements'
@@ -20,13 +20,14 @@ import ControlView from './components/ControlView.vue'
 import DisplaysView from './components/DisplaysView.vue'
 import GameSheet from './components/GameSheet.vue'
 import GamesView from './components/GamesView.vue'
+import LockNotice from './components/LockNotice.vue'
 import NamePrompt from './components/NamePrompt.vue'
 import StatsView from './components/StatsView.vue'
 import PresetAudioSheet from './components/PresetAudioSheet.vue'
 import TabBar, { type Tab } from './components/TabBar.vue'
 import { t } from './i18n'
 
-const { error, games, running, runningIds, act } = useCouchPilot()
+const { error, games, running, runningIds, status, act } = useCouchPilot()
 
 // The manifest's shortcuts (long press on the app's icon) open a tab straight away: /?tab=audio.
 function initialTab(): Tab {
@@ -257,7 +258,8 @@ const toastOpen = computed({
 <template>
   <PairingView v-if="unpaired" />
   <ToastProvider v-else :duration="4000" swipe-direction="down">
-    <main>
+    <main :class="{ locked: status?.locked }">
+      <LockNotice v-if="status?.locked" class="lock-notice" />
       <StatsView v-if="tab === 'games' && statsOpen" @back="statsOpen = false" @open="openGame" />
       <GalleryView v-else-if="tab === 'games' && galleryOpen" :game="galleryGame" @back="galleryOpen = false" @view="viewCapture" />
       <GamesView
@@ -284,7 +286,8 @@ const toastOpen = computed({
         @keep="keepDisplays"
         @revert="revertDisplays"
       />
-      <AudioView v-else-if="tab === 'audio'" />
+      <!-- Volume and devices are all commands: greyed out while the PC is locked. -->
+      <AudioView v-else-if="tab === 'audio'" :inert="pcLocked" :class="{ 'locked-off': pcLocked }" />
       <ControlView v-else />
     </main>
 
@@ -387,6 +390,12 @@ const toastOpen = computed({
 </template>
 
 <style>
+/* The lock notice sits above whichever tab is open; it takes the safe area, so the page under it
+   doesn't take it again. */
+.lock-notice { margin: var(--safe-top) var(--gutter) 0; }
+main.locked > .page { padding-top: 0; }
+.locked-off { opacity: 0.45; }
+
 .toast-viewport {
   position: fixed;
   inset: auto var(--gutter) calc(var(--nav-height) + var(--size-3));
