@@ -178,6 +178,9 @@ static bool JsonInt(const std::string &json, const char *key, int &out)
 PipeServer::~PipeServer()
 {
     Stop();
+    // Start may have read the secret and then failed before the thread ran, in which case Stop
+    // had nothing to do: wipe it either way.
+    if (!_secret.empty()) SecureZeroMemory(&_secret[0], _secret.size() * sizeof(wchar_t));
     if (_userSid) LocalFree(_userSid);
 }
 
@@ -198,7 +201,13 @@ bool PipeServer::Start(Handler handler)
         ((PipeServer *)p)->Run();
         return 0;
     }, this, 0, nullptr);
-    if (!_thread) { _running = false; return false; }
+    if (!_thread)
+    {
+        _running = false;
+        CloseHandle(_stopEvent);
+        _stopEvent = nullptr;
+        return false;
+    }
     return true;
 }
 
@@ -259,7 +268,17 @@ static int AwaitOverlapped(HANDLE pipe, HANDLE stopEvent, OVERLAPPED *ov, DWORD 
 {
     HANDLE waits[2] = { ov->hEvent, stopEvent };
     DWORD w = WaitForMultipleObjects(2, waits, FALSE, INFINITE);
-    if (w == WAIT_OBJECT_0 + 1) { CancelIoEx(pipe, ov); return 0; }
+    if (w == WAIT_OBJECT_0 + 1)
+    {
+        // Stop. Cancel the I/O and wait for the cancellation to land before returning: the
+        // OVERLAPPED and the buffer live on the caller's stack, and the kernel writes to both
+        // when the request completes, cancelled or not. Returning early would hand it a dead
+        // stack frame.
+        CancelIoEx(pipe, ov);
+        DWORD n = 0;
+        GetOverlappedResult(pipe, ov, &n, TRUE);
+        return 0;
+    }
     if (w != WAIT_OBJECT_0) return -1;
     DWORD n = 0;
     if (!GetOverlappedResult(pipe, ov, &n, FALSE)) return -1;

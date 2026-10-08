@@ -120,8 +120,9 @@ Everything on the Playnite side. It:
 - **holds the pipe's shared secret** (its own copy, DPAPI-protected the same way) so it can tell
   the real provider from an impostor: it makes the server prove it knows the secret before it ever
   sends the account over (see the handshake below);
-- **checks the password** when you first enable the feature, with a network `LogonUser`, so a typo
-  isn't saved to be rejected by LSA on every later tap;
+- **checks the password** when you first enable the feature, with `LogonUser` (a network logon,
+  then an interactive one if that is refused, since a Microsoft account may only take the latter;
+  the token is closed at once), so a typo isn't saved to be rejected by LSA on every later tap;
 - **answers `POST /api/unlock`**: when a paired, allowed phone asks and the PC is locked, it runs
   the handshake, sends the username and password to the proven provider, and reports whether the
   provider accepted the handoff (not whether the unlock itself succeeded — that shows on the PC's
@@ -146,7 +147,9 @@ password.
 - **DACL:** the pipe grants access only to SYSTEM and to the enrolled user's SID (captured at
   `register` time). A process running as anyone else can't even open it.
 - **Client:** CouchPilot, in your session. It connects at the `Identification` impersonation
-  level, so even a hostile server can't impersonate it beyond reading who it is.
+  level, so even a hostile server can't impersonate it beyond reading who it is, and it gives the
+  server a few seconds to answer each message: one that never does (a squatted name, a wedged
+  provider) makes the request fail as unavailable rather than hang.
 
 Two things have to be true before the password crosses the pipe, and neither trusts the pipe name
 alone: the server must prove it is the real provider (it holds the LSA secret), and the client
