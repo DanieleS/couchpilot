@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.IO.Pipes;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Security.Principal;
 using System.Text;
@@ -27,23 +28,38 @@ namespace CouchPilot.Unlock
     {
         private const string PipeName = "CouchPilotUnlock";
         private const int ProtocolVersion = 1;
-        // Must match CouchPilotUnlockSetup and the credential provider.
+        // The protocol, the CLSID and the LSA/registry names are a contract with the native side.
+        // Their source of truth is src/CouchPilotUnlock/Common.h and Guid.h (and docs/unlock.md);
+        // these copies must stay in step with them.
         private const string CredentialProviderKey =
             @"SOFTWARE\Microsoft\Windows\CurrentVersion\Authentication\Credential Providers\{B6F4C3A2-7E51-4A90-9C3D-1F8E2A6B5D04}";
 
         private static readonly ILogger logger = LogManager.GetLogger();
         private static readonly byte[] Entropy = Encoding.UTF8.GetBytes("CouchPilot.Unlock.v1");
 
-        private readonly string storePath;      // unlock.bin, DPAPI-sealed
+        [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+        private static extern bool LogonUser(string user, string domain, string password, int logonType, int logonProvider, out IntPtr token);
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool CloseHandle(IntPtr handle);
+        private const int LOGON32_LOGON_NETWORK = 3;
+        private const int LOGON32_PROVIDER_DEFAULT = 0;
+        private const int ERROR_LOGON_FAILURE = 1326;
+        private const int ERROR_ACCOUNT_RESTRICTION = 1327;
+
+        private readonly string storePath;      // unlock.bin: the secret and password, DPAPI-sealed
+        private readonly string accountPath;    // unlock-account.txt: the account name, in the clear (it's not a secret)
         private readonly string helperPath;     // CouchPilotUnlockSetup.exe, beside the extension
         private readonly LockState lockState;
+        private readonly Func<bool> pairingRequired;
         private readonly object gate = new object();
 
-        public UnlockService(string dataDir, string helperPath, LockState lockState)
+        public UnlockService(string dataDir, string helperPath, LockState lockState, Func<bool> pairingRequired)
         {
             storePath = Path.Combine(dataDir, "unlock.bin");
+            accountPath = Path.Combine(dataDir, "unlock-account.txt");
             this.helperPath = helperPath;
             this.lockState = lockState;
+            this.pairingRequired = pairingRequired;
         }
 
         // Raised when the feature is turned on or off, so the settings and the phones refresh.
@@ -59,13 +75,14 @@ namespace CouchPilot.Unlock
         // one is missing (an interrupted setup, a manual unregister) the feature is off.
         public bool Enabled => Available && File.Exists(storePath) && ProviderRegistered();
 
-        // The enrolled account, for the settings to show. Never the password.
+        // The enrolled account, for the settings to show. Read from the plaintext sidecar so
+        // showing the account never decrypts the password.
         public string Account
         {
             get
             {
-                var store = TryLoad();
-                return store?.Account;
+                try { return File.Exists(accountPath) ? File.ReadAllText(accountPath).Trim() : null; }
+                catch (Exception e) { logger.Warn(e, "Couldn't read the unlock account"); return null; }
             }
         }
 
@@ -107,6 +124,19 @@ namespace CouchPilot.Unlock
                 error = "An account and password are needed.";
                 return false;
             }
+            // Unlocking hands an account over to a phone, so it rides on the PIN pairing: without
+            // it, every phone on the network would be allowed. Require pairing to be on first.
+            if (pairingRequired != null && !pairingRequired())
+            {
+                error = "Turn on PIN pairing first (Phones → Ask new phones for a PIN): unlocking is granted per phone.";
+                return false;
+            }
+
+            account = account.Trim();
+
+            // Check the credentials before storing them: a wrong password here would be sent to
+            // LSA on every tap, walking the account toward its lockout threshold.
+            if (!ValidatePassword(account, password, out error)) return false;
 
             var secret = Convert.ToBase64String(RandomBytes(32));
             string sid;
@@ -140,28 +170,79 @@ namespace CouchPilot.Unlock
                     try { if (File.Exists(secretFile)) File.Delete(secretFile); } catch { }
                 }
 
-                var store = new Store { Account = account.Trim(), Secret = secret, Password = password };
-                Save(store);
+                // The provider is registered now: if sealing the store fails, roll it back so we
+                // don't leave the feature half-on (registered but no credentials).
+                try
+                {
+                    Save(new Store { Secret = secret, Password = password });
+                    File.WriteAllText(accountPath, account, new UTF8Encoding(false));
+                }
+                catch (Exception e)
+                {
+                    logger.Error(e, "Couldn't save the unlock store; rolling back the registration");
+                    RunHelper("unregister", out _);
+                    try { if (File.Exists(storePath)) File.Delete(storePath); } catch { }
+                    try { if (File.Exists(accountPath)) File.Delete(accountPath); } catch { }
+                    error = "Couldn't save the unlock settings.";
+                    return false;
+                }
             }
             Changed?.Invoke();
             return true;
         }
 
         // Turn it off: unregister the provider (one UAC prompt) and delete the sealed password.
-        public bool Disable()
+        // Only clears the local store once the helper has actually unregistered, so a cancelled
+        // UAC prompt leaves the feature as it was rather than silently half-off.
+        public bool Disable(out string error)
         {
+            error = null;
             lock (gate)
             {
-                RunHelper("unregister", out _);
+                if (!RunHelper("unregister", out var code) || code != 0)
+                {
+                    error = code == 1223 ? "Setup was cancelled." : "Removing the unlock component failed.";
+                    return false;
+                }
                 try { if (File.Exists(storePath)) File.Delete(storePath); }
                 catch (Exception e) { logger.Error(e, "Couldn't delete the unlock store"); }
+                try { if (File.Exists(accountPath)) File.Delete(accountPath); }
+                catch (Exception e) { logger.Error(e, "Couldn't delete the unlock account"); }
             }
             Changed?.Invoke();
             return true;
         }
 
-        // A paired, allowed phone asked to unlock. Decrypt, send to the provider, report the
-        // handoff (not the unlock's own success, which shows on the PC).
+        // True if the account and password really sign in. A network logon touches no session and
+        // leaves nothing behind. A plain wrong password (or wrong account) is rejected; a less
+        // usual failure (an account barred from network logon, say) is allowed through with a log
+        // line rather than blocking a valid setup.
+        private bool ValidatePassword(string account, string password, out string error)
+        {
+            error = null;
+            string domain, user;
+            var slash = account.IndexOf('\\');
+            if (slash >= 0) { domain = account.Substring(0, slash); user = account.Substring(slash + 1); }
+            else { domain = "."; user = account; }
+
+            if (LogonUser(user, domain, password, LOGON32_LOGON_NETWORK, LOGON32_PROVIDER_DEFAULT, out var token))
+            {
+                CloseHandle(token);
+                return true;
+            }
+            var err = Marshal.GetLastWin32Error();
+            if (err == ERROR_LOGON_FAILURE || err == ERROR_ACCOUNT_RESTRICTION)
+            {
+                error = "Windows didn't accept that account and password. For a Microsoft account use MicrosoftAccount\\your@email.";
+                return false;
+            }
+            logger.Warn($"Couldn't verify the unlock password (error {err}); accepting it anyway");
+            return true;
+        }
+
+        // A paired, allowed phone asked to unlock. Make the provider prove it holds the shared
+        // secret before sending the account over, then report the handoff (not the unlock's own
+        // success, which shows on the PC).
         public UnlockResult TryUnlock()
         {
             if (!lockState.Locked) return UnlockResult.NotLocked;
@@ -169,10 +250,14 @@ namespace CouchPilot.Unlock
 
             var store = TryLoad();
             if (store == null) return UnlockResult.Unavailable;
+            var account = Account;
+            if (string.IsNullOrEmpty(account)) return UnlockResult.Unavailable;
 
             try
             {
-                using (var pipe = new NamedPipeClientStream(".", PipeName, PipeDirection.InOut))
+                // Identification level: a hostile server that squatted the pipe can't impersonate
+                // us beyond identifying who we are.
+                using (var pipe = new NamedPipeClientStream(".", PipeName, PipeDirection.InOut, PipeOptions.None, TokenImpersonationLevel.Identification))
                 {
                     try
                     {
@@ -180,20 +265,29 @@ namespace CouchPilot.Unlock
                     }
                     catch (TimeoutException)
                     {
-                        // No pipe: the lock screen (and so the provider) isn't up.
-                        return UnlockResult.NotLocked;
+                        // The PC is locked (checked above) but no pipe answered: the provider isn't
+                        // up (not registered, Hello-only, not loaded). That's "unavailable", not a
+                        // claim that the PC isn't locked.
+                        return UnlockResult.Unavailable;
                     }
                     pipe.ReadMode = PipeTransmissionMode.Message;
 
-                    // Built by hand so the field names are exactly what the provider parses (v,
-                    // secret, user, password), independent of any serializer's casing.
-                    var request = "{\"v\":" + ProtocolVersion
-                        + ",\"secret\":\"" + JsonEscape(store.Secret) + "\""
-                        + ",\"user\":\"" + JsonEscape(store.Account) + "\""
-                        + ",\"password\":\"" + JsonEscape(store.Password) + "\"}";
+                    // 1. Hello with a fresh nonce.
+                    var nonce = Convert.ToBase64String(RandomBytes(32));
+                    WriteJson(pipe, "{\"v\":" + ProtocolVersion + ",\"nonce\":\"" + JsonEscape(nonce) + "\"}");
+
+                    // 2. The provider proves it holds the secret over our nonce. If the proof is
+                    //    wrong or missing, something other than the real provider answered: stop,
+                    //    don't send the password.
+                    var challenge = ReadMessage(pipe) ?? "";
+                    if (!ProofValid(challenge, store.Secret, nonce)) return UnlockResult.Unavailable;
+
+                    // 3. Now send the credentials.
+                    var request = "{\"user\":\"" + JsonEscape(account) + "\",\"password\":\"" + JsonEscape(store.Password) + "\"}";
                     var bytes = Encoding.UTF8.GetBytes(request);
                     pipe.Write(bytes, 0, bytes.Length);
                     pipe.Flush();
+                    Array.Clear(bytes, 0, bytes.Length);
 
                     var reply = ReadMessage(pipe) ?? "";
                     // { "ok": true } is the only success; everything else is a refusal.
@@ -205,6 +299,49 @@ namespace CouchPilot.Unlock
                 logger.Error(e, "Unlock over the pipe failed");
                 return UnlockResult.Unavailable;
             }
+        }
+
+        private static void WriteJson(NamedPipeClientStream pipe, string json)
+        {
+            var bytes = Encoding.UTF8.GetBytes(json);
+            pipe.Write(bytes, 0, bytes.Length);
+            pipe.Flush();
+        }
+
+        // The provider's proof is HMAC-SHA256(key = UTF8(secret), data = ASCII(nonce)), base64.
+        private static bool ProofValid(string challenge, string secret, string nonce)
+        {
+            var proof = JsonField(challenge, "proof");
+            if (string.IsNullOrEmpty(proof)) return false;
+            string expected;
+            using (var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(secret)))
+            {
+                expected = Convert.ToBase64String(hmac.ComputeHash(Encoding.ASCII.GetBytes(nonce)));
+            }
+            return FixedTimeEquals(proof, expected);
+        }
+
+        private static bool FixedTimeEquals(string a, string b)
+        {
+            if (a.Length != b.Length) return false;
+            int diff = 0;
+            for (int i = 0; i < a.Length; i++) diff |= a[i] ^ b[i];
+            return diff == 0;
+        }
+
+        // Pulls one string value out of a flat JSON object. Enough for the provider's one-field replies.
+        private static string JsonField(string json, string key)
+        {
+            var needle = "\"" + key + "\"";
+            var k = json.IndexOf(needle, StringComparison.Ordinal);
+            if (k < 0) return null;
+            var c = json.IndexOf(':', k + needle.Length);
+            if (c < 0) return null;
+            var q = json.IndexOf('"', c + 1);
+            if (q < 0) return null;
+            var end = json.IndexOf('"', q + 1);
+            if (end < 0) return null;
+            return json.Substring(q + 1, end - q - 1);
         }
 
         private static string ReadMessage(NamedPipeClientStream pipe)
@@ -314,9 +451,9 @@ namespace CouchPilot.Unlock
         }
 
         // Sealed with DPAPI (CurrentUser): only this Windows account on this PC can read it back.
+        // The account name lives in a plaintext sidecar instead, so reading it never unseals this.
         private class Store
         {
-            public string Account { get; set; }
             public string Secret { get; set; }
             public string Password { get; set; }
         }

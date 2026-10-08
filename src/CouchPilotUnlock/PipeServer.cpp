@@ -4,9 +4,14 @@
 #include <ntsecapi.h>
 #include <sddl.h>
 #include <aclapi.h>
+#include <bcrypt.h>
+#include <wincrypt.h>
 #include <vector>
+#include <string>
 
 #pragma comment(lib, "advapi32.lib")
+#pragma comment(lib, "bcrypt.lib")
+#pragma comment(lib, "crypt32.lib")
 
 // ---- LSA secret retrieval ---------------------------------------------------------------------
 
@@ -38,21 +43,69 @@ static bool ReadLsaSecret(_In_ PCWSTR key, _Out_ std::wstring &value)
         return false;
 
     value.assign(data->Buffer, data->Length / sizeof(wchar_t));
-    // Wipe and free the copy LSA handed us.
     SecureZeroMemory(data->Buffer, data->MaximumLength);
     LsaFreeMemory(data);
     return !value.empty();
 }
 
-// ---- tiny JSON (the request is produced by CouchPilot, a flat object of strings and one int) ---
+// ---- crypto -----------------------------------------------------------------------------------
 
-static std::string Utf8Of(HANDLE pipe, DWORD cb, const BYTE *buf)
+static std::string NarrowAscii(const std::wstring &w)
 {
-    (void)pipe;
-    return std::string((const char *)buf, cb);
+    std::string s;
+    s.reserve(w.size());
+    for (wchar_t c : w) s.push_back((char)(c & 0x7f));
+    return s;
 }
 
-// Finds "key" and returns its string value, JSON-unescaped, as UTF-16. Returns false if absent.
+static std::string Utf8Of(const std::wstring &w)
+{
+    if (w.empty()) return std::string();
+    int n = WideCharToMultiByte(CP_UTF8, 0, w.data(), (int)w.size(), nullptr, 0, nullptr, nullptr);
+    std::string s(n, '\0');
+    WideCharToMultiByte(CP_UTF8, 0, w.data(), (int)w.size(), &s[0], n, nullptr, nullptr);
+    return s;
+}
+
+static std::string Base64(const BYTE *data, DWORD len)
+{
+    DWORD cch = 0;
+    if (!CryptBinaryToStringA(data, len, CRYPT_STRING_BASE64 | CRYPT_STRING_NOCRLF, nullptr, &cch))
+        return std::string();
+    std::string out(cch, '\0');
+    if (!CryptBinaryToStringA(data, len, CRYPT_STRING_BASE64 | CRYPT_STRING_NOCRLF, &out[0], &cch))
+        return std::string();
+    out.resize(cch);
+    return out;
+}
+
+// HMAC-SHA256(key, data) → 32 bytes, base64. The key is the UTF-8 of the base64 secret; the data
+// is the client's nonce. Only the real provider, holding the LSA secret, can produce this, which
+// is how CouchPilot tells the genuine server from a pipe squatter before it sends the password.
+static std::string HmacProof(const std::string &key, const std::string &data)
+{
+    BCRYPT_ALG_HANDLE alg = nullptr;
+    if (BCryptOpenAlgorithmProvider(&alg, BCRYPT_SHA256_ALGORITHM, nullptr, BCRYPT_ALG_HANDLE_HMAC_FLAG) != 0)
+        return std::string();
+
+    std::string proof;
+    BCRYPT_HASH_HANDLE hash = nullptr;
+    if (BCryptCreateHash(alg, &hash, nullptr, 0, (PUCHAR)key.data(), (ULONG)key.size(), 0) == 0)
+    {
+        BYTE out[32];
+        if (BCryptHashData(hash, (PUCHAR)data.data(), (ULONG)data.size(), 0) == 0 &&
+            BCryptFinishHash(hash, out, sizeof(out), 0) == 0)
+        {
+            proof = Base64(out, sizeof(out));
+        }
+        BCryptDestroyHash(hash);
+    }
+    BCryptCloseAlgorithmProvider(alg, 0);
+    return proof;
+}
+
+// ---- tiny JSON (requests are produced by CouchPilot, flat objects of strings and one int) ------
+
 static bool JsonString(const std::string &json, const char *key, std::wstring &out)
 {
     std::string needle = std::string("\"") + key + "\"";
@@ -85,7 +138,6 @@ static bool JsonString(const std::string &json, const char *key, std::wstring &o
                 if (i + 4 < json.size())
                 {
                     wchar_t code = (wchar_t)wcstoul(std::wstring(json.begin() + i + 1, json.begin() + i + 5).c_str(), nullptr, 16);
-                    // Re-encode the single code unit as UTF-8 into val (BMP only; enough here).
                     char u8[4]; int n = WideCharToMultiByte(CP_UTF8, 0, &code, 1, u8, sizeof(u8), nullptr, nullptr);
                     val.append(u8, n);
                     i += 4;
@@ -121,15 +173,6 @@ static bool JsonInt(const std::string &json, const char *key, int &out)
     return true;
 }
 
-// Length-independent compare, so a reject doesn't leak where it differed.
-static bool SecretEquals(const std::wstring &a, const std::wstring &b)
-{
-    if (a.size() != b.size()) return false;
-    unsigned diff = 0;
-    for (size_t i = 0; i < a.size(); ++i) diff |= (unsigned)(a[i] ^ b[i]);
-    return diff == 0;
-}
-
 // ---- the server -------------------------------------------------------------------------------
 
 PipeServer::~PipeServer()
@@ -142,13 +185,12 @@ bool PipeServer::Start(Handler handler)
 {
     if (_running) return true;
 
-    std::wstring sidStr;
     if (!ReadLsaSecret(COUCHPILOT_SECRET_KEY, _secret)) return false;
-    if (!ReadLsaSecret(COUCHPILOT_USER_KEY, sidStr)) return false;
-    if (!ConvertStringSidToSidW(sidStr.c_str(), &_userSid)) return false;
+    if (!ReadLsaSecret(COUCHPILOT_USER_KEY, _userSidString)) return false;
+    if (!ConvertStringSidToSidW(_userSidString.c_str(), &_userSid)) return false;
 
     _handler = handler;
-    _stopEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+    _stopEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);  // manual-reset
     if (!_stopEvent) return false;
 
     _running = true;
@@ -164,13 +206,10 @@ void PipeServer::Stop()
 {
     if (!_running) return;
     _running = false;
-    if (_stopEvent) SetEvent(_stopEvent);
-    // Nudge a blocked ConnectNamedPipe by poking the pipe.
-    HANDLE poke = CreateFileW(COUCHPILOT_PIPE_NAME, GENERIC_READ, 0, nullptr, OPEN_EXISTING, 0, nullptr);
-    if (poke != INVALID_HANDLE_VALUE) CloseHandle(poke);
-    if (_thread) { WaitForSingleObject(_thread, 5000); CloseHandle(_thread); _thread = nullptr; }
+    if (_stopEvent) SetEvent(_stopEvent);     // wakes the overlapped waits and the retry sleep
+    if (_thread) { WaitForSingleObject(_thread, INFINITE); CloseHandle(_thread); _thread = nullptr; }
     if (_stopEvent) { CloseHandle(_stopEvent); _stopEvent = nullptr; }
-    SecureZeroMemory(&_secret[0], _secret.size() * sizeof(wchar_t));
+    if (!_secret.empty()) SecureZeroMemory(&_secret[0], _secret.size() * sizeof(wchar_t));
     _secret.clear();
 }
 
@@ -215,35 +254,68 @@ static PSECURITY_DESCRIPTOR BuildPipeSd(PSID userSid, PACL *aclOut)
     return sd;
 }
 
+// Waits for an overlapped op, or for Stop. Returns 1 done (bytes in *transferred), 0 stop, -1 error.
+static int AwaitOverlapped(HANDLE pipe, HANDLE stopEvent, OVERLAPPED *ov, DWORD *transferred)
+{
+    HANDLE waits[2] = { ov->hEvent, stopEvent };
+    DWORD w = WaitForMultipleObjects(2, waits, FALSE, INFINITE);
+    if (w == WAIT_OBJECT_0 + 1) { CancelIoEx(pipe, ov); return 0; }
+    if (w != WAIT_OBJECT_0) return -1;
+    DWORD n = 0;
+    if (!GetOverlappedResult(pipe, ov, &n, FALSE)) return -1;
+    if (transferred) *transferred = n;
+    return 1;
+}
+
 void PipeServer::Run()
 {
     while (_running)
     {
         PACL acl = nullptr;
         PSECURITY_DESCRIPTOR sd = BuildPipeSd(_userSid, &acl);
-        if (!sd) { Sleep(500); continue; }
+        if (!sd) { WaitForSingleObject(_stopEvent, 500); continue; }
 
         SECURITY_ATTRIBUTES sa;
         sa.nLength = sizeof(sa);
         sa.bInheritHandle = FALSE;
         sa.lpSecurityDescriptor = sd;
 
+        // FIRST_PIPE_INSTANCE: if someone squatted the name, this fails rather than sharing it —
+        // we never serve, so nothing is disclosed, and the normal sign-in methods still work.
         HANDLE pipe = CreateNamedPipeW(
             COUCHPILOT_PIPE_NAME,
-            PIPE_ACCESS_DUPLEX,
+            PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED | FILE_FLAG_FIRST_PIPE_INSTANCE,
             PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT | PIPE_REJECT_REMOTE_CLIENTS,
             1, 8192, 8192, 0, &sa);
 
         LocalFree(sd);
         LocalFree(acl);
 
-        if (pipe == INVALID_HANDLE_VALUE) { Sleep(500); continue; }
+        if (pipe == INVALID_HANDLE_VALUE) { WaitForSingleObject(_stopEvent, 500); continue; }
 
-        if (ConnectNamedPipe(pipe, nullptr) || GetLastError() == ERROR_PIPE_CONNECTED)
+        HANDLE ioEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+        if (!ioEvent) { CloseHandle(pipe); WaitForSingleObject(_stopEvent, 500); continue; }
+
+        OVERLAPPED ov;
+        ZeroMemory(&ov, sizeof(ov));
+        ov.hEvent = ioEvent;
+
+        BOOL connected = ConnectNamedPipe(pipe, &ov);
+        DWORD err = GetLastError();
+        bool ready = false;
+        if (connected) ready = true;
+        else if (err == ERROR_PIPE_CONNECTED) ready = true;
+        else if (err == ERROR_IO_PENDING)
         {
-            if (_running) ServeOne(pipe);
+            int r = AwaitOverlapped(pipe, _stopEvent, &ov, nullptr);
+            if (r == 0) { CloseHandle(ioEvent); CloseHandle(pipe); break; }  // stop
+            ready = (r == 1);
         }
+
+        if (ready && _running) ServeOne(pipe, ioEvent);
+
         DisconnectNamedPipe(pipe);
+        CloseHandle(ioEvent);
         CloseHandle(pipe);
     }
 }
@@ -275,63 +347,86 @@ static bool CallerIsEnrolledUser(HANDLE pipe, PSID enrolled)
     return ok;
 }
 
-static void WriteResponse(HANDLE pipe, const char *json)
-{
-    DWORD written = 0;
-    WriteFile(pipe, json, (DWORD)strlen(json), &written, nullptr);
-    FlushFileBuffers(pipe);
-}
-
-void PipeServer::ServeOne(HANDLE pipe)
+// Reads one message into a std::string, honouring Stop. Returns false on stop or error.
+static bool ReadMsg(HANDLE pipe, HANDLE stopEvent, HANDLE ioEvent, std::string &out)
 {
     BYTE buf[8192];
+    ResetEvent(ioEvent);
+    OVERLAPPED ov; ZeroMemory(&ov, sizeof(ov)); ov.hEvent = ioEvent;
     DWORD read = 0;
-    if (!ReadFile(pipe, buf, sizeof(buf) - 1, &read, nullptr) || read == 0)
-        return;
+    BOOL ok = ReadFile(pipe, buf, sizeof(buf), &read, &ov);
+    if (!ok && GetLastError() == ERROR_IO_PENDING)
+    {
+        if (AwaitOverlapped(pipe, stopEvent, &ov, &read) != 1) return false;
+        ok = TRUE;
+    }
+    if (!ok || read == 0) { SecureZeroMemory(buf, sizeof(buf)); return false; }
+    out.assign((const char *)buf, read);
+    SecureZeroMemory(buf, sizeof(buf));
+    return true;
+}
 
-    std::string json = Utf8Of(pipe, read, buf);
+static bool WriteMsg(HANDLE pipe, HANDLE stopEvent, HANDLE ioEvent, const char *json)
+{
+    ResetEvent(ioEvent);
+    OVERLAPPED ov; ZeroMemory(&ov, sizeof(ov)); ov.hEvent = ioEvent;
+    DWORD written = 0;
+    BOOL ok = WriteFile(pipe, json, (DWORD)strlen(json), &written, &ov);
+    if (!ok && GetLastError() == ERROR_IO_PENDING)
+        ok = (AwaitOverlapped(pipe, stopEvent, &ov, &written) == 1);
+    return ok == TRUE;
+}
+
+void PipeServer::ServeOne(HANDLE pipe, HANDLE ioEvent)
+{
+    // 1. The client's hello with its nonce.
+    std::string hello;
+    if (!ReadMsg(pipe, _stopEvent, ioEvent, hello)) return;
 
     if (!CallerIsEnrolledUser(pipe, _userSid))
     {
-        WriteResponse(pipe, "{\"ok\":false,\"code\":\"denied\"}");
+        WriteMsg(pipe, _stopEvent, ioEvent, "{\"ok\":false,\"code\":\"denied\"}");
         return;
     }
 
     int v = 0;
-    std::wstring secret, user, password;
-    bool parsed = JsonInt(json, "v", v) &&
-        JsonString(json, "secret", secret) &&
-        JsonString(json, "user", user) &&
-        JsonString(json, "password", password);
-
-    // Wipe the raw request now that we've lifted what we need.
-    SecureZeroMemory(buf, sizeof(buf));
-    SecureZeroMemory(&json[0], json.size());
-
-    if (!parsed)
+    std::wstring nonce;
+    if (!JsonInt(hello, "v", v) || !JsonString(hello, "nonce", nonce))
     {
-        WriteResponse(pipe, "{\"ok\":false,\"code\":\"bad-request\"}");
-        if (!password.empty()) SecureZeroMemory(&password[0], password.size() * sizeof(wchar_t));
+        WriteMsg(pipe, _stopEvent, ioEvent, "{\"ok\":false,\"code\":\"bad-request\"}");
         return;
     }
     if (v != COUCHPILOT_PROTOCOL_VERSION)
     {
-        WriteResponse(pipe, "{\"ok\":false,\"code\":\"bad-version\"}");
-        SecureZeroMemory(&password[0], password.size() * sizeof(wchar_t));
+        WriteMsg(pipe, _stopEvent, ioEvent, "{\"ok\":false,\"code\":\"bad-version\"}");
         return;
     }
-    if (!SecretEquals(secret, _secret))
+
+    // 2. Prove we hold the secret over the client's nonce, so it knows we're the real provider
+    //    before it sends anything sensitive.
+    std::string proof = HmacProof(Utf8Of(_secret), NarrowAscii(nonce));
+    if (proof.empty()) return;
+    std::string challenge = "{\"proof\":\"" + proof + "\"}";
+    if (!WriteMsg(pipe, _stopEvent, ioEvent, challenge.c_str())) return;
+
+    // 3. The credentials, now that we're trusted.
+    std::string creds;
+    if (!ReadMsg(pipe, _stopEvent, ioEvent, creds)) return;
+
+    std::wstring user, password;
+    bool parsed = JsonString(creds, "user", user) && JsonString(creds, "password", password);
+    SecureZeroMemory(&creds[0], creds.size());
+
+    if (!parsed)
     {
-        WriteResponse(pipe, "{\"ok\":false,\"code\":\"denied\"}");
-        SecureZeroMemory(&password[0], password.size() * sizeof(wchar_t));
+        WriteMsg(pipe, _stopEvent, ioEvent, "{\"ok\":false,\"code\":\"bad-request\"}");
+        if (!password.empty()) SecureZeroMemory(&password[0], password.size() * sizeof(wchar_t));
         return;
     }
 
     UnlockOutcome outcome = _handler ? _handler(user, password) : UnlockOutcome::Busy;
-
-    // The handler copied what it needs; clear ours.
     SecureZeroMemory(&password[0], password.size() * sizeof(wchar_t));
-    SecureZeroMemory(&secret[0], secret.size() * sizeof(wchar_t));
 
-    WriteResponse(pipe, outcome == UnlockOutcome::Ok ? "{\"ok\":true}" : "{\"ok\":false,\"code\":\"busy\"}");
+    WriteMsg(pipe, _stopEvent, ioEvent,
+        outcome == UnlockOutcome::Ok ? "{\"ok\":true}" : "{\"ok\":false,\"code\":\"busy\"}");
 }

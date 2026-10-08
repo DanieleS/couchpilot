@@ -4,6 +4,11 @@
 #include "CredPacking.h"
 
 #include <ntsecapi.h>
+#include <new>
+
+// Defined in Dll.cpp: keep the module loaded while a credential (or its watchdog thread) lives.
+extern void DllAddRef();
+extern void DllRelease();
 
 // The one field: a hidden label. LogonUI requires at least one descriptor; the user never sees it.
 // const_cast so the string literal fits pszLabel's LPWSTR without a conversion warning; the array
@@ -25,20 +30,23 @@ static HRESULT CopyString(PCWSTR in, PWSTR *out)
 }
 
 CouchPilotCredential::CouchPilotCredential()
-    : _cRef(1), _cpus(CPUS_INVALID), _armed(false), _user(nullptr), _password(nullptr)
+    : _cRef(1), _cpus(CPUS_INVALID), _armed(false), _armGen(0),
+      _user(nullptr), _password(nullptr), _userSid(nullptr)
 {
+    DllAddRef();
     InitializeCriticalSection(&_lock);
 }
 
 CouchPilotCredential::~CouchPilotCredential()
 {
     ClearCredentials();
+    if (_userSid) { CoTaskMemFree(_userSid); _userSid = nullptr; }
     DeleteCriticalSection(&_lock);
+    DllRelease();
 }
 
-void CouchPilotCredential::ClearCredentials()
+void CouchPilotCredential::ClearLocked()
 {
-    EnterCriticalSection(&_lock);
     if (_password)
     {
         SecureZeroMemory(_password, wcslen(_password) * sizeof(wchar_t));
@@ -47,6 +55,49 @@ void CouchPilotCredential::ClearCredentials()
     }
     if (_user) { CoTaskMemFree(_user); _user = nullptr; }
     _armed = false;
+}
+
+void CouchPilotCredential::ClearCredentials()
+{
+    EnterCriticalSection(&_lock);
+    ClearLocked();
+    LeaveCriticalSection(&_lock);
+}
+
+void CouchPilotCredential::Disarm()
+{
+    EnterCriticalSection(&_lock);
+    _armGen++;      // make any pending watchdog a no-op
+    ClearLocked();
+    LeaveCriticalSection(&_lock);
+}
+
+void CouchPilotCredential::SetUserSid(PCWSTR sid)
+{
+    EnterCriticalSection(&_lock);
+    if (_userSid) { CoTaskMemFree(_userSid); _userSid = nullptr; }
+    if (sid && *sid) CopyString(sid, &_userSid);
+    LeaveCriticalSection(&_lock);
+}
+
+struct WatchdogArg { CouchPilotCredential *self; LONG gen; };
+
+DWORD WINAPI CouchPilotCredential::WatchdogThunk(LPVOID param)
+{
+    WatchdogArg *arg = (WatchdogArg *)param;
+    arg->self->Watchdog(arg->gen);
+    arg->self->Release();   // the ref Arm took for this thread
+    delete arg;
+    return 0;
+}
+
+// Give LogonUI a while to consume the armed credential; if it never does (no Advise yet, the
+// screen dimmed, another tile was chosen), clear it so the next request isn't refused as "busy".
+void CouchPilotCredential::Watchdog(LONG gen)
+{
+    Sleep(ArmTimeoutMs);
+    EnterCriticalSection(&_lock);
+    if (_armed && _armGen == gen) ClearLocked();
     LeaveCriticalSection(&_lock);
 }
 
@@ -60,8 +111,17 @@ bool CouchPilotCredential::Arm(PCWSTR user, PCWSTR password)
 
     bool ok = SUCCEEDED(CopyString(user, &_user)) && SUCCEEDED(CopyString(password, &_password));
     _armed = ok;
+    LONG gen = ++_armGen;
     LeaveCriticalSection(&_lock);
-    return ok;
+    if (!ok) { ClearCredentials(); return false; }
+
+    // Watchdog holds a ref so it can't touch a freed credential.
+    AddRef();
+    WatchdogArg *arg = new (std::nothrow) WatchdogArg{ this, gen };
+    HANDLE t = arg ? CreateThread(nullptr, 0, WatchdogThunk, arg, 0, nullptr) : nullptr;
+    if (t) CloseHandle(t);
+    else { if (arg) delete arg; Release(); }
+    return true;
 }
 
 // IUnknown
@@ -163,8 +223,21 @@ IFACEMETHODIMP CouchPilotCredential::GetSerialization(
         pcpcs->ulAuthenticationPackage = authPackage;
         pcpcs->clsidCredentialProvider = CLSID_CouchPilotUnlock;
         pcpcs->rgbSerialization = rgb;
-        pcpcs->cb = cb;
+        pcpcs->cbSerialization = cb;
         *pcpgsr = CPGSR_RETURN_CREDENTIAL_FINISHED;
+    }
+    else
+    {
+        // Packing failed: tell LogonUI there's nothing to submit (so it doesn't act on an
+        // uninitialised response) and show why. Returning S_OK keeps the lock screen healthy.
+        *pcpgsr = CPGSR_NO_CREDENTIAL_NOT_FINISHED;
+        if (ppwszOptionalStatusText && pcpsiOptionalStatusIcon &&
+            SUCCEEDED(CopyString(L"CouchPilot couldn't prepare the sign-in.", ppwszOptionalStatusText)))
+        {
+            *pcpsiOptionalStatusIcon = CPSI_ERROR;
+        }
+        if (rgb) CoTaskMemFree(rgb);
+        hr = S_OK;
     }
 
     if (domain) CoTaskMemFree(domain);
@@ -190,7 +263,15 @@ IFACEMETHODIMP CouchPilotCredential::ReportResult(NTSTATUS, NTSTATUS,
 
 IFACEMETHODIMP CouchPilotCredential::GetUserSid(PWSTR *ppszSid)
 {
-    // Not tied to a particular user tile: the account comes from the phone at submit time.
     *ppszSid = nullptr;
-    return S_FALSE;
+    EnterCriticalSection(&_lock);
+    HRESULT hr = S_FALSE;   // no SID known: a generic, "other user" credential
+    if (_userSid)
+    {
+        if (SUCCEEDED(CopyString(_userSid, ppszSid))) hr = S_OK;
+    }
+    LeaveCriticalSection(&_lock);
+    // Binding to the enrolled user's SID keeps the tile off "Other user" and lets auto-logon
+    // land on the locked user's own tile.
+    return hr;
 }

@@ -103,8 +103,7 @@ HRESULT ProtectIfNecessaryAndCopyPassword(
 
     // Already protected (we never hand it one, but the contract allows it): copy as is.
     CRED_PROTECTION_TYPE protectionType;
-    if (CredIsProtectedW((PWSTR)password, &protectionType) &&
-        (protectionType == CredUsernameTarget || protectionType == CredTrustedProtection))
+    if (CredIsProtectedW((PWSTR)password, &protectionType) && protectionType != CredUnprotected)
     {
         return DupString(password, protectedPassword);
     }

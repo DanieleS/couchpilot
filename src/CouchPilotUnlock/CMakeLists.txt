@@ -15,15 +15,17 @@ add_library(CouchPilotUnlock SHARED
     CouchPilotUnlock.def
 )
 
-target_compile_definitions(CouchPilotUnlock PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN)
+target_compile_definitions(CouchPilotUnlock PRIVATE UNICODE _UNICODE)
 
-# Unicode entry point aside, the libraries the provider leans on: COM, LSA/secur32, credentials,
-# and ACL/SID helpers (advapi32, pulled by PipeServer and CredPacking's pragmas too).
+# The libraries the provider leans on: COM, LSA/secur32, credentials, ACL/SID helpers (advapi32),
+# HMAC for the pipe handshake (bcrypt) and base64 (crypt32).
 target_link_libraries(CouchPilotUnlock PRIVATE
     advapi32
     secur32
     credui
     ole32
+    bcrypt
+    crypt32
 )
 
 set_target_properties(CouchPilotUnlock PROPERTIES

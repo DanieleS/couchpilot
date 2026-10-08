@@ -117,91 +117,92 @@ Everything on the Playnite side. It:
   can turn it back into the password. While the PC is locked you are still signed in, so your
   DPAPI key is available and CouchPilot can decrypt it; this is exactly the window in which it
   needs to;
-- **holds the pipe's shared secret** (its own copy, DPAPI-protected the same way) so it can prove
-  to the provider that an unlock request really came from CouchPilot and not from some other
-  process that found the pipe;
-- **answers `POST /api/unlock`**: when a paired, allowed phone asks and the PC is locked, it
-  decrypts the password, connects to the provider's pipe, sends the secret + username + password,
-  and reports back whether the provider accepted the handoff (not whether the unlock itself
-  succeeded — that shows on the PC's screen a moment later).
+- **holds the pipe's shared secret** (its own copy, DPAPI-protected the same way) so it can tell
+  the real provider from an impostor: it makes the server prove it knows the secret before it ever
+  sends the account over (see the handshake below);
+- **checks the password** when you first enable the feature, with a network `LogonUser`, so a typo
+  isn't saved to be rejected by LSA on every later tap;
+- **answers `POST /api/unlock`**: when a paired, allowed phone asks and the PC is locked, it runs
+  the handshake, sends the username and password to the proven provider, and reports whether the
+  provider accepted the handoff (not whether the unlock itself succeeded — that shows on the PC's
+  screen a moment later).
 
-The password is only ever in CouchPilot's memory for the few milliseconds of a handoff, and is
-wiped after. It never reaches the phone, and the phone never sends a password — it sends only
-"please unlock," authenticated by the pairing it already has.
+The password lives in CouchPilot's memory only for the span of a handoff. (It's a managed .NET
+string, so it can't be reliably zeroed; what CouchPilot can clear — the request byte buffers — it
+does.) It never reaches the phone, and the phone never sends a password — it sends only "please
+unlock," authenticated by the pairing it already has. The enrolled account name is kept in the
+clear in a sidecar file (it isn't a secret), so showing it in the settings never has to unseal the
+password.
 
 ## The pipe protocol
 
 - **Name:** `\\.\pipe\CouchPilotUnlock`. Message-mode, duplex, one client at a time.
 - **Server:** the credential provider. It creates the pipe when a logon/unlock scenario begins
   and closes it when the scenario ends, so the pipe exists exactly while the lock screen is up —
-  which is exactly when the phone would ask. CouchPilot connecting at any other time simply finds
-  no pipe, and reports the PC isn't on the lock screen.
+  which is exactly when the phone would ask. It creates it with `FIRST_PIPE_INSTANCE`, so if some
+  other process has squatted the name the provider fails to open it and simply never serves —
+  nothing is disclosed, and the normal sign-in methods still work. CouchPilot connecting when no
+  pipe is up reports unlocking unavailable.
 - **DACL:** the pipe grants access only to SYSTEM and to the enrolled user's SID (captured at
   `register` time). A process running as anyone else can't even open it.
-- **Client:** CouchPilot, in your session.
+- **Client:** CouchPilot, in your session. It connects at the `Identification` impersonation
+  level, so even a hostile server can't impersonate it beyond reading who it is.
 
-On top of the DACL, every request carries the shared secret, and the server also checks the
-client process is the enrolled user. Two independent gates: the OS won't let a stranger open the
-pipe, and even a same-user process can't drive it without the secret, which lives DPAPI-sealed in
-CouchPilot and as an LSA secret in the provider.
+Two things have to be true before the password crosses the pipe, and neither trusts the pipe name
+alone: the server must prove it is the real provider (it holds the LSA secret), and the client
+must be the enrolled user (the DACL, plus an impersonation check on the server). So the exchange
+is a three-step handshake, not a single message.
 
-### Request (phone side → provider)
+### The handshake
 
-One message, UTF-8 JSON:
+1. **Client → server**, UTF-8 JSON: `{ "v": 1, "nonce": "<base64, 32 bytes>" }`. A fresh random
+   nonce each time. `v` is the protocol version; a server that doesn't know it answers
+   `bad-version`.
+2. **Server → client**: `{ "proof": "<base64>" }`, where `proof` is
+   `HMAC-SHA256(key = utf8(secret), msg = ascii(nonce))`. Only the real provider, holding the
+   secret as an LSA secret, can compute it. The client recomputes it and compares in constant
+   time; a mismatch (or a squatter that can't answer) means *stop* — the password is never sent.
+3. **Client → server**: `{ "user": "DOMAIN\\name", "password": "…" }`, now that the server is
+   proven. `.` or an empty domain means the local machine.
 
-```json
-{ "v": 1, "secret": "<base64, 32 bytes>", "user": "DOMAIN\\name", "password": "…" }
-```
+The secret itself never travels the pipe; it's only ever an HMAC key on both ends.
 
-- `v` — protocol version, `1`. A provider that doesn't recognise it answers `bad-version`.
-- `secret` — the shared secret established at enrollment, base64. Wrong or missing → `denied`.
-- `user` — the account to sign in. `.` or an empty domain means the local machine.
-- `password` — the account password.
+### Response (server → client)
 
-### Response (provider → phone side)
-
-One message, UTF-8 JSON:
-
-```json
-{ "ok": true }
-```
-
-or
-
-```json
-{ "ok": false, "code": "denied" }
-```
+One message, UTF-8 JSON — `{ "ok": true }`, or `{ "ok": false, "code": "…" }`:
 
 | `code` | Meaning |
 |---|---|
-| `denied` | the secret didn't match, or the client isn't the enrolled user |
+| `denied` | the client isn't the enrolled user |
 | `bad-version` | the provider doesn't speak this `v` |
-| `bad-request` | the message didn't parse |
-| `busy` | an unlock is already in flight |
+| `bad-request` | a message didn't parse |
+| `busy` | an unlock is already in flight, or there's no events sink to submit through |
 
 `ok: true` means the provider has accepted the credentials and asked LogonUI to submit them. It
 does **not** mean the password was right: a wrong password fails on the PC's screen like any
-other, and the PC stays locked. CouchPilot reports the handoff, not the verdict.
-
-The password field is overwritten in both processes as soon as it's been used.
+other, and the PC stays locked. CouchPilot reports the handoff, not the verdict. An armed
+credential that LogonUI never consumes disarms itself after half a minute, so a request that goes
+nowhere doesn't wedge the tile or leave the password in the provider's memory.
 
 ## `POST /api/unlock`
 
 Behind the pairing gate like every other `/api` route. Gated three more ways:
 
 1. unlocking must be enabled in the settings (there's a password on file and the provider is
-   registered);
-2. the asking phone must have the **unlock** permission (per-device, alongside *mouse and
-   keyboard* and *captures* — off by default, you grant it in the settings);
+   registered) — and enabling it *requires PIN pairing to be on*, so there is always a specific
+   phone to grant;
+2. the request must come from a **paired phone that has the unlock permission** (per-device,
+   alongside *mouse and keyboard* and *captures* — off by default). With pairing off there's no
+   such phone, so unlocking is simply unavailable; a `null` device is refused, not waved through;
 3. the PC must actually be locked.
 
 No body. Responses mirror the other actions' shape:
 
 - `200 { "ok": true }` — the provider accepted the handoff; the PC is unlocking.
-- `409 { code: "not-locked" }` — the PC isn't on the lock screen (so there's nothing to do, or
-  the provider's pipe isn't up).
-- `409 { code: "unavailable" }` — unlocking isn't set up, or the provider didn't answer.
-- `403 { code: "forbidden" }` — this phone may not unlock.
+- `409 { code: "not-locked" }` — the PC isn't on the lock screen.
+- `409 { code: "unavailable" }` — unlocking isn't set up, or the provider's pipe didn't answer
+  (not registered, Hello-only, not loaded) even though the PC is locked.
+- `403 { code: "forbidden" }` — this phone isn't a paired phone allowed to unlock.
 
 The status (`GET /api/status`, and so the live socket's CHANGED) gains:
 
@@ -216,20 +217,26 @@ What's stored, and where:
 
 | Secret | Where | Protected by | Readable by |
 |---|---|---|---|
-| Account password | `unlock.bin`, plugin data folder | DPAPI, CurrentUser | you, on this PC, only |
-| Shared secret (CouchPilot's copy) | plugin data folder | DPAPI, CurrentUser | you, on this PC, only |
+| Account password + shared secret | `unlock.bin`, plugin data folder | DPAPI, CurrentUser | you, on this PC, only |
 | Shared secret (provider's copy) | LSA secret | LSA | SYSTEM only |
+| Account **name** (not a secret) | `unlock-account.txt`, plugin data folder | — | anyone on this PC |
 
-The threat this guards against is another device on your network, not someone sitting at your
-PC — if they're at the keyboard they can type the password themselves. So:
+The threat this guards against is another device on your network, and a non-admin user on the PC
+reaching for the account password — not someone already sitting at your keyboard, who can type it
+themselves. So:
 
-- the phone is already gated by the PIN pairing; the unlock permission is per-device and off by
-  default, the same model as mouse-and-keyboard;
-- a password at rest is DPAPI-sealed, not plaintext (unlike, for now, the MQTT and certificate
-  passwords — those don't unlock a PC);
-- the pipe is reachable only by you and SYSTEM, and needs the shared secret on top;
+- enabling it requires PIN pairing, and the unlock permission is per-device and off by default,
+  the same model as mouse-and-keyboard; a request from an unpaired device is refused;
+- the password and the shared secret at rest are DPAPI-sealed, not plaintext (unlike, for now, the
+  MQTT and certificate passwords — those don't unlock a PC);
+- the pipe is reachable only by you and SYSTEM; on top of that the provider proves it holds the
+  secret (HMAC over the client's nonce) *before* CouchPilot sends the account, and it claims the
+  name with `FIRST_PIPE_INSTANCE`, so a process that squats the pipe neither learns the password
+  nor blocks a loud failure;
+- the password is verified once at enable time, so a wrong one isn't replayed to LSA on every tap;
 - the provider fails safe: anything wrong and the normal sign-in methods are still right there,
-  so a broken or half-registered install never locks you out of your own PC.
+  so a broken or half-registered install never locks you out of your own PC. A failed registration
+  rolls itself back rather than leaving a half-configured provider.
 
 Keep the port off the internet, as the README already says. Unlock makes that matter more, not
 less: behind the PIN it's still one more thing a phone that got in could reach.

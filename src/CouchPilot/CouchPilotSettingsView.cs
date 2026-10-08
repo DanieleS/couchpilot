@@ -263,6 +263,8 @@ namespace CouchPilot
                 return;
             }
 
+            // The helper runs elevated and blocks on the UAC prompt, so Enable/Disable go on a
+            // background thread: the settings stay responsive and "Setting up…" actually paints.
             if (service.Enabled)
             {
                 var on = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 4, 0, 0) };
@@ -273,9 +275,19 @@ namespace CouchPilot
                     VerticalAlignment = VerticalAlignment.Center,
                 });
                 var off = new Button { Content = Pc("Turn off", "Disattiva"), Padding = new Thickness(10, 2, 10, 2), Margin = new Thickness(16, 0, 0, 0) };
-                off.Click += (s, e) => service.Disable();
+                var offStatus = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 0), Opacity = 0.8 };
+                off.Click += async (s, e) =>
+                {
+                    off.IsEnabled = false;
+                    offStatus.Text = "";
+                    string error = null;
+                    var ok = await System.Threading.Tasks.Task.Run(() => service.Disable(out error));
+                    if (!ok) { offStatus.Text = error; off.IsEnabled = true; }
+                    // On success the service raises Changed and this section is rebuilt.
+                };
                 on.Children.Add(off);
                 unlockPanel.Children.Add(on);
+                unlockPanel.Children.Add(offStatus);
                 return;
             }
 
@@ -290,11 +302,15 @@ namespace CouchPilot
 
             var status = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 0), Opacity = 0.8 };
             var enable = new Button { Content = Pc("Enable (asks for admin)", "Attiva (chiede i permessi di amministratore)"), Padding = new Thickness(12, 3, 12, 3), Margin = new Thickness(0, 10, 0, 0), HorizontalAlignment = HorizontalAlignment.Left };
-            enable.Click += (s, e) =>
+            enable.Click += async (s, e) =>
             {
                 enable.IsEnabled = false;
                 status.Text = Pc("Setting up…", "Configurazione…");
-                if (!service.Enable(account.Text, password.Password, out var error))
+                var acct = account.Text;
+                var pwd = password.Password;
+                string error = null;
+                var ok = await System.Threading.Tasks.Task.Run(() => service.Enable(acct, pwd, out error));
+                if (!ok)
                 {
                     status.Text = error;
                     enable.IsEnabled = true;

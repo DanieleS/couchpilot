@@ -3,7 +3,9 @@
 // with docs/unlock.md and CouchPilot's UnlockService.
 #pragma once
 
+#ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
+#endif
 #include <windows.h>
 
 // The duplex, message-mode pipe the provider serves on the lock screen and CouchPilot connects to.

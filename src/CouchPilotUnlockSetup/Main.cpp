@@ -9,23 +9,44 @@
 //
 // The shared secret is passed in a file (CouchPilot writes it, we read and delete it) rather than
 // on the command line, so it never shows up in a process listing.
+#ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
+#endif
 #include <windows.h>
 #include <ntsecapi.h>
 #include <shlobj.h>
+#include <objbase.h>   // StringFromGUID2
 #include <string>
 #include <vector>
+
+// The CLSID and the LSA secret names are shared with the DLL: take them from its own headers so
+// the two can't drift apart (a drift would silently stop unlocking from ever working).
+#include "../CouchPilotUnlock/Guid.h"
+#include "../CouchPilotUnlock/Common.h"
 
 #pragma comment(lib, "advapi32.lib")
 #pragma comment(lib, "shell32.lib")
 #pragma comment(lib, "ole32.lib")
 
-static const wchar_t *CLSID_STR = L"{B6F4C3A2-7E51-4A90-9C3D-1F8E2A6B5D04}";
 static const wchar_t *FRIENDLY = L"CouchPilot Unlock";
-static const wchar_t *CP_KEY =
-    L"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Authentication\\Credential Providers\\{B6F4C3A2-7E51-4A90-9C3D-1F8E2A6B5D04}";
-static const wchar_t *SECRET_KEY = L"L$CouchPilotUnlockSecret";
-static const wchar_t *USER_KEY = L"L$CouchPilotUnlockUser";
+static const wchar_t *SECRET_KEY = COUCHPILOT_SECRET_KEY;
+static const wchar_t *USER_KEY = COUCHPILOT_USER_KEY;
+
+// The CLSID as a "{…}" string, from the one GUID definition in Guid.h.
+static std::wstring ClsidString()
+{
+    wchar_t buf[64] = {};
+    StringFromGUID2(CLSID_CouchPilotUnlock, buf, 64);
+    return buf;
+}
+
+// HKLM key where Windows lists credential providers, plus our CLSID.
+static std::wstring CredentialProviderKey()
+{
+    return L"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Authentication\\Credential Providers\\" + ClsidString();
+}
+
+static int DoUnregister();   // DoRegister rolls back through it on failure
 
 static std::wstring ExeDir()
 {
@@ -105,7 +126,7 @@ static std::wstring ReadFileUtf8ToWide(const wchar_t *path)
 static bool IsRegistered()
 {
     HKEY key = nullptr;
-    if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, CP_KEY, 0, KEY_READ, &key) == ERROR_SUCCESS)
+    if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, CredentialProviderKey().c_str(), 0, KEY_READ, &key) == ERROR_SUCCESS)
     {
         RegCloseKey(key);
         return true;
@@ -113,45 +134,62 @@ static bool IsRegistered()
     return false;
 }
 
+// Puts CouchPilotUnlock.dll at `dest`. If the old one is loaded on the lock screen and can't be
+// replaced now, stage the new one beside it and have Windows swap it in at the next boot — leaving
+// the source (the extension's own copy) untouched. Returns false only on a real failure.
+static bool InstallDll(const std::wstring &src, const std::wstring &dest)
+{
+    if (CopyFileW(src.c_str(), dest.c_str(), FALSE)) return true;
+
+    DWORD err = GetLastError();
+    if (err != ERROR_SHARING_VIOLATION && err != ERROR_ACCESS_DENIED) return false;
+
+    // Copy next to the destination (same volume: a delayed rename needs no COPY_ALLOWED), then
+    // schedule that staged file to replace dest at reboot.
+    std::wstring staged = dest + L".new";
+    if (!CopyFileW(src.c_str(), staged.c_str(), FALSE)) return false;
+    return MoveFileExW(staged.c_str(), dest.c_str(),
+        MOVEFILE_REPLACE_EXISTING | MOVEFILE_DELAY_UNTIL_REBOOT) != FALSE;
+}
+
 static int DoRegister(const std::wstring &userSid, const std::wstring &secretFile)
 {
+    // Lift the secret and remove the file at once, so a failure further down never leaves it on
+    // disk in the clear.
+    std::wstring secret = ReadFileUtf8ToWide(secretFile.c_str());
+    DeleteFileW(secretFile.c_str());
+    if (secret.empty()) return 2;
+
     std::wstring installDir = InstallDir();
     CreateDirectoryW(installDir.c_str(), nullptr);
     std::wstring dest = installDir + L"\\CouchPilotUnlock.dll";
     std::wstring src = ExeDir() + L"\\CouchPilotUnlock.dll";
 
-    // A DLL already loaded on the lock screen can't be overwritten now; schedule it for the next
-    // boot. A fresh install copies straight away. Either way the registry points at `dest`.
-    if (!CopyFileW(src.c_str(), dest.c_str(), FALSE))
+    int rc = 2;
+    if (InstallDll(src, dest))
     {
-        if (GetLastError() == ERROR_SHARING_VIOLATION || GetLastError() == ERROR_ACCESS_DENIED)
-            MoveFileExW(src.c_str(), dest.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_DELAY_UNTIL_REBOOT | MOVEFILE_COPY_ALLOWED);
-        else
-            return 2;
+        std::wstring clsidKey = std::wstring(L"CLSID\\") + ClsidString();
+        std::wstring inproc = clsidKey + L"\\InprocServer32";
+        bool ok = WriteStringValue(HKEY_CLASSES_ROOT, clsidKey.c_str(), nullptr, FRIENDLY) &&
+            WriteStringValue(HKEY_CLASSES_ROOT, inproc.c_str(), nullptr, dest.c_str()) &&
+            WriteStringValue(HKEY_CLASSES_ROOT, inproc.c_str(), L"ThreadingModel", L"Apartment") &&
+            WriteStringValue(HKEY_LOCAL_MACHINE, CredentialProviderKey().c_str(), nullptr, FRIENDLY) &&
+            StoreLsaSecret(SECRET_KEY, secret.c_str()) &&
+            StoreLsaSecret(USER_KEY, userSid.c_str());
+        rc = ok ? 0 : 2;
     }
 
-    std::wstring clsidKey = std::wstring(L"CLSID\\") + CLSID_STR;
-    std::wstring inproc = clsidKey + L"\\InprocServer32";
-    bool ok = WriteStringValue(HKEY_CLASSES_ROOT, clsidKey.c_str(), nullptr, FRIENDLY) &&
-        WriteStringValue(HKEY_CLASSES_ROOT, inproc.c_str(), nullptr, dest.c_str()) &&
-        WriteStringValue(HKEY_CLASSES_ROOT, inproc.c_str(), L"ThreadingModel", L"Apartment") &&
-        WriteStringValue(HKEY_LOCAL_MACHINE, CP_KEY, nullptr, FRIENDLY);
-    if (!ok) return 2;
-
-    std::wstring secret = ReadFileUtf8ToWide(secretFile.c_str());
-    if (secret.empty()) return 2;
-    ok = StoreLsaSecret(SECRET_KEY, secret.c_str()) && StoreLsaSecret(USER_KEY, userSid.c_str());
     SecureZeroMemory(&secret[0], secret.size() * sizeof(wchar_t));
-    // CouchPilot wrote this file for us alone; it's done its job.
-    DeleteFileW(secretFile.c_str());
-    return ok ? 0 : 2;
+    // A half-done registration is worse than none: undo everything on failure.
+    if (rc != 0) DoUnregister();
+    return rc;
 }
 
 static int DoUnregister()
 {
-    std::wstring clsidKey = std::wstring(L"CLSID\\") + CLSID_STR;
+    std::wstring clsidKey = std::wstring(L"CLSID\\") + ClsidString();
     RegDeleteTreeW(HKEY_CLASSES_ROOT, clsidKey.c_str());
-    RegDeleteKeyW(HKEY_LOCAL_MACHINE, CP_KEY);
+    RegDeleteKeyW(HKEY_LOCAL_MACHINE, CredentialProviderKey().c_str());
     StoreLsaSecret(SECRET_KEY, nullptr);
     StoreLsaSecret(USER_KEY, nullptr);
 

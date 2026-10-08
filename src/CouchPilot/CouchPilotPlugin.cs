@@ -88,7 +88,8 @@ namespace CouchPilot
             unlock = new UnlockService(
                 GetPluginUserDataPath(),
                 Path.Combine(Path.GetDirectoryName(typeof(CouchPilotPlugin).Assembly.Location), "CouchPilotUnlockSetup.exe"),
-                lockState);
+                lockState,
+                () => Pairing.Required);
             lockState.Changed += () => server?.Nudge();
             unlock.Changed += () => server?.Nudge();
             captureLibrary.Changed += () =>

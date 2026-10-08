@@ -64,12 +64,18 @@ IFACEMETHODIMP CouchPilotProvider::SetUsageScenario(CREDENTIAL_PROVIDER_USAGE_SC
         if (!_cred) return E_OUTOFMEMORY;
     }
     _cred->SetScenario(cpus);
+    // A fresh scenario: drop anything a previous one left armed.
+    _cred->Disarm();
 
     // Start listening. If it can't (unlocking isn't enrolled, or the secret's gone), we simply
     // never arm: the tile stays hidden and the normal sign-in methods are unaffected.
-    _pipe.Start([this](const std::wstring &user, const std::wstring &password) {
-        return OnUnlock(user, password);
-    });
+    if (_pipe.Start([this](const std::wstring &user, const std::wstring &password) {
+            return OnUnlock(user, password);
+        }))
+    {
+        // Bind the credential to the enrolled account so its tile isn't an "Other user" one.
+        _cred->SetUserSid(_pipe.UserSid().c_str());
+    }
     return S_OK;
 }
 
@@ -95,6 +101,9 @@ IFACEMETHODIMP CouchPilotProvider::UnAdvise()
     if (_pEvents) { _pEvents->Release(); _pEvents = nullptr; }
     _adviseContext = 0;
     LeaveCriticalSection(&_lock);
+    // No one to tell about a submit any more: don't keep an armed credential (and its password)
+    // around.
+    if (_cred) _cred->Disarm();
     return S_OK;
 }
 
@@ -132,17 +141,19 @@ IFACEMETHODIMP CouchPilotProvider::GetFieldDescriptorAt(DWORD dwIndex,
 IFACEMETHODIMP CouchPilotProvider::GetCredentialCount(DWORD *pdwCount, DWORD *pdwDefault,
     BOOL *pbAutoLogonWithDefault)
 {
-    *pdwCount = (_cred != nullptr) ? 1 : 0;
-
-    // Armed: become the default tile and ask LogonUI to log on with it straight away. That is what
-    // turns "credentials arrived over the pipe" into an actual unlock, no click involved.
+    // Nothing until a request arms us: no tile, so the user never sees an empty "CouchPilot"
+    // option on the lock or sign-in screen. Armed, we're the one tile and ask LogonUI to log on
+    // with it straight away — that's what turns "credentials arrived over the pipe" into an
+    // actual unlock, no click involved.
     if (_cred && _cred->IsArmed())
     {
+        *pdwCount = 1;
         *pdwDefault = 0;
         *pbAutoLogonWithDefault = TRUE;
     }
     else
     {
+        *pdwCount = 0;
         *pdwDefault = CREDENTIAL_PROVIDER_NO_DEFAULT;
         *pbAutoLogonWithDefault = FALSE;
     }
@@ -151,27 +162,33 @@ IFACEMETHODIMP CouchPilotProvider::GetCredentialCount(DWORD *pdwCount, DWORD *pd
 
 IFACEMETHODIMP CouchPilotProvider::GetCredentialAt(DWORD dwIndex, ICredentialProviderCredential **ppcpc)
 {
-    if (dwIndex != 0 || !_cred || !ppcpc) return E_INVALIDARG;
+    // Only valid while armed, when the count is 1.
+    if (dwIndex != 0 || !_cred || !_cred->IsArmed() || !ppcpc) return E_INVALIDARG;
     return _cred->QueryInterface(IID_ICredentialProviderCredential, (void **)ppcpc);
 }
 
 UnlockOutcome CouchPilotProvider::OnUnlock(const std::wstring &user, const std::wstring &password)
 {
     if (!_cred) return UnlockOutcome::Busy;
-    if (!_cred->Arm(user.c_str(), password.c_str()))
-        return UnlockOutcome::Busy;
 
-    // Wake LogonUI: it re-reads GetCredentialCount, sees us armed and auto-logon, and submits.
+    // Without an events sink there's no way to make LogonUI submit, so arming would only strand
+    // the password in memory and wedge the next request at "busy". Refuse instead.
     EnterCriticalSection(&_lock);
     ICredentialProviderEvents *events = _pEvents;
     UINT_PTR ctx = _adviseContext;
     if (events) events->AddRef();
     LeaveCriticalSection(&_lock);
 
-    if (events)
+    if (!events) return UnlockOutcome::Busy;
+
+    if (!_cred->Arm(user.c_str(), password.c_str()))
     {
-        events->CredentialsChanged(ctx);
         events->Release();
+        return UnlockOutcome::Busy;
     }
+
+    // Wake LogonUI: it re-reads GetCredentialCount, sees us armed and auto-logon, and submits.
+    events->CredentialsChanged(ctx);
+    events->Release();
     return UnlockOutcome::Ok;
 }

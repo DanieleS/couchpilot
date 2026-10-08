@@ -77,11 +77,14 @@ namespace CouchPilot.Server
         [Route(HttpVerbs.Post, "/unlock")]
         public object Unlock()
         {
+            // A specific paired phone with the Unlock permission, and nothing else. With pairing
+            // off Device is null — so unlocking is simply unavailable without pairing, the same
+            // way enabling it requires pairing to be on.
             var device = Device;
-            if (device != null && !device.AllowUnlock)
+            if (device == null || !device.AllowUnlock)
             {
                 Response.StatusCode = (int)HttpStatusCode.Forbidden;
-                return new { error = Tr("This phone may not unlock the PC: change it in CouchPilot's settings.", "Questo telefono non può sbloccare il PC: cambialo nelle impostazioni di CouchPilot."), code = "forbidden" };
+                return new { error = Tr("This phone may not unlock the PC: pair it and allow Unlock in CouchPilot's settings.", "Questo telefono non può sbloccare il PC: abbinalo e consenti lo Sblocco nelle impostazioni di CouchPilot."), code = "forbidden" };
             }
             switch (unlock.TryUnlock())
             {

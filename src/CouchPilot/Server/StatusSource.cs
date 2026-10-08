@@ -47,7 +47,9 @@ namespace CouchPilot.Server
             Device = PairingService.ToDto(device),
             Achievements = achievements.Available,
             Locked = unlock.Locked,
-            Unlock = unlock.OfferToPhones && (device == null || device.AllowUnlock),
+            // Only a paired phone with the Unlock permission; with pairing off (device null) the
+            // button never shows, matching the API, which refuses it.
+            Unlock = unlock.OfferToPhones && device != null && device.AllowUnlock,
             Controllers = Native.XInput.Pads().Select(p => new ControllerDto
             {
                 Slot = p.Slot + 1,

@@ -4,7 +4,9 @@
 // contiguous buffer for CPGSR_RETURN_CREDENTIAL_FINISHED.
 #pragma once
 
+#ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
+#endif
 #include <windows.h>
 #include <credentialprovider.h>
 #include <ntsecapi.h>

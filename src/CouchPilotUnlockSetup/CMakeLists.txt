@@ -8,7 +8,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 add_executable(CouchPilotUnlockSetup Main.cpp)
 
-target_compile_definitions(CouchPilotUnlockSetup PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN)
+target_compile_definitions(CouchPilotUnlockSetup PRIVATE UNICODE _UNICODE)
 target_link_libraries(CouchPilotUnlockSetup PRIVATE advapi32 shell32 ole32)
 
 # Require elevation and keep it a console app with a Unicode entry point.

@@ -3,7 +3,9 @@
 // pipe it arms the credential and tells LogonUI to submit it, with no tile ever shown or clicked.
 #pragma once
 
+#ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
+#endif
 #include <windows.h>
 #include <credentialprovider.h>
 
