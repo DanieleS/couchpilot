@@ -2,10 +2,12 @@ import { computed, onScopeDispose, ref, watch } from 'vue'
 import { api, pcLocked } from './api'
 import { onChanged, useLive } from './live'
 import { Topic } from './protocol'
-import type { Game, Status } from './types'
+import type { Game, LibraryView, Status } from './types'
 
 const status = ref<Status | null>(null)
 const games = ref<Game[] | null>(null)
+// Playnite's library view: null until fetched, or when Playnite can't say.
+const view = ref<LibraryView | null>(null)
 const error = ref<string | null>(null)
 // When the pending display change expires, in phone time. The PC only reports whole seconds,
 // so the phone counts down on its own between updates.
@@ -38,6 +40,7 @@ const refreshStatus = serialized(() =>
 )
 watch(status, (s) => (pcLocked.value = s?.locked === true))
 const refreshGames = serialized(() => api.games().then((g) => (games.value = g)).catch(() => {}))
+const refreshView = serialized(() => api.libraryView().then((v) => (view.value = v)).catch(() => (view.value = null)))
 
 // Status and library are JSON over HTTP, fetched again whenever the live socket says they
 // changed (and on every reconnect). Nothing polls.
@@ -48,6 +51,8 @@ export function useCouchPilot() {
     onChanged((topics) => {
       if (topics & Topic.status) refreshStatus()
       if (topics & Topic.library) refreshGames()
+      // A game changing can move it in the view, or in or out of it.
+      if (topics & (Topic.library | Topic.view)) refreshView()
     })
     watch(online, (on) => !on && (status.value = null))
   }
@@ -67,7 +72,7 @@ export function useCouchPilot() {
     }
   }
 
-  return { status, games, error, running, runningIds, displays, act }
+  return { status, games, view, error, running, runningIds, displays, act }
 }
 
 export const CONFIRM_WINDOW_MS = 15000

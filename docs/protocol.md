@@ -2,7 +2,7 @@
 
 The phone and the PC talk over one WebSocket. Up it go the touchpad, the keyboard and the mixer's commands; down it comes word of what changed on the PC, and the audio mixer, levels included, 25 times a second.
 
-The socket carries only small binary messages. Structured data stays JSON on plain HTTP under `/api`: the PC's status (`GET /api/status`), the game library (`GET /api/games`), cover art, and actions such as starting a game or applying a display preset. When the status or the library changes, the socket says so with a two-byte CHANGED and the phone fetches the JSON again. Nothing polls.
+The socket carries only small binary messages. Structured data stays JSON on plain HTTP under `/api`: the PC's status (`GET /api/status`), the game library (`GET /api/games`) and how Playnite shows it (`GET /api/library`), cover art, and actions such as starting a game or applying a display preset. When the status or the library changes, the socket says so with a two-byte CHANGED and the phone fetches the JSON again. Nothing polls.
 
 This document is the specification. The implementations must follow it byte for byte:
 
@@ -165,19 +165,22 @@ Some structured data on the PC changed: the phone should fetch it again over HTT
 | 8 | captures | `GET /api/captures` |
 | 16 | achievements | `GET /api/achievements/recent` |
 | 32 | stats | `GET /api/stats`, `GET /api/games/{id}/stats` (whichever is on screen) |
+| 64 | view | `GET /api/library` |
 
 ```
 81 01      the status changed
 81 03      the status and the library changed
 ```
 
-Right after HELLO the PC sends CHANGED with every topic set (`81 3F`), so a phone that just connected, or reconnected after missing changes, refreshes everything.
+Right after HELLO the PC sends CHANGED with every topic set (`81 7F`), so a phone that just connected, or reconnected after missing changes, refreshes everything.
 
 **Why not send the data itself.** Status and library are nested, vary in shape and change a few times a minute at most. As JSON on HTTP they keep one schema, readable with a browser or `curl`, and need no binary layout to keep in step with it. The socket only carries what has to be immediate or compact. One round trip after a CHANGED costs a few milliseconds on a home network.
 
 **Status.** The PC compares the status about twice a second, and on the next tick after anything it knows changes it: a game starting or stopping, a preset applied, kept, reverted, saved, renamed or deleted, the input setting toggled. A controller connecting, disconnecting or changing battery level shows up at the next twice-a-second check. CHANGED goes out only if the status differs from the last one announced, **ignoring `displays.pending.secondsLeft`**: the countdown alone isn't news, and the phone counts down by itself from the value it fetched.
 
 **Library.** Sent when Playnite adds, removes or updates a game: an import, an install, the playtime after a session, a cover downloaded. The statistics (`GET /api/stats`, `GET /api/games/{id}/stats`) refresh on it too: a session ending updates the game's playtime, and the game that stopped no longer counts as running. An import can update hundreds of games in a row, so the PC announces the library at most twice a second.
+
+**View.** Sent on the next tick after Playnite's library view changes: another filter preset, sort, grouping or filter, whether picked on the PC or from a phone. Playnite has no event for it, so the PC compares the view once a second. The phone also fetches the view again on a library CHANGED, since a game changing can move it in the view, or in or out of it.
 
 **Media.** Sent on the next tick after Windows reports that what plays changed: another track, play or pause, another app taking over. Not for the position moving on: `/api/media` gives the position as of when it answered, and the phone moves the bar from there while playing.
 
@@ -303,6 +306,23 @@ makes the PC write that piece next to the clip, dated like the moment it starts 
 | `off` | captures are off in the extension settings |
 
 `GET /api/games` returns the library: every game Playnite doesn't hide, with name, source, install state, playtime, genres, release year and whether it has cover and background art. The types are in `web/src/types.ts` (`Game`).
+
+`GET /api/library` returns Playnite's library view, in whichever mode Playnite runs (Desktop and Fullscreen keep their own presets, filters and sort): the filter presets in the user's order, the active one, the sort and the grouping, and the games it shows in that order, by group. A game can sit in more than one group (two genres, say); a group with a null name holds the games without a value. Without grouping there is one group, with a null name. Types in `web/src/types.ts` (`LibraryView`):
+
+```jsonc
+{
+  "mode": "desktop",                                  // or fullscreen
+  "presets": [{ "id": "…", "name": "Installed" }],
+  "activePreset": "…",                                // null once the filters were changed by hand
+  "sort": "lastActivity",                             // a Playnite SortOrder, camelCase
+  "sortLabel": "Last Played",                         // in Playnite's language
+  "descending": true,
+  "grouping": "Series",                               // in Playnite's language; null when not grouping
+  "groups": [{ "name": "Kingdom Hearts", "ids": ["…", "…"] }]
+}
+```
+
+`POST /api/library/preset/{id}` applies a preset on the PC, like clicking it in Playnite. `POST /api/library/sort` with `{ "sort": "playtime", "descending": true }` sorts Playnite's view; as in Playnite, a preset that carries its own sort is then no longer the active one. Grouping is read-only from the phone.
 
 `GET /api/games/{id}/achievements` returns the game's achievements from [SuccessStory](https://github.com/Lacro59/playnite-successstory-plugin)'s data (404 when it has none for the game, or isn't installed), unlocked first, newest first, then the locked ones, the most common first:
 
@@ -560,6 +580,7 @@ The PC serves every phone from one loop, which runs every **40 ms** while at lea
 | CHANGED status | checked every ~0.5 s (12 ticks), and on the next tick after a change the PC knows about; sent only if the status differs |
 | CHANGED library | at most every ~0.5 s, if Playnite changed a game since the last one |
 | CHANGED media | on the next tick after Windows reports a change |
+| CHANGED view | on the next tick after the once-a-second comparison of Playnite's view finds a difference, or after a phone picks a preset or a sort |
 | CHANGED achievements, stats | on the next tick after SuccessStory's or GameActivity's files settle (~1.2 s without writes) |
 | AUDIO STATE | to a phone that just subscribed; to every subscribed phone when the generation changes |
 | Device and session scan | every 1 s (25 ticks), on the next tick after a DEFAULT, after a subscription, after a failed read |

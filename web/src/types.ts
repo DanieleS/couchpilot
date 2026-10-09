@@ -18,6 +18,25 @@ export type Game = {
   hasBackground: boolean
 }
 
+// Playnite's library view, as LibraryView.cs reads it: what the PC shows, and in which order.
+export type LibraryView = {
+  // Each mode keeps its own presets, filters and sort.
+  mode: 'desktop' | 'fullscreen'
+  // Playnite's filter presets, in the user's order.
+  presets: { id: string; name: string }[]
+  // null when the filters were changed by hand since.
+  activePreset: string | null
+  // A Playnite SortOrder in camelCase (name, lastActivity, playtime…), and its name in Playnite's language.
+  sort: string
+  sortLabel: string
+  descending: boolean
+  // What Playnite groups by, in Playnite's language, or null when it doesn't group.
+  grouping: string | null
+  // The games in Playnite's order. Ungrouped: one group with no name. A game can sit in more
+  // than one group (two genres, say). A null name is the group of games without a value.
+  groups: { name: string | null; ids: string[] }[]
+}
+
 export type GameDetail = Game & {
   description: string | null
   developers: string[]

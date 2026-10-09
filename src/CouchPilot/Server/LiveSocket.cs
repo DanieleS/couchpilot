@@ -19,7 +19,7 @@ namespace CouchPilot.Server
     // JSON on HTTP: CHANGED only tells the phone which of it to fetch again.
     //
     // One loop serves every phone, ticking 25 times a second while any is connected: it sends
-    // CHANGED when the status or the library changed, and to phones subscribed to audio the mixer's STATE,
+    // CHANGED when the status, the library or its view changed, and to phones subscribed to audio the mixer's STATE,
     // VOLUMES and LEVELS. Each phone has its own send queue, so a slow one never holds up the
     // others; levels are skipped for a phone still busy with the previous ones, since a late
     // level is worth nothing.
@@ -43,6 +43,7 @@ namespace CouchPilot.Server
         private const byte TopicCaptures = 8;
         private const byte TopicAchievements = 16;
         private const byte TopicStats = 32;
+        private const byte TopicView = 64;
 
         private static readonly ILogger logger = LogManager.GetLogger();
         private static readonly TimeSpan Tick = TimeSpan.FromMilliseconds(40);
@@ -64,6 +65,7 @@ namespace CouchPilot.Server
         private volatile bool capturesChanged;
         private volatile bool achievementsChanged;
         private volatile bool statsChanged;
+        private volatile bool viewChanged;
         private volatile bool rescanWanted;
         private string lastStatusShape;
         private byte[] lastVolumes;
@@ -108,6 +110,10 @@ namespace CouchPilot.Server
         // GameActivity wrote a game's sessions. Announced on the next tick.
         public void StatsChanged() => statsChanged = true;
 
+        // Playnite's library view changed: another preset, sort, grouping or filter. Announced on
+        // the next tick: you just picked it.
+        public void ViewChanged() => viewChanged = true;
+
         // Pairing was switched on: phones that connected without a token are closed, and come
         // back through the pairing screen.
         public void DropUnpaired()
@@ -146,7 +152,7 @@ namespace CouchPilot.Server
             clients[context] = client;
             Enqueue(context, client, new[] { OpHello, ProtocolVersion });
             // Whatever the phone had may be stale after a disconnect: everything counts as changed.
-            Enqueue(context, client, new[] { OpChanged, (byte)(TopicStatus | TopicLibrary | TopicMedia | TopicCaptures | TopicAchievements | TopicStats) });
+            Enqueue(context, client, new[] { OpChanged, (byte)(TopicStatus | TopicLibrary | TopicMedia | TopicCaptures | TopicAchievements | TopicStats | TopicView) });
             if (Interlocked.Exchange(ref looping, 1) == 0) _ = Task.Run(LoopAsync);
         }
 
@@ -262,6 +268,11 @@ namespace CouchPilot.Server
             {
                 statsChanged = false;
                 topics |= TopicStats;
+            }
+            if (viewChanged)
+            {
+                viewChanged = false;
+                topics |= TopicView;
             }
             if (topics == 0) return;
             var message = new[] { OpChanged, topics };
