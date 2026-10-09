@@ -26,8 +26,11 @@ import StatsView from './components/StatsView.vue'
 import PresetAudioSheet from './components/PresetAudioSheet.vue'
 import TabBar, { type Tab } from './components/TabBar.vue'
 import { t } from './i18n'
+import { keepPairing } from './pairing'
 
 const { error, games, running, runningIds, status, act } = useCouchPilot()
+// A paired phone keeps a copy of its token, should the browser drop the cookie (see pairing.ts).
+keepPairing()
 
 // The manifest's shortcuts (long press on the app's icon) open a tab straight away: /?tab=audio.
 function initialTab(): Tab {
@@ -66,6 +69,7 @@ const openGame = (g: Game) => {
   sheetOpen.value = true
 }
 const installSheetGame = () => sheetGame.value && act(() => api.install(sheetGame.value!.id))
+const stopWaitingSheetGame = () => sheetGame.value && act(() => api.stopWaiting(sheetGame.value!.id))
 
 // Uninstalling asks first: getting the game back means downloading it again.
 const uninstalling = ref<Game | null>(null)
@@ -302,6 +306,7 @@ const toastOpen = computed({
       @stop="askCloseFromSheet"
       @install="installSheetGame"
       @uninstall="uninstalling = sheetGame"
+      @stop-waiting="stopWaitingSheetGame"
       @gallery="openGalleryFromSheet"
       @view-capture="viewCaptureFromSheet"
       @achievements="openAchievements(sheetGame)"

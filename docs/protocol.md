@@ -47,8 +47,9 @@ Change one, change this document and the others in the same commit.
 Optional. While it's on, `/api` answers only phones that have typed a PIN once: a request without a known cookie gets `401 {"error": …, "code": "unpaired"}`, whatever the path, except the three pairing routes and the app's own files. The phone then:
 
 1. `POST /api/pair/request` with `{"name": "Pixel 8 · Chrome"}`. The PC puts a six-digit PIN on its screen (and in Playnite's notifications) for two minutes and answers `{"expiresAt": "…", "seconds": 120}`. At most one request every 5 s (`409`, code `too-soon`).
-2. `POST /api/pair` with `{"pin": "482913", "name": "…"}`. Right: `200` with the device (`{"id", "name", "input", "captures"}`) and a `Set-Cookie` for `couchpilot_device`, HttpOnly, SameSite=Lax, Secure over HTTPS, good for 400 days and renewed daily while the phone comes back. Wrong: `403`, code `wrong-pin`, with `attemptsLeft`; after five wrong tries, or two minutes, `409` with code `expired` and the phone has to ask again.
-3. `GET /api/pair` says whether pairing is required and which device the cookie stands for; `DELETE /api/pair` forgets this phone.
+2. `POST /api/pair` with `{"pin": "482913", "name": "…"}`. Right: `200` with the device (`{"id", "name", "input", "captures"}`) and a `Set-Cookie` for `couchpilot_device`, HttpOnly, SameSite=Lax, Secure over HTTPS, good for 400 days and renewed daily while the phone comes back. The body also carries the token (`"token": "…"`) for the phone to keep a copy of (see 4 below). Wrong: `403`, code `wrong-pin`, with `attemptsLeft`; after five wrong tries, or two minutes, `409` with code `expired` and the phone has to ask again.
+3. `GET /api/pair` says whether pairing is required, which device the cookie stands for and, for a known one, its `token`; `DELETE /api/pair` forgets this phone.
+4. Browsers drop cookies on their own, so the phone keeps the token in `localStorage` too. On `unpaired` it first sends `POST /api/pair/resume` with `{"token": "…"}`: a device the PC still knows gets its cookie back and the device in the body, no PIN; one removed in the settings gets `409`, code `forgotten`, and the phone forgets the copy and asks for a PIN.
 
 The token is 32 random bytes; the PC keeps only its SHA-256 (`devices.json` in the extension's data folder). Each paired phone can separately be allowed, or not, to use mouse and keyboard and to see the captures: `input` and `capture` in `/api/status` are already narrowed to the phone asking, and input messages from a phone that may not send them are dropped like when input is off.
 
@@ -306,6 +307,8 @@ makes the PC write that piece next to the clip, dated like the moment it starts 
 | `off` | captures are off in the extension settings |
 
 `GET /api/games` returns the library: every game Playnite doesn't hide, with name, source, install state, playtime, genres, release year and whether it has cover and background art. The types are in `web/src/types.ts` (`Game`).
+
+`POST /api/games/{id}/install` and `/uninstall` hand the job to Playnite and answer at once; `installing` or `uninstalling` stays true until the game's library reports it done. Steam first asks on the PC (where to install, or to confirm), and Playnite waits on it with no time limit: `POST /api/games/{id}/stop-waiting` clears the flag, as Playnite's own "cancel monitoring" does (409 when there's nothing to stop). A Steam dialog answered afterwards still ends in an installed game.
 
 `GET /api/library` returns Playnite's library view, in whichever mode Playnite runs (Desktop and Fullscreen keep their own presets, filters and sort): the filter presets in the user's order, the active one, the sort and the grouping, and the games it shows in that order, by group. A game can sit in more than one group (two genres, say); a group with a null name holds the games without a value. Without grouping there is one group, with a null name. Types in `web/src/types.ts` (`LibraryView`):
 
