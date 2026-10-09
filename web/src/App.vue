@@ -69,6 +69,7 @@ const openGame = (g: Game) => {
   sheetOpen.value = true
 }
 const installSheetGame = () => sheetGame.value && act(() => api.install(sheetGame.value!.id))
+const stopWaitingSheetGame = () => sheetGame.value && act(() => api.stopWaiting(sheetGame.value!.id))
 
 // Uninstalling asks first: getting the game back means downloading it again.
 const uninstalling = ref<Game | null>(null)
@@ -305,6 +306,7 @@ const toastOpen = computed({
       @stop="askCloseFromSheet"
       @install="installSheetGame"
       @uninstall="uninstalling = sheetGame"
+      @stop-waiting="stopWaitingSheetGame"
       @gallery="openGalleryFromSheet"
       @view-capture="viewCaptureFromSheet"
       @achievements="openAchievements(sheetGame)"

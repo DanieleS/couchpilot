@@ -305,6 +305,8 @@ makes the PC write that piece next to the clip, dated like the moment it starts 
 
 `GET /api/games` returns the library: every game Playnite doesn't hide, with name, source, install state, playtime, genres, release year and whether it has cover and background art. The types are in `web/src/types.ts` (`Game`).
 
+`POST /api/games/{id}/install` and `/uninstall` hand the job to Playnite and answer at once; `installing` or `uninstalling` stays true until the game's library reports it done. Steam first asks on the PC (where to install, or to confirm), and Playnite waits on it with no time limit: `POST /api/games/{id}/stop-waiting` clears the flag, as Playnite's own "cancel monitoring" does (409 when there's nothing to stop). A Steam dialog answered afterwards still ends in an installed game.
+
 `GET /api/games/{id}/achievements` returns the game's achievements from [SuccessStory](https://github.com/Lacro59/playnite-successstory-plugin)'s data (404 when it has none for the game, or isn't installed), unlocked first, newest first, then the locked ones, the most common first:
 
 ```jsonc

@@ -35,6 +35,25 @@ namespace CouchPilot.Games
 
         public void Uninstall(Guid gameId) => api.MainView.UIDispatcher.BeginInvoke(new Action(() => api.UninstallGame(gameId)));
 
+        // What Playnite's own "cancel monitoring" does for an install or uninstall, short of the
+        // SDK exposing it. Steam asks on the PC where to install (or to confirm an uninstall) and
+        // Playnite waits for the game to show up with no time limit: left alone, or dismissed, that
+        // dialog keeps the game "installing" until Playnite restarts. Clearing the flag frees the
+        // phone; the library's watcher stays on, so a dialog answered later still ends in an
+        // installed game, and installing again replaces it.
+        public bool StopWaiting(Guid gameId)
+        {
+            return api.MainView.UIDispatcher.Invoke(() =>
+            {
+                var game = api.Database.Games.Get(gameId);
+                if (game == null || (!game.IsInstalling && !game.IsUninstalling)) return false;
+                game.IsInstalling = false;
+                game.IsUninstalling = false;
+                api.Database.Games.Update(game);
+                return true;
+            });
+        }
+
         public bool Stop(Guid gameId)
         {
             var game = api.Database.Games.Get(gameId);

@@ -16,7 +16,7 @@ import GameCover from './GameCover.vue'
 
 const props = defineProps<{ game: Game | null; running: boolean }>()
 const open = defineModel<boolean>('open', { required: true })
-const emit = defineEmits<{ start: []; focus: []; stop: []; install: []; uninstall: []; gallery: []; viewCapture: [items: Capture[], index: number]; achievements: [] }>()
+const emit = defineEmits<{ start: []; focus: []; stop: []; install: []; uninstall: []; stopWaiting: []; gallery: []; viewCapture: [items: Capture[], index: number]; achievements: [] }>()
 
 // Achievements, when SuccessStory has them: the count, and the last few unlocked.
 const gameId = computed(() => (open.value ? props.game?.id ?? null : null))
@@ -89,9 +89,14 @@ const description = computed(() => (detail.value?.description ? stripHtml(detail
         <button class="btn btn-dark" @click="emit('focus')"><AppIcon name="focus" :size="16" />{{ t.games.sheet.focus }}</button>
         <button class="btn btn-danger" @click="emit('stop')"><AppIcon name="power" :size="16" />{{ t.games.sheet.stop }}</button>
       </div>
-      <button v-else-if="game.installing || game.uninstalling" class="btn btn-ink btn-block play" disabled>
-        <span class="spinner" aria-hidden="true" />{{ game.installing ? t.games.sheet.installing : t.games.sheet.uninstalling }}
-      </button>
+      <template v-else-if="game.installing || game.uninstalling">
+        <button class="btn btn-ink btn-block play" disabled>
+          <span class="spinner" aria-hidden="true" />{{ game.installing ? t.games.sheet.installing : t.games.sheet.uninstalling }}
+        </button>
+        <!-- Steam asks on the PC where to install, or to confirm: nothing moves until someone answers. -->
+        <p class="waiting">{{ game.installing ? t.games.sheet.installWaiting(game.source) : t.games.sheet.uninstallWaiting }}</p>
+        <button class="uninstall" @click="emit('stopWaiting')"><AppIcon name="x" :size="14" />{{ t.games.sheet.stopWaiting }}</button>
+      </template>
       <template v-else-if="game.installed">
         <button class="btn btn-ink btn-block play" @click="emit('start')"><AppIcon name="play" :size="18" />{{ t.games.sheet.play }}</button>
         <button class="uninstall" @click="emit('uninstall')"><AppIcon name="trash" :size="14" />{{ t.games.sheet.uninstall }}</button>
@@ -206,6 +211,13 @@ const description = computed(() => (detail.value?.description ? stripHtml(detail
   padding: 0.5rem;
   font-size: 0.75rem;
   font-weight: 700;
+  color: var(--ink-2);
+}
+.waiting {
+  margin-top: var(--size-2);
+  font-size: 0.75rem;
+  line-height: 1.4;
+  text-align: center;
   color: var(--ink-2);
 }
 .desc {
