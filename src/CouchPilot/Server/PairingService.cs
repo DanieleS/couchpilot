@@ -50,6 +50,7 @@ namespace CouchPilot.Server
         // wrong-pin: not the PIN on the screen; AttemptsLeft says how many more tries.
         // expired: no PIN is pending (it expired, was refused, or too many wrong tries).
         // too-soon: a PIN was asked for a moment ago; wait before asking again.
+        // forgotten: the token a phone kept is no device's any more (removed in the settings).
         public string Code { get; }
         public int AttemptsLeft { get; }
 
@@ -329,26 +330,56 @@ namespace CouchPilot.Server
             return name.Length > 60 ? name.Substring(0, 60) : name;
         }
 
+        // devices.json, or the copy of it the last save left behind: a file cut short (Playnite
+        // killed, the PC switched off mid-write) must not cost every phone its pairing. Neither
+        // readable, the file is set aside rather than overwritten by the next save.
         private void Load()
         {
             if (devices != null) return;
+            devices = Read(path) ?? Read(path + ".bak");
+            if (devices != null) return;
             devices = new List<PairedDevice>();
+            if (!File.Exists(path)) return;
             try
             {
-                if (!File.Exists(path)) return;
-                devices = Serialization.FromJson<List<PairedDevice>>(File.ReadAllText(path))?.Where(d => d?.Id != null && d.TokenHash != null).ToList() ?? new List<PairedDevice>();
+                File.Copy(path, path + ".broken", true);
             }
             catch (Exception e)
             {
-                logger.Error(e, "Couldn't read the paired devices");
+                logger.Error(e, "Couldn't set the unreadable paired devices aside");
             }
         }
 
-        private void Save()
+        private static List<PairedDevice> Read(string file)
         {
             try
             {
-                File.WriteAllText(path, Serialization.ToJson(devices, true));
+                if (!File.Exists(file)) return null;
+                return Serialization.FromJson<List<PairedDevice>>(File.ReadAllText(file))?.Where(d => d?.Id != null && d.TokenHash != null).ToList();
+            }
+            catch (Exception e)
+            {
+                logger.Error(e, $"Couldn't read the paired devices from {file}");
+                return null;
+            }
+        }
+
+        // Written beside the file and swapped in whole, keeping the previous one as .bak: the file
+        // is rewritten every minute a phone is in use, so a write cut short is bound to happen.
+        private void Save()
+        {
+            var temp = path + ".tmp";
+            try
+            {
+                var bytes = Encoding.UTF8.GetBytes(Serialization.ToJson(devices, true));
+                using (var file = new FileStream(temp, FileMode.Create, FileAccess.Write, FileShare.None))
+                {
+                    file.Write(bytes, 0, bytes.Length);
+                    // On the disk before the swap, or a power cut could leave the new name on an empty file.
+                    file.Flush(true);
+                }
+                if (File.Exists(path)) File.Replace(temp, path, path + ".bak", true);
+                else File.Move(temp, path);
             }
             catch (Exception e)
             {

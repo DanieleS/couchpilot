@@ -26,8 +26,11 @@ import StatsView from './components/StatsView.vue'
 import PresetAudioSheet from './components/PresetAudioSheet.vue'
 import TabBar, { type Tab } from './components/TabBar.vue'
 import { t } from './i18n'
+import { keepPairing } from './pairing'
 
 const { error, games, running, runningIds, status, act } = useCouchPilot()
+// A paired phone keeps a copy of its token, should the browser drop the cookie (see pairing.ts).
+keepPairing()
 
 // The manifest's shortcuts (long press on the app's icon) open a tab straight away: /?tab=audio.
 function initialTab(): Tab {

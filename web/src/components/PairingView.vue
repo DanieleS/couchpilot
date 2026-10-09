@@ -31,7 +31,9 @@ const clock = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2,
       <span class="mark" aria-hidden="true"><span class="dot" /><span class="bar" /></span>
       <h1 class="title">{{ t.app.pairing.title }}</h1>
 
-      <template v-if="step === 'start' || step === 'requesting'">
+      <p v-if="step === 'resuming'" class="lead resuming"><span class="spinner" aria-hidden="true" /> {{ t.app.pairing.resuming }}</p>
+
+      <template v-else-if="step === 'start' || step === 'requesting'">
         <p class="lead">{{ t.app.pairing.lead }}</p>
         <label class="name">
           <span>{{ t.app.pairing.name }}</span>
@@ -90,6 +92,7 @@ const clock = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2,
 .bar { position: absolute; inset: auto 0 0 auto; inline-size: 1.75rem; block-size: 0.75rem; border-radius: 3px; background: var(--wait); }
 .title { margin-top: var(--size-4); font-size: 1.75rem; font-weight: 800; letter-spacing: -0.03em; line-height: 1.05; }
 .lead { margin-top: var(--size-3); font-size: 0.875rem; line-height: 1.5; color: var(--ink-2); }
+.resuming { display: flex; align-items: center; justify-content: center; gap: var(--size-2); }
 .name { display: grid; gap: 6px; margin-top: var(--size-4); font-size: 0.6875rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-2); }
 .name input {
   padding: 0.75rem var(--size-3);
