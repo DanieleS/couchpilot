@@ -215,6 +215,14 @@ namespace CouchPilot.Server
             games.Uninstall(ParseId(id));
         }
 
+        // Stops waiting on an install or uninstall that the PC never finished, see GameControl.
+        [Route(HttpVerbs.Post, "/games/{id}/stop-waiting")]
+        public void StopWaiting(string id)
+        {
+            if (library.Get(ParseId(id)) == null) throw HttpException.NotFound(Tr("Game not found.", "Gioco non trovato."));
+            if (!games.StopWaiting(ParseId(id))) throw new HttpException(HttpStatusCode.Conflict, Tr("Playnite isn't installing or uninstalling it.", "Playnite non lo sta installando né disinstallando."));
+        }
+
         [Route(HttpVerbs.Post, "/games/{id}/stop")]
         public void Stop(string id)
         {

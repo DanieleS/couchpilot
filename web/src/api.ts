@@ -63,6 +63,7 @@ export const api = {
   stop: (id: string) => request<void>('POST', `/games/${id}/stop`),
   install: (id: string) => request<void>('POST', `/games/${id}/install`),
   uninstall: (id: string) => request<void>('POST', `/games/${id}/uninstall`),
+  stopWaiting: (id: string) => request<void>('POST', `/games/${id}/stop-waiting`),
   focus: (id: string) => request<void>('POST', `/games/${id}/focus`),
   savePreset: (name: string) => request<Preset>('POST', '/displays/presets', { name }),
   renamePreset: (id: string, name: string) => request<void>('PATCH', `/displays/presets/${id}`, { name }),

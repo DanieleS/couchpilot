@@ -363,15 +363,18 @@ export function mockCaptureArt(c: Capture) {
 
 // Bumped whenever a game changes, like Playnite's ItemUpdated: the link then sends CHANGED library.
 let libraryRevision = 0
-// Installing or uninstalling takes a few seconds, like a small game from a fast CDN.
+// Installing or uninstalling takes a few seconds, like a small game from a fast CDN; a Steam game
+// longer, as for someone answering the dialog Steam opens on the PC, time to try stopping the wait.
+const libraryJobs = new Map<string, ReturnType<typeof setTimeout>>()
 function libraryJob(game: Game, job: 'installing' | 'uninstalling') {
   game[job] = true
   libraryRevision++
-  setTimeout(() => {
+  libraryJobs.set(game.id, setTimeout(() => {
+    libraryJobs.delete(game.id)
     game[job] = false
     game.installed = job === 'installing'
     libraryRevision++
-  }, 4000)
+  }, game.source === 'Steam' ? 20000 : 4000))
 }
 
 // A pretend PC on the other end of the live socket (docs/protocol.md). It speaks the real byte
@@ -675,6 +678,14 @@ async function handle(method: string, path: string, body?: any): Promise<unknown
   if (method === 'POST' && a === 'games' && game && c === 'uninstall') {
     if (running.some((r) => r.id === game.id)) throw new Error('Chiudi il gioco prima di disinstallarlo.')
     return void libraryJob(game, 'uninstalling')
+  }
+  if (method === 'POST' && a === 'games' && game && c === 'stop-waiting') {
+    if (!game.installing && !game.uninstalling) throw new Error('Playnite non lo sta installando né disinstallando.')
+    clearTimeout(libraryJobs.get(game.id))
+    libraryJobs.delete(game.id)
+    game.installing = game.uninstalling = false
+    libraryRevision++
+    return
   }
   if (method === 'POST' && a === 'games' && c === 'stop') {
     setTimeout(() => running.splice(running.findIndex((r) => r.id === b), 1), 1500)
