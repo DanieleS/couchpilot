@@ -29,6 +29,7 @@ namespace CouchPilot
 
         private readonly GameSessions sessions;
         private readonly LibraryService library;
+        private readonly LibraryView libraryView;
         private readonly GameControl gameControl;
         private readonly DisplayService displays;
         private readonly AudioService audio;
@@ -67,6 +68,8 @@ namespace CouchPilot
             Settings = new CouchPilotSettings(this);
             sessions = new GameSessions();
             library = new LibraryService(api, sessions);
+            libraryView = new LibraryView(api);
+            libraryView.Changed += () => server?.ViewChanged();
             gameControl = new GameControl(api, sessions);
             audio = new AudioService(gameControl);
             activity = new GameActivityReader(api);
@@ -125,6 +128,7 @@ namespace CouchPilot
             PlayniteApi.Database.Games.ItemCollectionChanged += (_, __) => server?.LibraryChanged();
             media.Changed += () => server?.MediaChanged();
             media.Start();
+            libraryView.Start();
             ApplyCaptureSettings();
             achievements.Start();
             activity.Start();
@@ -138,6 +142,7 @@ namespace CouchPilot
             server = null;
             homeAssistant?.Dispose();
             homeAssistant = null;
+            libraryView.Stop();
             displays.Dispose();
             media.Dispose();
             captureLibrary.Dispose();
@@ -336,7 +341,7 @@ namespace CouchPilot
                             NotificationType.Error));
                     }
                 }
-                server = new RemoteServer(Settings.Port, certificate, webRoot, library, gameControl, displays, input, audio, media, stats, captures, captureLibrary, thumbnails, clips, Pairing, achievements, unlock);
+                server = new RemoteServer(Settings.Port, certificate, webRoot, library, libraryView, gameControl, displays, input, audio, media, stats, captures, captureLibrary, thumbnails, clips, Pairing, achievements, unlock);
                 server.Start();
                 PlayniteApi.Notifications.Remove("couchpilot-server");
                 Addresses = NetworkInfo.LanUrls(Settings.Port, certificate != null, certificate == null ? null : ServerCertificate.HostName(certificate));

@@ -21,6 +21,7 @@ namespace CouchPilot.Server
     public class ApiController : WebApiController
     {
         private readonly LibraryService library;
+        private readonly LibraryView libraryView;
         private readonly GameControl games;
         private readonly DisplayService displays;
         private readonly AudioService audio;
@@ -37,7 +38,7 @@ namespace CouchPilot.Server
         private readonly AchievementsService achievements;
         private readonly Unlock.UnlockService unlock;
 
-        public ApiController(LibraryService library, GameControl games, DisplayService displays, AudioService audio, MediaService media, StatsService stats, StatusSource status, LiveSocket live, CaptureService captures, CaptureLibrary captureLibrary, Thumbnails thumbnails, ClipEditor clips, PairingService pairing, PairingGate gate, AchievementsService achievements, Unlock.UnlockService unlock)
+        public ApiController(LibraryService library, LibraryView libraryView, GameControl games, DisplayService displays, AudioService audio, MediaService media, StatsService stats, StatusSource status, LiveSocket live, CaptureService captures, CaptureLibrary captureLibrary, Thumbnails thumbnails, ClipEditor clips, PairingService pairing, PairingGate gate, AchievementsService achievements, Unlock.UnlockService unlock)
         {
             this.unlock = unlock;
             this.captures = captures;
@@ -48,6 +49,7 @@ namespace CouchPilot.Server
             this.gate = gate;
             this.achievements = achievements;
             this.library = library;
+            this.libraryView = libraryView;
             this.games = games;
             this.displays = displays;
             this.audio = audio;
@@ -165,6 +167,31 @@ namespace CouchPilot.Server
 
         [Route(HttpVerbs.Get, "/games")]
         public object Games() => library.All();
+
+        // Playnite's library view: its filter presets, the active one, the sort, the grouping, and
+        // the games it shows in that order. The phone fetches it again when the live socket says
+        // the view or the library changed.
+        [Route(HttpVerbs.Get, "/library")]
+        public object View() => libraryView.Snapshot();
+
+        // Applies the preset on the PC, like clicking it in Playnite.
+        [Route(HttpVerbs.Post, "/library/preset/{id}")]
+        public void ApplyFilterPreset(string id)
+        {
+            if (!libraryView.ApplyPreset(ParseId(id))) throw HttpException.NotFound(Tr("Filter preset not found.", "Preset di filtri non trovato."));
+        }
+
+        // { "sort": "lastActivity", "descending": true }: sorts Playnite's view on the PC.
+        [Route(HttpVerbs.Post, "/library/sort")]
+        public async Task SortLibrary()
+        {
+            var body = await ReadBody<SortBody>();
+            if (body?.Sort == null || !Enum.TryParse<Playnite.SDK.Models.SortOrder>(body.Sort, true, out var order) || !Enum.IsDefined(typeof(Playnite.SDK.Models.SortOrder), order))
+            {
+                throw HttpException.BadRequest(Tr("Unknown sort.", "Ordinamento sconosciuto."));
+            }
+            libraryView.Sort(order, body.Descending ? Playnite.SDK.Models.SortOrderDirection.Descending : Playnite.SDK.Models.SortOrderDirection.Ascending);
+        }
 
         [Route(HttpVerbs.Get, "/games/{id}")]
         public object Game(string id) => library.Get(ParseId(id)) ?? throw HttpException.NotFound(Tr("Game not found.", "Gioco non trovato."));
@@ -520,6 +547,12 @@ namespace CouchPilot.Server
         public class NameBody
         {
             public string Name { get; set; }
+        }
+
+        public class SortBody
+        {
+            public string Sort { get; set; }
+            public bool Descending { get; set; }
         }
 
         public class PairBody

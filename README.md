@@ -6,7 +6,7 @@ CouchPilot is a Playnite extension that serves a small web app on your local net
 
 ## What it does
 
-- **Library**: your Playnite games with covers, search, and filters (installed, recent, favourites).
+- **Library**: your Playnite games with covers and search, shown the way Playnite shows them: its filter presets, sort and groups, in step with the PC. Pick a preset or a sort on the phone and Playnite follows, and the other way round; groups are set in Playnite.
 - **Statistics**: behind the chart icon in Games, how much you played this week, month or year, day by day, the most played games, the library at large and the installed games you left months ago; each game's sheet shows its own hours, sessions and last 12 weeks. Playnite keeps only totals, so the sessions come from [GameActivity](https://github.com/Lacro59/playnite-gameactivity-plugin), see [Statistics](#statistics). A day of play runs from 5:00 to 5:00: a session past midnight counts for the evening it started.
 - **Install and uninstall**: install a game from the phone, or uninstall it after a confirmation; Playnite hands the job to the game's library (Steam, Epic, GOG…), whose client may open on the PC. Steam asks there where to install the game: until someone answers, the phone says so and can stop waiting (what Playnite calls cancelling the monitoring).
 - **Launch and close**: start a game; close it gracefully (every window is asked to close first, forced only after 10 s); bring it back to the foreground.

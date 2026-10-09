@@ -1,6 +1,6 @@
 import { ref } from 'vue'
 import type { AudioChannel } from './protocol'
-import type { AudioOutput, Capture, Captures, Game, GameAchievements, GameDetail, GameStats, NowPlaying, PairedDevice, Preset, RecentAchievement, Stats, StatsRangeName, Status, TrimRequest } from './types'
+import type { AudioOutput, Capture, Captures, Game, GameAchievements, GameDetail, GameStats, LibraryView, NowPlaying, PairedDevice, Preset, RecentAchievement, Stats, StatsRangeName, Status, TrimRequest } from './types'
 import { mockCaptureArt, mockRequest } from './mock'
 import { t } from './i18n'
 
@@ -56,6 +56,9 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 export const api = {
   status: () => request<Status>('GET', '/status'),
   games: () => request<Game[]>('GET', '/games'),
+  libraryView: () => request<LibraryView>('GET', '/library'),
+  applyFilterPreset: (id: string) => request<void>('POST', `/library/preset/${id}`),
+  sortLibrary: (sort: string, descending: boolean) => request<void>('POST', '/library/sort', { sort, descending }),
   game: (id: string) => request<GameDetail>('GET', `/games/${id}`),
   gameStats: (id: string) => request<GameStats>('GET', `/games/${id}/stats`),
   stats: (range: StatsRangeName, offset: number) => request<Stats>('GET', `/stats?range=${range}&offset=${offset}`),

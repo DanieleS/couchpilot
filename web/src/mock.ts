@@ -377,6 +377,50 @@ function libraryJob(game: Game, job: 'installing' | 'uninstalling') {
   }, game.source === 'Steam' ? 20000 : 4000))
 }
 
+// Playnite's library view (LibraryView.cs): its filter presets, sort and grouping, as if set on
+// the PC. `?group=1` pretends Playnite groups by library.
+type MockFilter = (g: Game) => boolean
+const filterPresets: { id: string; name: string; filter: MockFilter; sort?: string; descending?: boolean }[] = [
+  { id: 'f1', name: 'Tutti', filter: () => true },
+  { id: 'f2', name: 'Installati', filter: (g) => g.installed },
+  { id: 'f3', name: 'Giocati di recente', filter: (g) => !!g.lastActivity, sort: 'lastActivity', descending: true },
+  { id: 'f4', name: 'Preferiti', filter: (g) => g.favorite },
+]
+const libraryView = {
+  preset: 'f2' as string | null,
+  filter: filterPresets[1].filter,
+  sort: 'name',
+  descending: false,
+  grouping: new URLSearchParams(location.search).has('group') ? 'Libreria' : null,
+}
+let viewRevision = 0
+const sortLabels: Record<string, string> = { name: 'Nome', lastActivity: 'Ultima attività', playtime: 'Tempo di gioco', added: 'Aggiunto', releaseDate: 'Data di uscita', library: 'Libreria', recentActivity: 'Attività recente' }
+const sortKeys: Record<string, (g: Game) => string | number> = {
+  lastActivity: (g) => g.lastActivity ?? '',
+  playtime: (g) => g.playtimeMinutes,
+  added: (g) => g.added ?? '',
+  releaseDate: (g) => g.releaseYear ?? 0,
+  library: (g) => g.source,
+}
+
+function mockLibraryView() {
+  const key = sortKeys[libraryView.sort] ?? ((g: Game) => g.name)
+  const order = (a: Game, b: Game) => {
+    const x = key(a), y = key(b)
+    const c = x < y ? -1 : x > y ? 1 : 0
+    return (libraryView.descending ? -c : c) || a.name.localeCompare(b.name)
+  }
+  const shown = games.filter(libraryView.filter).sort(order)
+  const groups = libraryView.grouping
+    ? [...new Set(shown.map((g) => g.source))].sort().map((name) => ({ name, ids: shown.filter((g) => g.source === name).map((g) => g.id) }))
+    : [{ name: null, ids: shown.map((g) => g.id) }]
+  return {
+    mode: 'desktop', presets: filterPresets.map(({ id, name }) => ({ id, name })), activePreset: libraryView.preset,
+    sort: libraryView.sort, sortLabel: sortLabels[libraryView.sort] ?? libraryView.sort, descending: libraryView.descending,
+    grouping: libraryView.grouping, groups,
+  }
+}
+
 // A pretend PC on the other end of the live socket (docs/protocol.md). It speaks the real byte
 // format, mirroring LiveSocket.cs and AudioProtocol.cs, so the phone's decoder runs exactly as it
 // would against Playnite.
@@ -464,6 +508,7 @@ export function createMockLink(receive: (m: ServerMessage) => void, onClose: () 
   let lastVolumes = ''
   let lastStatus = ''
   let lastLibrary = libraryRevision
+  let lastView = viewRevision
   let lastMedia = mediaRevision
   let lastCaptures = captureRevision
   let lastAchievements = achievementsRevision
@@ -505,12 +550,16 @@ export function createMockLink(receive: (m: ServerMessage) => void, onClose: () 
   deliver(Uint8Array.of(0x80, 1))
   // Everything counts as changed on a new connection.
   lastStatus = statusKey()
-  deliver(Uint8Array.of(0x81, 1 | 2 | 4 | 8 | 16 | 32))
+  deliver(Uint8Array.of(0x81, 1 | 2 | 4 | 8 | 16 | 32 | 64))
   let tick = 0
   const timer = setInterval(() => {
     if (tick % 12 === 0 && libraryRevision !== lastLibrary) {
       lastLibrary = libraryRevision
       deliver(Uint8Array.of(0x81, 2))
+    }
+    if (viewRevision !== lastView) {
+      lastView = viewRevision
+      deliver(Uint8Array.of(0x81, 64))
     }
     if (mediaRevision !== lastMedia) {
       lastMedia = mediaRevision
@@ -662,6 +711,21 @@ async function handle(method: string, path: string, body?: any): Promise<unknown
   if (method === 'GET' && a === 'audio' && b === 'outputs') {
     const kinds = ['speakers', 'headphones', 'display'] as const
     return outputs.map((d, i) => ({ id: d.id, name: d.name, detail: d.detail, kind: kinds[d.kind] ?? 'speakers', default: i === defaultOutput }))
+  }
+  if (a === 'library') {
+    if (method === 'GET' && !b) return mockLibraryView()
+    const preset = filterPresets.find((p) => p.id === c)
+    if (method === 'POST' && b === 'preset' && preset) {
+      Object.assign(libraryView, { preset: preset.id, filter: preset.filter }, preset.sort ? { sort: preset.sort, descending: preset.descending } : {})
+      return void viewRevision++
+    }
+    if (method === 'POST' && b === 'sort') {
+      // Like Playnite: a preset that carries its own sort stops being the active one.
+      if (filterPresets.find((p) => p.id === libraryView.preset)?.sort) libraryView.preset = null
+      Object.assign(libraryView, { sort: body.sort, descending: body.descending })
+      return void viewRevision++
+    }
+    throw new Error('Preset di filtri non trovato.')
   }
   if (method === 'GET' && a === 'games' && !b) return games.map((g) => ({ ...g, running: running.some((r) => r.id === g.id) }))
   const game = games.find((g) => g.id === b)
