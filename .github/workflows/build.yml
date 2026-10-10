@@ -6,11 +6,52 @@ on:
     tags: ["v*"]
   pull_request:
 
-# Needed to publish the .pext as a release asset on tags.
+# contents: to push the release commit and tag and publish the .pext. pull-requests: to read the
+# labels and notes of what was merged.
 permissions:
   contents: write
+  pull-requests: read
+
+# One run at a time on main, so each release starts from the tag the previous one pushed. On a pull
+# request a new push makes the running build moot.
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # Every push to main is released: the next version comes from the labels of the pull requests
+  # merged since the last tag (release: major / minor / patch / skip, patch by default), the notes
+  # from their "## Release notes" sections. See scripts/release.py.
+  version:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    outputs:
+      release: ${{ steps.plan.outputs.release }}
+      version: ${{ steps.plan.outputs.version }}
+      sha: ${{ steps.plan.outputs.sha }}
+    steps:
+      # main as it is now rather than the commit that triggered the run: a run that waited for the
+      # one before must see the release commit and tag it pushed.
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - id: plan
+        name: Plan the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 scripts/release.py plan --repo "$GITHUB_REPOSITORY" --notes release-notes.md | tee -a "$GITHUB_OUTPUT"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          if [ -f release-notes.md ]; then cat release-notes.md >> "$GITHUB_STEP_SUMMARY"; fi
+
+      - if: steps.plan.outputs.release == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-notes
+          path: release-notes.md
+
   # The gallery's ffmpeg.exe, cross-built on Linux. Slow (a few minutes), so cached until the
   # script changes.
   ffmpeg:
@@ -37,10 +78,18 @@ jobs:
           path: build/ffmpeg-out
 
   build:
-    needs: ffmpeg
+    needs: [ffmpeg, version]
+    # version only runs on main; skipped is fine.
+    if: ${{ !cancelled() && needs.ffmpeg.result == 'success' && needs.version.result != 'failure' }}
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.sha || github.sha }}
+
+      - name: Stamp the release version
+        if: needs.version.outputs.release == 'true'
+        run: python scripts/release.py apply ${{ needs.version.outputs.version }}
 
       # A tag must match the version in extension.yaml and the .csproj, or the release ships a
       # .pext that calls itself something else (v0.4.0 went out as 0.3.0).
@@ -111,8 +160,50 @@ jobs:
           name: CouchPilot
           path: dist/*.pext
 
+      # A tag pushed by hand still publishes what it built.
       - name: Publish release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           files: dist/*.pext
+
+  release:
+    needs: [version, build]
+    if: ${{ !cancelled() && needs.build.result == 'success' && needs.version.outputs.release == 'true' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.sha }}
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: CouchPilot
+          path: dist
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-notes
+
+      # Pushes made with this token don't start workflows, so the release commit doesn't build
+      # (or release) again.
+      - name: Commit, tag and publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          python3 scripts/release.py apply "$VERSION"
+          git commit -am "Release $VERSION [skip ci]"
+          git tag "v$VERSION"
+          # If something was merged while this built, merge it in rather than rebase: the tag stays on
+          # exactly what was built, and the newer changes go out with the next release.
+          if ! git push origin HEAD:main; then
+            git fetch origin main
+            git merge --no-edit -m "Merge main after release $VERSION [skip ci]" origin/main
+            git push origin HEAD:main
+          fi
+          git push origin "v$VERSION"
+          gh release create "v$VERSION" dist/*.pext --title "v$VERSION" --notes-file release-notes.md

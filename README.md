@@ -235,7 +235,9 @@ Against a running CouchPilot:
 COUCHPILOT_HOST=http://<pc-address>:8642 pnpm dev     # or https:// if the PC has a certificate
 ```
 
-The extension builds with the .NET SDK on Windows or Linux (`pnpm build` in `web/` first, then `dotnet build src/CouchPilot`); CI does both and packages the `.pext` on every push. The gallery's `ffmpeg.exe` is cross-built on Linux by `scripts/build-ffmpeg.sh` (mingw-w64, nasm, meson, autotools) into `src/CouchPilot/ffmpeg/`; without it the extension still builds, clips get Windows' own thumbnails and can't be cut. Tag `vX.Y.Z` to publish a release.
+The extension builds with the .NET SDK on Windows or Linux (`pnpm build` in `web/` first, then `dotnet build src/CouchPilot`); CI does both and packages the `.pext` on every push. The gallery's `ffmpeg.exe` is cross-built on Linux by `scripts/build-ffmpeg.sh` (mingw-w64, nasm, meson, autotools) into `src/CouchPilot/ffmpeg/`; without it the extension still builds, clips get Windows' own thumbnails and can't be cut.
+
+Every merge into `main` is released by CI, no tagging by hand. The pull request's label picks the version: `release: patch` (the default, for no label too), `release: minor`, `release: major`, or `release: skip` for changes that don't need one (docs, CI). CI bumps `extension.yaml` and the `.csproj`, commits that to `main`, tags `vX.Y.Z` and publishes the `.pext`. The release notes are the pull request's `## Release notes` section (under `### Fixed`, `### Changed`, `### Added`…), or its title without one; several pull requests merged in a row go out together, notes merged by heading. A version bumped by hand in the pull request goes out as it is. Pushing a `vX.Y.Z` tag by hand still publishes too.
 
 The mock PC (`pnpm dev:mock`) takes a few query strings to try things out: `?pair=1` wants a PIN (it's 123456), `?unlock=1` unlocks an achievement a few seconds in, `?noach=1` has no SuccessStory, `?noactivity=1` no GameActivity, `?nvidia=1`, `?noreplay=1`, `?nocapture=1`, `?noffmpeg=1`, `?stream=1`, `?noinput=1`, `?nopads=1`.
 
