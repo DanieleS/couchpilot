@@ -312,6 +312,8 @@ for (let back = 0; back < 14; back++) {
 }
 captures.sort((a, b) => b.takenAt.localeCompare(a.takenAt))
 
+const lightAsked = new Map<string, number>()
+
 function captureStatus(): CaptureStatus | null {
   if (query.has('nocapture')) return null
   return { tool: captureTool, recordingSince, replaySeconds: captureTool === 'gamebar' && !query.has('noreplay') ? 30 : null, editing: !query.has('noffmpeg') }
@@ -681,6 +683,19 @@ async function handle(method: string, path: string, body?: any): Promise<unknown
   if (a === 'captures') {
     if (!captureStatus()) throw new Error('Le catture sono spente nelle impostazioni di CouchPilot.')
     if (method === 'GET' && !b) return { items: captures, bytes: captures.reduce((t, x) => t + x.bytes, 0), folders: ['C:\\Users\\pc\\Videos\\Captures'] }
+    if (c === 'light') {
+      // Made in about four seconds from the first ask; replays (30 s) are light already.
+      const source = captures.find((x) => x.id === b)
+      if (!source || source.kind !== 'video') throw new Error('Clip non trovata.')
+      if ((source.seconds ?? 0) <= 30) return { state: 'original', progress: null, bytes: null }
+      const since = lightAsked.get(b) ?? (method === 'POST' ? Date.now() : null)
+      if (since === null) return { state: 'none', progress: null, bytes: null }
+      lightAsked.set(b, since)
+      const progress = (Date.now() - since) / 4000
+      return progress >= 1
+        ? { state: 'ready', progress: null, bytes: Math.round(source.bytes / 12) }
+        : { state: 'making', progress: Math.round(progress * 1000) / 1000, bytes: null }
+    }
     if (method === 'POST' && c === 'trim') {
       const source = captures.find((x) => x.id === b)
       if (!source) throw new Error('Clip non trovata.')

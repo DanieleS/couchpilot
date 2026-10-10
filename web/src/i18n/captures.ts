@@ -46,6 +46,14 @@ const en = {
     delete: 'Delete',
     frame: (n: number) => `Capture ${n}`,
     cantShare: 'The phone can’t share this file: save it and share it from the gallery.',
+    lightMaking: (percent: number | null) => (percent === null ? 'The PC is making a light copy to stream…' : `The PC is making a light copy to stream… ${percent}%`),
+    lightQueued: 'The PC will make a light copy to stream, right after the one it’s on…',
+    lightHint: 'The original is too heavy for the Wi-Fi: it would keep buffering.',
+    watchOriginal: 'Watch the original',
+    light: 'Light',
+    original: 'Original',
+    toOriginal: 'Watch the original, full quality',
+    toLight: 'Watch the light copy, without buffering',
   },
 
   trimmer: {
@@ -146,6 +154,14 @@ const it: typeof en = {
     delete: 'Elimina',
     frame: (n: number) => `Cattura ${n}`,
     cantShare: 'Il telefono non sa condividere questo file: salvalo e condividilo dalla galleria.',
+    lightMaking: (percent: number | null) => (percent === null ? 'Il PC prepara una copia leggera da guardare…' : `Il PC prepara una copia leggera da guardare… ${percent}%`),
+    lightQueued: 'Il PC prepara una copia leggera da guardare, appena finisce quella di prima…',
+    lightHint: "L'originale è troppo pesante per il Wi-Fi: andrebbe a scatti.",
+    watchOriginal: "Guarda l'originale",
+    light: 'Leggera',
+    original: 'Originale',
+    toOriginal: "Guarda l'originale, a qualità piena",
+    toLight: 'Guarda la copia leggera, senza buffering',
   },
 
   trimmer: {

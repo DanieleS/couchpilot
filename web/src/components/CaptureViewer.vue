@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { DialogContent, DialogDescription, DialogOverlay, DialogPortal, DialogRoot, DialogTitle, VisuallyHidden } from 'reka-ui'
-import { computed, nextTick, ref, watch } from 'vue'
-import { captureFileUrl, capturePreviewUrl, captureThumbUrl, imageUrl } from '../api'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { api, captureFileUrl, captureLightUrl, capturePreviewUrl, captureThumbUrl, imageUrl } from '../api'
 import { clipLength, dayLabel, fileSize, isGif, playDayKey, toolName } from '../captures'
 import { locale, t } from '../i18n'
 import { useCouchPilot } from '../store'
-import type { Capture } from '../types'
+import type { Capture, ClipLight } from '../types'
 import { placeholderGradient } from '../utils'
 import AppIcon from './AppIcon.vue'
 import CaptureThumb from './CaptureThumb.vue'
@@ -50,6 +50,60 @@ watch([index, open], () => {
     if (url) new Image().src = url
   }
 }, { immediate: true })
+
+// Clips play from the light copy the PC makes (see ClipPreviews.cs): the original, tens of Mbit/s,
+// keeps buffering over the Wi-Fi. While it's being made, its progress over the thumbnail, and the
+// original a tap away; once there, a switch in the corner goes back and forth, keeping the moment.
+const light = ref<ClipLight | null>(null)
+const original = ref(false)
+let poll: number | undefined
+// The list is fetched again whenever a capture comes or goes: the same clip, a new object.
+const clipKey = computed(() => (open.value && current.value?.kind === 'video' ? `${current.value.id}:${current.value.version}` : null))
+watch(clipKey, (key) => {
+  window.clearTimeout(poll)
+  light.value = null
+  original.value = false
+  const id = current.value?.id
+  if (!key || !id) return
+  const ask = async (want: boolean) => {
+    let state: ClipLight
+    try {
+      state = await (want ? api.makeCaptureLight(id) : api.captureLight(id))
+    } catch {
+      state = { state: 'original', progress: null, bytes: null }
+    }
+    if (clipKey.value !== key) return
+    light.value = state
+    if (state.state === 'queued' || state.state === 'making') poll = window.setTimeout(() => ask(false), 1000)
+  }
+  ask(true)
+}, { immediate: true })
+onBeforeUnmount(() => window.clearTimeout(poll))
+
+const lightReady = computed(() => light.value?.state === 'ready' && !!current.value && !!captureLightUrl(current.value))
+const waiting = computed(() => !original.value && (!light.value || light.value.state === 'queued' || light.value.state === 'making'))
+const videoSrc = computed(() => {
+  const c = current.value
+  if (!c || c.kind !== 'video') return null
+  if (lightReady.value && !original.value) return captureLightUrl(c)
+  return waiting.value ? null : file.value
+})
+const percent = computed(() => (light.value?.progress != null ? Math.floor(light.value.progress * 100) : null))
+
+const video = ref<HTMLVideoElement | null>(null)
+let resumeAt: { time: number; playing: boolean } | null = null
+function setOriginal(on: boolean) {
+  const v = video.value
+  resumeAt = v ? { time: v.currentTime, playing: !v.paused } : null
+  original.value = on
+}
+function onLoaded() {
+  const v = video.value
+  if (!v || !resumeAt) return
+  v.currentTime = resumeAt.time
+  if (resumeAt.playing) v.play().catch(() => {})
+  resumeAt = null
+}
 
 const go = (to: number) => {
   if (to >= 0 && to < props.items.length) index.value = to
@@ -130,20 +184,39 @@ watch([index, open], async () => {
         <header class="bar">
           <button class="round" :aria-label="t.captures.viewer.close" @click="open = false"><AppIcon name="x" :size="18" /></button>
           <p class="count tabular">{{ t.captures.viewer.position(index + 1, items.length) }}</p>
-          <span class="round-space" />
+          <button
+            v-if="current?.kind === 'video' && lightReady"
+            class="quality"
+            :aria-label="original ? t.captures.viewer.toLight : t.captures.viewer.toOriginal"
+            @click="setOriginal(!original)"
+          >
+            {{ original ? t.captures.viewer.original : t.captures.viewer.light }}
+          </button>
+          <span v-else class="round-space" />
         </header>
 
         <div v-if="current" class="stage" @touchstart.passive="touchStart" @touchend="touchEnd">
           <video
-            v-if="current.kind === 'video' && file"
-            :key="current.id"
+            v-if="current.kind === 'video' && videoSrc"
+            ref="video"
+            :key="current.id + videoSrc"
             class="media"
-            :src="file"
+            :src="videoSrc"
             :poster="captureThumbUrl(current) ?? undefined"
             controls
             playsinline
             preload="metadata"
+            @loadedmetadata="onLoaded"
           />
+          <div v-else-if="current.kind === 'video' && waiting" class="media waiting" :style="stillStyle">
+            <div class="making" role="status">
+              <span class="spinner" aria-hidden="true" />
+              <p>{{ light?.state === 'queued' ? t.captures.viewer.lightQueued : t.captures.viewer.lightMaking(percent) }}</p>
+              <span class="track" aria-hidden="true"><span class="fill" :style="{ inlineSize: `${percent ?? 0}%` }" /></span>
+              <p class="hint">{{ t.captures.viewer.lightHint }}</p>
+              <button class="btn small" @click="setOriginal(true)"><AppIcon name="play" :size="17" />{{ t.captures.viewer.watchOriginal }}</button>
+            </div>
+          </div>
           <img v-else-if="shown" :key="current.id" class="media still" :src="shown" :style="stillStyle" :alt="current.game ?? ''" @error="onPreviewError" />
           <CaptureThumb v-else class="media" :capture="current" />
           <button v-if="index > 0" class="step prev" :aria-label="t.captures.viewer.prev" @click="go(index - 1)"><AppIcon name="chevron-left" :size="20" /></button>
@@ -205,13 +278,41 @@ watch([index, open], async () => {
 .bar { display: flex; align-items: center; justify-content: space-between; padding: var(--size-2) var(--gutter) 0; }
 .round { display: grid; place-items: center; inline-size: 2.5rem; block-size: 2.5rem; border-radius: var(--radius-round); background: rgb(255 255 255 / 0.1); color: #fff; }
 .round-space { inline-size: 2.5rem; }
+.quality {
+  min-inline-size: 2.5rem;
+  padding: 0.375rem 0.75rem;
+  border-radius: var(--radius-round);
+  background: rgb(255 255 255 / 0.1);
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 750;
+}
 .count { font-size: 0.8125rem; font-weight: 700; color: rgb(243 239 230 / 0.7); }
 
 .stage { position: relative; flex: 1; min-block-size: 0; display: grid; place-items: center; }
 .media { max-inline-size: 100%; max-block-size: 100%; inline-size: 100%; object-fit: contain; background: #000; }
 img.media, video.media { block-size: auto; }
 /* The thumbnail under the preview, laid out like it, until the preview covers it. */
-.still { background: #000 center / contain no-repeat; }
+.still, .waiting { background: #000 center / contain no-repeat; }
+/* The clip's thumbnail, dimmed, under what the PC is doing about it. */
+.waiting { position: relative; display: grid; place-items: center; aspect-ratio: 16 / 9; }
+.making {
+  display: grid;
+  justify-items: center;
+  gap: var(--size-2);
+  inline-size: 100%;
+  block-size: 100%;
+  align-content: center;
+  padding: var(--size-3) var(--gutter);
+  background: rgb(0 0 0 / 0.62);
+  text-align: center;
+  font-size: 0.8125rem;
+  font-weight: 650;
+}
+.making .hint { font-size: 0.6875rem; font-weight: 500; color: rgb(243 239 230 / 0.65); }
+.making .btn { flex-direction: row; gap: 6px; padding: 0.5rem 0.875rem; font-size: 0.75rem; }
+.track { inline-size: min(14rem, 70%); block-size: 4px; border-radius: 2px; background: rgb(255 255 255 / 0.18); overflow: hidden; }
+.fill { display: block; block-size: 100%; background: #f3efe6; transition: inline-size 600ms linear; }
 .step {
   position: absolute;
   top: 50%;

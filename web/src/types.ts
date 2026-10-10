@@ -163,6 +163,16 @@ export type TrimRequest = {
   audio: boolean
 }
 
+// GET/POST /api/captures/{id}/light: the clip's light copy for watching on the phone. `original`
+// means play the file itself (light enough already, or the PC can't make one); `none` that it
+// isn't made and nobody asked yet.
+export type ClipLight = {
+  state: 'ready' | 'queued' | 'making' | 'original' | 'none'
+  // 0 to 1 while making.
+  progress: number | null
+  bytes: number | null
+}
+
 // GET /api/captures, newest first.
 export type Captures = {
   items: Capture[]
