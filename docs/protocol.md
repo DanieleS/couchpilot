@@ -286,6 +286,14 @@ The artwork is at `GET /api/media/art?v=<artVersion>`; the version changes with 
 
 The thumbnail is at `GET /api/captures/{id}/thumb?v=<version>` (a JPEG up to 480 px, cacheable for good; 404 when the PC can't make one, a damaged clip say), the file at `GET /api/captures/{id}/file`, which honours `Range` so the player can seek. Screenshots also have a preview at `GET /api/captures/{id}/preview?v=<version>`, a JPEG up to 1920 px for the viewer, so a 4K PNG of tens of MB isn't fetched just to look at it (cacheable for good; 404 for clips, GIFs, and a file the PC can't read, where the viewer falls back to the file); saving and sharing still take the file. `DELETE /api/captures/{id}` moves it to the PC's Recycle Bin.
 
+**Light copies of clips.** The capture tools write tens of Mbit/s, which the house's Wi-Fi often can't keep up with, so the viewer plays a light copy the PC makes with the bundled ffmpeg: long side at most 1280 px, at most 30 frames a second, H.264 capped at 4 Mbit/s with a keyframe every two seconds and its index up front, AAC stereo from the first sound track, HDR tone-mapped. `GET /api/captures/{id}/light` says where it stands, `POST` the same and has it made next:
+
+```jsonc
+{ "state": "making", "progress": 0.42, "bytes": null }
+```
+
+`state` is `ready` (`bytes` is its size), `queued`, `making` (`progress` from 0 to 1), `none` (not made, nobody asked: GET only) or `original`: play the file itself, because it's light enough already (6 Mbit/s or less), the PC has no ffmpeg with x264, or making it failed. The copy is at `GET /api/captures/{id}/light/file?v=<version>`, in ranges like the file (cacheable for good; 404 until ready). Copies are made one at a time at below-normal priority, the one a phone asked for first; the newest clips are also made ahead, but only while no game is running. They're kept with the extension's data (`previews`), up to 4 GB, the ones watched least recently going first; deleting a clip deletes its copy.
+
 Each item also carries `edited` (cut out of another clip on the phone) and `sourceId` (that clip's id, while it's still there). GIFs the editor made are listed as photos (`kind: "photo"`, a `.gif` file name).
 
 **Cutting a clip.** `GET /api/captures/{id}/strip?v=<version>` is a strip of 12 frames across the clip, side by side in one JPEG 160 px a frame, for the trimmer's handles (cacheable for good; 404 without ffmpeg or for a clip it can't read). `POST /api/captures/{id}/trim` with

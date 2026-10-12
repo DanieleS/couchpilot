@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { DialogContent, DialogDescription, DialogOverlay, DialogPortal, DialogRoot, DialogTitle, VisuallyHidden } from 'reka-ui'
 import { computed, ref, watch } from 'vue'
-import { api, captureFileUrl, captureStripUrl } from '../api'
+import { api, captureFileUrl, captureLightUrl, captureStripUrl } from '../api'
 import { clipLength } from '../captures'
 import { t } from '../i18n'
 import { useCouchPilot } from '../store'
@@ -31,7 +31,14 @@ const audio = ref(true)
 const working = ref(false)
 const stripFailed = ref(false)
 
-const file = computed(() => (props.capture ? captureFileUrl(props.capture) : null))
+// The light copy when the PC has made it (the viewer asked): the loop seeks back every few
+// seconds, which the original, tens of Mbit/s, keeps buffering on. Null while the PC is asked.
+const lightReady = ref<boolean | null>(null)
+const file = computed(() => {
+  const c = props.capture
+  if (!c || lightReady.value === null) return null
+  return (lightReady.value && captureLightUrl(c)) || captureFileUrl(c)
+})
 const strip = computed(() => (props.capture && !stripFailed.value ? captureStripUrl(props.capture) : null))
 const selected = computed(() => to.value - from.value)
 const tooLongForGif = computed(() => format.value === 'gif' && selected.value > MAX_GIF_SECONDS)
@@ -47,6 +54,14 @@ watch([open, () => props.capture?.id], ([o]) => {
   format.value = 'mp4'
   audio.value = true
   working.value = false
+  lightReady.value = null
+  const id = props.capture?.id
+  if (!id) return
+  api.captureLight(id)
+    .then((l) => l.state === 'ready', () => false)
+    .then((ready) => {
+      if (open.value && props.capture?.id === id) lightReady.value = ready
+    })
 })
 watch(length, (l) => {
   if (to.value === 0 || to.value > l) to.value = l

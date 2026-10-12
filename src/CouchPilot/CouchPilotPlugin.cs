@@ -41,6 +41,7 @@ namespace CouchPilot
         private readonly CaptureService captures;
         private readonly Thumbnails thumbnails;
         private readonly ClipEditor clips;
+        private readonly ClipPreviews previews;
         private readonly AchievementsService achievements;
         private readonly LockState lockState = new LockState();
         private readonly UnlockService unlock;
@@ -83,6 +84,7 @@ namespace CouchPilot
             captures = new CaptureService(captureLibrary);
             thumbnails = new Thumbnails(Path.Combine(GetPluginUserDataPath(), "thumbnails"));
             clips = new ClipEditor(captureLibrary);
+            previews = new ClipPreviews(Path.Combine(GetPluginUserDataPath(), "previews"), () => sessions.All.Count == 0, () => clips.Precise);
             achievements.Changed += () => server?.AchievementsChanged();
             // A session landed in GameActivity, a few seconds after the game closed: the statistics
             // have it now, and captures saved in between belong to its game.
@@ -114,6 +116,8 @@ namespace CouchPilot
                     var newest = captureLibrary.Newest(24);
                     if (newest.Count > 0) thumbnails.WarmPreview(newest[0]);
                     foreach (var c in newest) thumbnails.Warm(c);
+                    // Their light copies too, for the phone to play; not while a game is running.
+                    previews.Ahead(newest);
                 }
             };
             captures.StatusChanged += () => server?.Nudge();
@@ -147,6 +151,7 @@ namespace CouchPilot
             media.Dispose();
             captureLibrary.Dispose();
             thumbnails.Dispose();
+            previews.Dispose();
             achievements.Dispose();
             activity.Dispose();
             lockState.Dispose();
@@ -163,6 +168,7 @@ namespace CouchPilot
         {
             sessions.Stopped(args.Game);
             captures.GameStopped();
+            previews.Wake();
             server?.Nudge();
             homeAssistant?.Nudge();
         }
@@ -341,7 +347,7 @@ namespace CouchPilot
                             NotificationType.Error));
                     }
                 }
-                server = new RemoteServer(Settings.Port, certificate, webRoot, library, libraryView, gameControl, displays, input, audio, media, stats, captures, captureLibrary, thumbnails, clips, Pairing, achievements, unlock);
+                server = new RemoteServer(Settings.Port, certificate, webRoot, library, libraryView, gameControl, displays, input, audio, media, stats, captures, captureLibrary, thumbnails, clips, previews, Pairing, achievements, unlock);
                 server.Start();
                 PlayniteApi.Notifications.Remove("couchpilot-server");
                 Addresses = NetworkInfo.LanUrls(Settings.Port, certificate != null, certificate == null ? null : ServerCertificate.HostName(certificate));

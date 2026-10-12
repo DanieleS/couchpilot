@@ -1,6 +1,6 @@
 import { ref } from 'vue'
 import type { AudioChannel } from './protocol'
-import type { AudioOutput, Capture, Captures, Game, GameAchievements, GameDetail, GameStats, LibraryView, NowPlaying, PairedDevice, Preset, RecentAchievement, Stats, StatsRangeName, Status, TrimRequest } from './types'
+import type { AudioOutput, Capture, Captures, ClipLight, Game, GameAchievements, GameDetail, GameStats, LibraryView, NowPlaying, PairedDevice, Preset, RecentAchievement, Stats, StatsRangeName, Status, TrimRequest } from './types'
 import { mockCaptureArt, mockRequest } from './mock'
 import { t } from './i18n'
 
@@ -86,6 +86,9 @@ export const api = {
   startRecording: () => request<void>('POST', '/captures/record/start'),
   stopRecording: () => request<Capture>('POST', '/captures/record/stop'),
   deleteCapture: (id: string) => request<void>('DELETE', `/captures/${id}`),
+  // Where a clip's light copy stands; the POST also has it made next.
+  captureLight: (id: string) => request<ClipLight>('GET', `/captures/${id}/light`),
+  makeCaptureLight: (id: string) => request<ClipLight>('POST', `/captures/${id}/light`),
   // Answers once ffmpeg is done, with the new clip or GIF.
   trimCapture: (id: string, body: TrimRequest) => request<Capture>('POST', `/captures/${id}/trim`, body),
   // Pairing: these work before the phone is paired.
@@ -118,6 +121,8 @@ export const mediaArtUrl = (version: string) => (useMock ? null : `/api/media/ar
 
 export const captureThumbUrl = (c: Capture) => (useMock ? mockCaptureArt(c) : `/api/captures/${c.id}/thumb?v=${c.version}`)
 export const captureFileUrl = (c: Capture) => (useMock ? (c.kind === 'photo' ? mockCaptureArt(c) : null) : `/api/captures/${c.id}/file?v=${c.version}`)
+// A clip's light copy, once it's ready: 720p H.264 at a few Mbit/s, which the Wi-Fi keeps up with.
+export const captureLightUrl = (c: Capture) => (useMock ? null : `/api/captures/${c.id}/light/file?v=${c.version}`)
 // What the viewer shows of a screenshot: a JPEG sized for the screen, the file itself staying for
 // saving and sharing. Clips and GIFs have none (a GIF's still wouldn't move).
 export const capturePreviewUrl = (c: Capture) =>

@@ -27,7 +27,7 @@ namespace CouchPilot.Server
 
         // With a certificate the port speaks HTTPS only: one port can't carry both, and the
         // phone's browser needs HTTPS to install the app.
-        public RemoteServer(int port, X509Certificate2 certificate, string webRoot, LibraryService library, LibraryView libraryView, GameControl games, DisplayService displays, RemoteInput input, AudioService audio, MediaService media, StatsService stats, CaptureService captures, CaptureLibrary captureLibrary, Thumbnails thumbnails, ClipEditor clips, PairingService pairing, Achievements.AchievementsService achievements, Unlock.UnlockService unlock)
+        public RemoteServer(int port, X509Certificate2 certificate, string webRoot, LibraryService library, LibraryView libraryView, GameControl games, DisplayService displays, RemoteInput input, AudioService audio, MediaService media, StatsService stats, CaptureService captures, CaptureLibrary captureLibrary, Thumbnails thumbnails, ClipEditor clips, ClipPreviews previews, PairingService pairing, Achievements.AchievementsService achievements, Unlock.UnlockService unlock)
         {
             this.certificate = certificate;
             Swan.Logging.Logger.NoLogging();
@@ -47,7 +47,7 @@ namespace CouchPilot.Server
                 })
                 .WithModule(gate)
                 .WithCors()
-                .WithWebApi("/api", SerializeJson, m => m.WithController(() => new ApiController(library, libraryView, games, displays, audio, media, stats, status, live, captures, captureLibrary, thumbnails, clips, pairing, gate, achievements, unlock)))
+                .WithWebApi("/api", SerializeJson, m => m.WithController(() => new ApiController(library, libraryView, games, displays, audio, media, stats, status, live, captures, captureLibrary, thumbnails, clips, previews, pairing, gate, achievements, unlock)))
                 .WithModule(live);
 
             if (Directory.Exists(webRoot))

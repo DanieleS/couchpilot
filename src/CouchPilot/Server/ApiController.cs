@@ -33,18 +33,20 @@ namespace CouchPilot.Server
         private readonly CaptureLibrary captureLibrary;
         private readonly Thumbnails thumbnails;
         private readonly ClipEditor clips;
+        private readonly ClipPreviews previews;
         private readonly PairingService pairing;
         private readonly PairingGate gate;
         private readonly AchievementsService achievements;
         private readonly Unlock.UnlockService unlock;
 
-        public ApiController(LibraryService library, LibraryView libraryView, GameControl games, DisplayService displays, AudioService audio, MediaService media, StatsService stats, StatusSource status, LiveSocket live, CaptureService captures, CaptureLibrary captureLibrary, Thumbnails thumbnails, ClipEditor clips, PairingService pairing, PairingGate gate, AchievementsService achievements, Unlock.UnlockService unlock)
+        public ApiController(LibraryService library, LibraryView libraryView, GameControl games, DisplayService displays, AudioService audio, MediaService media, StatsService stats, StatusSource status, LiveSocket live, CaptureService captures, CaptureLibrary captureLibrary, Thumbnails thumbnails, ClipEditor clips, ClipPreviews previews, PairingService pairing, PairingGate gate, AchievementsService achievements, Unlock.UnlockService unlock)
         {
             this.unlock = unlock;
             this.captures = captures;
             this.captureLibrary = captureLibrary;
             this.thumbnails = thumbnails;
             this.clips = clips;
+            this.previews = previews;
             this.pairing = pairing;
             this.gate = gate;
             this.achievements = achievements;
@@ -456,6 +458,7 @@ namespace CouchPilot.Server
             RequireCaptures();
             if (!captureLibrary.Delete(id)) throw HttpException.NotFound(Tr("Capture not found.", "Cattura non trovata."));
             thumbnails.Forget(id);
+            previews.Forget(id);
         }
 
         // ?v=<version>: the URL changes with the file, so the phone may keep it for good.
@@ -488,10 +491,41 @@ namespace CouchPilot.Server
         // The file itself. Videos are asked for in ranges: the player seeks by asking for the
         // bytes it needs, so a 5-minute clip starts at once and jumps anywhere.
         [Route(HttpVerbs.Get, "/captures/{id}/file")]
-        public async Task CaptureFile(string id)
+        public Task CaptureFile(string id)
         {
             RequireCaptures();
             var path = captureLibrary.PathOf(id) ?? throw HttpException.NotFound(Tr("Capture not found.", "Cattura non trovata."));
+            return SendFile(path, Path.GetFileName(path), "private, max-age=3600");
+        }
+
+        // Where the clip's light copy stands (see ClipPreviews): ready, queued, making with its
+        // progress, none, or original when the phone should play the file itself.
+        [Route(HttpVerbs.Get, "/captures/{id}/light")]
+        public ClipPreviewDto CaptureLight(string id) => LightState(id, false);
+
+        // The same, and the copy is made next if it isn't there yet: the phone is waiting on it.
+        [Route(HttpVerbs.Post, "/captures/{id}/light")]
+        public ClipPreviewDto MakeCaptureLight(string id) => LightState(id, true);
+
+        // ?v=<version>: the light copy, in ranges like the file. 404 until it's ready.
+        [Route(HttpVerbs.Get, "/captures/{id}/light/file")]
+        public Task CaptureLightFile(string id)
+        {
+            RequireCaptures();
+            var source = captureLibrary.ThumbnailOf(id) ?? throw HttpException.NotFound(Tr("Capture not found.", "Cattura non trovata."));
+            var path = previews.PathOf(source) ?? throw HttpException.NotFound();
+            return SendFile(path, Path.GetFileName(source.Path), "private, max-age=31536000, immutable");
+        }
+
+        private ClipPreviewDto LightState(string id, bool want)
+        {
+            RequireCaptures();
+            var source = captureLibrary.ThumbnailOf(id) ?? throw HttpException.NotFound(Tr("Capture not found.", "Cattura non trovata."));
+            return previews.State(source, want);
+        }
+
+        private async Task SendFile(string path, string name, string cacheControl)
+        {
             using (var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 64 * 1024, true))
             {
                 var length = file.Length;
@@ -511,8 +545,8 @@ namespace CouchPilot.Server
                 var ext = Path.GetExtension(path);
                 Response.ContentType = MimeType.Associations.TryGetValue(ext, out var mime) ? mime : "application/octet-stream";
                 Response.Headers.Set("Accept-Ranges", "bytes");
-                Response.Headers.Set("Cache-Control", "private, max-age=3600");
-                Response.Headers.Set("Content-Disposition", $"inline; filename*=UTF-8''{Uri.EscapeDataString(Path.GetFileName(path))}");
+                Response.Headers.Set("Cache-Control", cacheControl);
+                Response.Headers.Set("Content-Disposition", $"inline; filename*=UTF-8''{Uri.EscapeDataString(name)}");
                 Response.SendChunked = false;
                 Response.ContentLength64 = to - from + 1;
 
