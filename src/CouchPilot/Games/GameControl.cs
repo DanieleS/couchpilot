@@ -22,6 +22,7 @@ namespace CouchPilot.Games
 
         public void Start(Guid gameId)
         {
+            sessions.Launching(gameId);
             // StartGame has to run on Playnite's UI thread; from the web server's thread
             // it fails or leaves the game half-started.
             api.MainView.UIDispatcher.Invoke(() => api.StartGame(gameId));
