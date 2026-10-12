@@ -208,6 +208,10 @@ The other commands live on the same prefix (`display_preset` with the preset nam
 
 Everything is published as one retained JSON document on `couchpilot/<pc>/state`; `couchpilot/<pc>/availability` turns `offline` when Playnite closes or the PC drops off. The password is stored in plain text with the other extension settings.
 
+### Lights that follow the cover
+
+When a game is started from CouchPilot (the phone, or `start_game` above) and not from Playnite or a Vibepollo app, the state also carries `cover_colors`: seven `[r, g, b]` colours from the game's cover, one per horizontal band, **from the bottom up**, so an RGBIC floor lamp's segments read like the cover standing upright. They are vivid rather than average (the average of a cover is nearly always brown) and at full brightness, leaving brightness to the light. The field is `null` for any other game, for a cover Playnite hasn't downloaded, and for one with no colour to speak of; it goes back to `null` when the game closes, which is the cue to put the light back.
+
 ## Development
 
 ```

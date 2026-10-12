@@ -39,6 +39,7 @@ namespace CouchPilot.HomeAssistant
 
         private readonly MqttConfig config;
         private readonly LibraryService library;
+        private readonly GameSessions sessions;
         private readonly DisplayService displays;
         private readonly GameControl games;
         private readonly string version;
@@ -53,10 +54,11 @@ namespace CouchPilot.HomeAssistant
         private string lastState;
         private string lastPresetNames;
 
-        public HomeAssistantBridge(MqttConfig config, LibraryService library, DisplayService displays, GameControl games, string version)
+        public HomeAssistantBridge(MqttConfig config, LibraryService library, GameSessions sessions, DisplayService displays, GameControl games, string version)
         {
             this.config = config;
             this.library = library;
+            this.sessions = sessions;
             this.displays = displays;
             this.games = games;
             this.version = version;
@@ -195,6 +197,14 @@ namespace CouchPilot.HomeAssistant
             }
         }
 
+        // Only for a game started from CouchPilot: what Playnite or Vibepollo start leaves the
+        // lights alone.
+        private List<int[]> CoverColors(RunningDto game)
+        {
+            if (game == null || !Guid.TryParse(game.Id, out var id) || sessions.Get(id)?.LaunchedHere != true) return null;
+            return CoverPalette.Of(library.ImageLocation(id, ImageKind.Cover));
+        }
+
         private string PresetNames() => string.Join("\n", displays.Snapshot().Presets.Select(p => p.Name));
 
         private async Task OnCommand(MqttApplicationMessageReceivedEventArgs args)
@@ -252,6 +262,7 @@ namespace CouchPilot.HomeAssistant
                 ["game_id"] = game?.Id,
                 ["source"] = game?.Source,
                 ["started_at"] = game?.StartedAt,
+                ["cover_colors"] = CoverColors(game),
                 ["preset"] = preset?.Name,
                 ["monitors"] = screens.Monitors.Count(m => !m.Virtual),
                 ["streaming"] = screens.StreamActive,
