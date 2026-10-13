@@ -13,7 +13,8 @@ namespace CouchPilot.Library
     // The colours of a game's cover, for a light to take on while the game runs: the cover cut in
     // horizontal bands, from the bottom up, one vivid colour per band, so a floor lamp's segments
     // read like the cover standing upright. Vivid, not average: the average of a cover is nearly
-    // always brown or grey. Every colour comes at full brightness, the light sets its own.
+    // always brown or grey. Every colour comes at full saturation and brightness: only the hue is
+    // the cover's, the light sets its own brightness.
     public static class CoverPalette
     {
         public const int Bands = 7;
@@ -23,14 +24,16 @@ namespace CouchPilot.Library
         // Below these a pixel is grey, black or near it, and says nothing about the cover's colour.
         private const float MinSaturation = 0.3f;
         private const float MinValue = 0.25f;
-        // A light washes out pale colours into white: lift them to at least this saturation.
-        private const float LightSaturation = 0.55f;
+        // How much of the cover must be colour, as the vivid pixels' weight over all of them, for
+        // it to have a palette. Hollow Knight's grey cover is 0.2%, with a few bluish pixels that
+        // full saturation would blow up into cyan; the least colourful of the others tried was 8%.
+        private const double MinColourShare = 0.02;
 
         private static readonly ILogger logger = LogManager.GetLogger();
         private static readonly ConcurrentDictionary<string, List<int[]>> cache = new ConcurrentDictionary<string, List<int[]>>();
 
         // [r, g, b] per band, bottom band first; null when the cover is missing, not downloaded
-        // or has no colour to speak of (black and white, say).
+        // or has no colour to speak of (black and white, say, or nearly).
         public static List<int[]> Of(string coverPath)
         {
             if (string.IsNullOrEmpty(coverPath) || coverPath.StartsWith("http", StringComparison.OrdinalIgnoreCase)) return null;
@@ -50,6 +53,8 @@ namespace CouchPilot.Library
         private static List<int[]> Compute(string path)
         {
             var pixels = Sample(path);
+            var colour = pixels.SelectMany(row => row).Sum(p => Weight(p)) / (SampleWidth * SampleHeight);
+            if (colour < MinColourShare) return null;
             var all = Vivid(pixels.SelectMany(row => row));
             if (all == null) return null;
             var bands = new List<int[]>();
@@ -87,8 +92,10 @@ namespace CouchPilot.Library
             }
         }
 
-        // The hue that weighs most among the vivid pixels, as the weighted mean of its pixels
-        // brought to full brightness; null when no pixel is vivid.
+        // The hue that weighs most among the vivid pixels, as the weighted mean of its pixels, at
+        // full saturation and brightness; null when no pixel is vivid. Full saturation because a
+        // light can't show a pale colour: tried on an RGBIC lamp, the peach of a sunset at 55% came
+        // out pink, nearly white, and even 85% kept enough of the third channel to tint it pink.
         private static int[] Vivid(IEnumerable<Color> pixels)
         {
             var weight = new double[HueBins];
@@ -97,11 +104,9 @@ namespace CouchPilot.Library
             var b = new double[HueBins];
             foreach (var p in pixels)
             {
-                var s = Saturation(p);
-                var v = Math.Max(p.R, Math.Max(p.G, p.B)) / 255f;
-                if (s < MinSaturation || v < MinValue) continue;
+                var w = Weight(p);
+                if (w == 0) continue;
                 var bin = (int)(p.GetHue() / 360f * HueBins) % HueBins;
-                double w = s * v;
                 weight[bin] += w;
                 r[bin] += p.R * w;
                 g[bin] += p.G * w;
@@ -110,7 +115,16 @@ namespace CouchPilot.Library
             var best = Array.IndexOf(weight, weight.Max());
             if (weight[best] <= 0) return null;
             var mean = Color.FromArgb((int)(r[best] / weight[best]), (int)(g[best] / weight[best]), (int)(b[best] / weight[best]));
-            return FromHsv(mean.GetHue(), Math.Max(Saturation(mean), LightSaturation), 1f);
+            return FromHsv(mean.GetHue(), 1f, 1f);
+        }
+
+        // How much a pixel says about the cover's colour: saturation times brightness, nothing for
+        // grey, black or near it.
+        private static double Weight(Color p)
+        {
+            var s = Saturation(p);
+            var v = Math.Max(p.R, Math.Max(p.G, p.B)) / 255f;
+            return s < MinSaturation || v < MinValue ? 0 : s * v;
         }
 
         // HSV saturation: Color.GetSaturation is HSL's, which calls a dark red unsaturated.
