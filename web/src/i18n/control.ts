@@ -15,6 +15,11 @@ const en = {
   keyboard: 'Keyboard',
   controllers: 'Controllers',
   shortcuts: 'Shortcuts',
+  lights: {
+    title: 'Lights',
+    cover: 'Lights from the cover',
+    hint: 'A game started from here colours the lights like its cover.',
+  },
   pad: {
     move: 'One finger moves, a tap clicks',
     scroll: 'Two fingers scroll, a tap right-clicks',
@@ -59,6 +64,11 @@ const it: typeof en = {
   keyboard: 'Tastiera',
   controllers: 'Controller',
   shortcuts: 'Scorciatoie',
+  lights: {
+    title: 'Luci',
+    cover: 'Luci dalla copertina',
+    hint: 'Un gioco avviato da qui colora le luci come la sua copertina.',
+  },
   pad: {
     move: 'Un dito muove, un tocco clicca',
     scroll: 'Due dita scorrono, toccando fai clic destro',

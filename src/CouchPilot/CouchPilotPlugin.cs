@@ -49,6 +49,7 @@ namespace CouchPilot
         private string capturesConfiguredFor;
         private RemoteServer server;
         private HomeAssistantBridge homeAssistant;
+        private readonly CoverLights coverLights;
         private PinWindow pinWindow;
 
         public CouchPilotSettings Settings { get; }
@@ -121,6 +122,12 @@ namespace CouchPilot
                 }
             };
             captures.StatusChanged += () => server?.Nudge();
+            coverLights = new CoverLights(Settings, () => SavePluginSettings(Settings));
+            coverLights.Changed += () =>
+            {
+                server?.Nudge();
+                homeAssistant?.Nudge();
+            };
             ApplyInputSetting();
         }
 
@@ -316,7 +323,7 @@ namespace CouchPilot
         {
             if (!Settings.MqttEnabled || string.IsNullOrWhiteSpace(Settings.MqttHost)) return;
             var version = typeof(CouchPilotPlugin).Assembly.GetName().Version.ToString(3);
-            homeAssistant = new HomeAssistantBridge(Settings.Mqtt, library, sessions, displays, gameControl, version);
+            homeAssistant = new HomeAssistantBridge(Settings.Mqtt, library, sessions, coverLights, displays, gameControl, version);
             homeAssistant.Start();
         }
 
@@ -347,7 +354,7 @@ namespace CouchPilot
                             NotificationType.Error));
                     }
                 }
-                server = new RemoteServer(Settings.Port, certificate, webRoot, library, libraryView, gameControl, displays, input, audio, media, stats, captures, captureLibrary, thumbnails, clips, previews, Pairing, achievements, unlock);
+                server = new RemoteServer(Settings.Port, certificate, webRoot, library, libraryView, gameControl, displays, input, audio, media, stats, captures, captureLibrary, thumbnails, clips, previews, Pairing, achievements, unlock, coverLights);
                 server.Start();
                 PlayniteApi.Notifications.Remove("couchpilot-server");
                 Addresses = NetworkInfo.LanUrls(Settings.Port, certificate != null, certificate == null ? null : ServerCertificate.HostName(certificate));

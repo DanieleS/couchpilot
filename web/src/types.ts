@@ -108,6 +108,9 @@ export type Status = {
   locked: boolean
   // This phone may unlock the PC: set up on the PC, locked, and permitted for this phone.
   unlock: boolean
+  // Games started from CouchPilot hand their cover's colours to the lights; null while Home
+  // Assistant is off in the extension settings.
+  coverLights: boolean | null
 }
 
 // A phone the PC paired with, and what it may do.

@@ -90,6 +90,11 @@ namespace CouchPilot
         private string mqttDiscoveryPrefix = "homeassistant";
         public string MqttDiscoveryPrefix { get => mqttDiscoveryPrefix; set => SetValue(ref mqttDiscoveryPrefix, value); }
 
+        // A game started from CouchPilot publishes its cover's colours for the lights. Switched
+        // from the phone (see HomeAssistant/CoverLights.cs), not in this settings view.
+        private bool coverLights = true;
+        public bool CoverLights { get => coverLights; set => SetValue(ref coverLights, value); }
+
         [DontSerialize]
         public IReadOnlyList<string> Addresses => plugin?.Addresses ?? Server.NetworkInfo.LanUrls(Port);
 
@@ -221,6 +226,7 @@ namespace CouchPilot
             MqttCommands = other.MqttCommands;
             MqttBaseTopic = other.MqttBaseTopic;
             MqttDiscoveryPrefix = other.MqttDiscoveryPrefix;
+            CoverLights = other.CoverLights;
         }
     }
 }
