@@ -45,6 +45,8 @@ const presets: Preset[] = [
 const streaming = new URLSearchParams(location.search).has('stream')
 // `?noinput=1` pretends touchpad and keyboard are turned off in the extension settings.
 const inputEnabled = !new URLSearchParams(location.search).has('noinput')
+// `?noha=1` pretends Home Assistant is off in the settings: no switch for the lights.
+let coverLights: boolean | null = new URLSearchParams(location.search).has('noha') ? null : true
 let current = streaming
   ? [m('Sunshine Virtual Display', 0, 0, 2532, 1170, 120, true), m('ASUS PG27AQN', 2532, 0, 2560, 1440, 240)]
   : presets[0].monitors
@@ -70,6 +72,7 @@ function status(): Status {
     // `?locked=view`, locked but this phone may not unlock it.
     locked: lockedPc,
     unlock: lockedPc && !lockedViewOnly,
+    coverLights,
     // `?nopads=1` pretends no controller is connected.
     controllers: new URLSearchParams(location.search).has('nopads')
       ? []
@@ -650,6 +653,10 @@ async function handle(method: string, path: string, body?: any): Promise<unknown
   }
   if (pairingRequired && !pairedDevice) throw fail('Questo telefono non è abbinato al PC.', 'unpaired')
   if (method === 'GET' && a === 'status') return status()
+  if (method === 'PUT' && a === 'cover-lights') {
+    if (coverLights === null) throw fail('Home Assistant è spento nelle impostazioni di CouchPilot.', 'not-found')
+    return void (coverLights = !!body?.enabled)
+  }
 
   // The lock screen: pretend the handoff worked and the PC unlocks a moment later.
   if (method === 'POST' && a === 'unlock') {

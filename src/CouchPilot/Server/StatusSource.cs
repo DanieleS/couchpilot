@@ -21,9 +21,11 @@ namespace CouchPilot.Server
         private readonly PairingService pairing;
         private readonly Achievements.AchievementsService achievements;
         private readonly Unlock.UnlockService unlock;
+        private readonly HomeAssistant.CoverLights coverLights;
 
-        public StatusSource(LibraryService library, DisplayService displays, RemoteInput input, CaptureService captures, Captures.ClipEditor clips, PairingService pairing, Achievements.AchievementsService achievements, Unlock.UnlockService unlock)
+        public StatusSource(LibraryService library, DisplayService displays, RemoteInput input, CaptureService captures, Captures.ClipEditor clips, PairingService pairing, Achievements.AchievementsService achievements, Unlock.UnlockService unlock, HomeAssistant.CoverLights coverLights)
         {
+            this.coverLights = coverLights;
             this.library = library;
             this.displays = displays;
             this.input = input;
@@ -50,6 +52,7 @@ namespace CouchPilot.Server
             // Only a paired phone with the Unlock permission; with pairing off (device null) the
             // button never shows, matching the API, which refuses it.
             Unlock = unlock.OfferToPhones && device != null && device.AllowUnlock,
+            CoverLights = coverLights.Available ? coverLights.Enabled : (bool?)null,
             Controllers = Native.XInput.Pads().Select(p => new ControllerDto
             {
                 Slot = p.Slot + 1,
@@ -100,6 +103,9 @@ namespace CouchPilot.Server
         public bool Locked { get; set; }
         // This phone may unlock the PC: set up, locked, and permitted for this device.
         public bool Unlock { get; set; }
+        // Games started from CouchPilot hand their cover's colours to Home Assistant; null while
+        // Home Assistant is off in the settings, and the phone shows no switch.
+        public bool? CoverLights { get; set; }
     }
 
     // An Xbox-style controller connected to the PC.

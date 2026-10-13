@@ -106,6 +106,8 @@ export const api = {
   revertDisplays: () => request<void>('POST', '/displays/revert'),
   // Get past the lock screen; only offered when status.unlock is true. See docs/unlock.md.
   unlock: () => request<{ ok: boolean }>('POST', '/unlock'),
+  // The lights following the cover of a game started from here; the PC remembers it.
+  setCoverLights: (enabled: boolean) => request<void>('PUT', '/cover-lights', { enabled }),
 }
 
 export const imageUrl = (id: string, kind: 'cover' | 'background') =>

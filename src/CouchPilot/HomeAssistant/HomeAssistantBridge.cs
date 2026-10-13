@@ -40,6 +40,7 @@ namespace CouchPilot.HomeAssistant
         private readonly MqttConfig config;
         private readonly LibraryService library;
         private readonly GameSessions sessions;
+        private readonly CoverLights coverLights;
         private readonly DisplayService displays;
         private readonly GameControl games;
         private readonly string version;
@@ -54,11 +55,12 @@ namespace CouchPilot.HomeAssistant
         private string lastState;
         private string lastPresetNames;
 
-        public HomeAssistantBridge(MqttConfig config, LibraryService library, GameSessions sessions, DisplayService displays, GameControl games, string version)
+        public HomeAssistantBridge(MqttConfig config, LibraryService library, GameSessions sessions, CoverLights coverLights, DisplayService displays, GameControl games, string version)
         {
             this.config = config;
             this.library = library;
             this.sessions = sessions;
+            this.coverLights = coverLights;
             this.displays = displays;
             this.games = games;
             this.version = version;
@@ -197,11 +199,11 @@ namespace CouchPilot.HomeAssistant
             }
         }
 
-        // Only for a game started from CouchPilot: what Playnite or Vibepollo start leaves the
-        // lights alone.
+        // Only for a game started from CouchPilot, and while the phone's switch is on: what
+        // Playnite or Vibepollo start leaves the lights alone.
         private List<int[]> CoverColors(RunningDto game)
         {
-            if (game == null || !Guid.TryParse(game.Id, out var id) || sessions.Get(id)?.LaunchedHere != true) return null;
+            if (!coverLights.Enabled || game == null || !Guid.TryParse(game.Id, out var id) || sessions.Get(id)?.LaunchedHere != true) return null;
             return CoverPalette.Of(library.ImageLocation(id, ImageKind.Cover));
         }
 

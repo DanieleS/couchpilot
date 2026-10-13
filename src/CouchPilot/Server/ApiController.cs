@@ -38,9 +38,11 @@ namespace CouchPilot.Server
         private readonly PairingGate gate;
         private readonly AchievementsService achievements;
         private readonly Unlock.UnlockService unlock;
+        private readonly HomeAssistant.CoverLights coverLights;
 
-        public ApiController(LibraryService library, LibraryView libraryView, GameControl games, DisplayService displays, AudioService audio, MediaService media, StatsService stats, StatusSource status, LiveSocket live, CaptureService captures, CaptureLibrary captureLibrary, Thumbnails thumbnails, ClipEditor clips, ClipPreviews previews, PairingService pairing, PairingGate gate, AchievementsService achievements, Unlock.UnlockService unlock)
+        public ApiController(LibraryService library, LibraryView libraryView, GameControl games, DisplayService displays, AudioService audio, MediaService media, StatsService stats, StatusSource status, LiveSocket live, CaptureService captures, CaptureLibrary captureLibrary, Thumbnails thumbnails, ClipEditor clips, ClipPreviews previews, PairingService pairing, PairingGate gate, AchievementsService achievements, Unlock.UnlockService unlock, HomeAssistant.CoverLights coverLights)
         {
+            this.coverLights = coverLights;
             this.unlock = unlock;
             this.captures = captures;
             this.captureLibrary = captureLibrary;
@@ -165,6 +167,16 @@ namespace CouchPilot.Server
             var device = pairing.Authenticate(Request.Cookies[PairingService.CookieName]?.Value);
             if (device != null) pairing.Forget(device.Id);
             gate.ClearCookie(HttpContext);
+        }
+
+        // { "enabled": false } stops games started from here handing their cover's colours to
+        // Home Assistant, until it's turned back on; the PC remembers it.
+        [Route(HttpVerbs.Put, "/cover-lights")]
+        public async Task SetCoverLights()
+        {
+            var body = await ReadBody<CoverLightsBody>() ?? throw HttpException.BadRequest();
+            if (!coverLights.Available) throw HttpException.NotFound(Tr("Home Assistant is off in CouchPilot's settings.", "Home Assistant è spento nelle impostazioni di CouchPilot."));
+            coverLights.Set(body.Enabled);
         }
 
         [Route(HttpVerbs.Get, "/games")]
@@ -581,6 +593,11 @@ namespace CouchPilot.Server
         public class NameBody
         {
             public string Name { get; set; }
+        }
+
+        public class CoverLightsBody
+        {
+            public bool Enabled { get; set; }
         }
 
         public class SortBody

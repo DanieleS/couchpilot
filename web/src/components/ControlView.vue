@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
+import { api } from '../api'
 import { useRemoteInput, Vk, type Mod } from '../input'
 import { t } from '../i18n'
 import { useCouchPilot } from '../store'
@@ -9,12 +10,20 @@ import KeyboardBar from './KeyboardBar.vue'
 import PcChip from './PcChip.vue'
 import TouchPad from './TouchPad.vue'
 
-const { status } = useCouchPilot()
+const { status, act } = useCouchPilot()
 const input = useRemoteInput()
 const viewport = useVisualViewport()
 const turnedOff = computed(() => status.value?.input === false)
 const locked = computed(() => status.value?.locked === true)
 const disabled = computed(() => input.link.value !== 'open' || locked.value)
+// Shown on the PC's word once it comes back over the socket; until then, the tap's.
+const coverLights = ref<boolean | null>(null)
+watch(() => status.value?.coverLights ?? null, (on) => (coverLights.value = on), { immediate: true })
+async function toggleCoverLights() {
+  const next = !coverLights.value
+  coverLights.value = next
+  if (!(await act(() => api.setCoverLights(next)))) coverLights.value = status.value?.coverLights ?? null
+}
 
 const shortcuts: { label: string; vk: number; mods?: Mod[] }[] = [
   { label: 'Alt+Tab', vk: Vk.tab, mods: ['alt'] },
@@ -87,6 +96,17 @@ watch(
       <ControllerChips :controllers="status.controllers" />
     </template>
 
+    <template v-if="coverLights !== null">
+      <p class="eyebrow">{{ t.control.lights.title }}</p>
+      <button class="card setting" role="switch" :aria-checked="coverLights" :disabled="locked" @click="toggleCoverLights">
+        <span class="setting-text">
+          <span class="setting-title">{{ t.control.lights.cover }}</span>
+          <span class="muted setting-hint">{{ t.control.lights.hint }}</span>
+        </span>
+        <span class="switch" :class="{ on: coverLights }" aria-hidden="true"><span class="knob" /></span>
+      </button>
+    </template>
+
     <p class="eyebrow">{{ t.control.shortcuts }}</p>
     <div class="scroll-row">
       <button v-for="s in shortcuts" :key="s.label" class="key chip" :disabled="disabled" @click="input.key(s.vk, s.mods)">{{ s.label }}</button>
@@ -111,7 +131,41 @@ watch(
 .muted { font-size: 0.75rem; line-height: 1.45; margin-top: 4px; }
 .keyboard { margin-top: var(--size-3); }
 /* While typing only the touchpad stays: everything else would sit under the keyboard. */
-.typing .keyboard, .typing .eyebrow, .typing .scroll-row, .typing .pads { display: none; }
+.typing .keyboard, .typing .eyebrow, .typing .scroll-row, .typing .pads, .typing .setting { display: none; }
+
+.setting {
+  display: flex;
+  align-items: center;
+  gap: var(--size-3);
+  inline-size: 100%;
+  padding: var(--size-3);
+  text-align: start;
+}
+.setting:disabled { opacity: 0.45; }
+.setting-text { display: grid; gap: 2px; flex: 1; }
+.setting-title { font-size: 0.875rem; font-weight: 750; }
+.setting-hint { font-size: 0.75rem; line-height: 1.4; }
+.switch {
+  flex-shrink: 0;
+  inline-size: 2.75rem;
+  block-size: 1.625rem;
+  padding: 3px;
+  border-radius: var(--radius-round);
+  background: var(--well);
+  box-shadow: inset 0 0 0 1px var(--line);
+  transition: background 150ms var(--ease-out-2);
+}
+.switch.on { background: var(--ok); box-shadow: none; }
+.knob {
+  display: block;
+  inline-size: 1.25rem;
+  block-size: 1.25rem;
+  border-radius: var(--radius-round);
+  background: #fff;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.25);
+  transition: transform 150ms var(--ease-out-2);
+}
+.switch.on .knob { transform: translateX(1.125rem); }
 
 .key {
   block-size: 2.75rem;
