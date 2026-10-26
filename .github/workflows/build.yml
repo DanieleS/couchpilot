@@ -51,6 +51,7 @@ jobs:
         with:
           name: release-notes
           path: release-notes.md
+          retention-days: 1
 
   # The gallery's ffmpeg.exe, cross-built on Linux. Slow (a few minutes), so cached until the
   # script changes.
@@ -76,6 +77,7 @@ jobs:
         with:
           name: ffmpeg
           path: build/ffmpeg-out
+          retention-days: 1
 
   build:
     needs: [ffmpeg, version]
@@ -159,6 +161,7 @@ jobs:
         with:
           name: CouchPilot
           path: dist/*.pext
+          retention-days: 7
 
       # A tag pushed by hand still publishes what it built.
       - name: Publish release
